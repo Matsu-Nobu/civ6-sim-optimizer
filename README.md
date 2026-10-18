@@ -61,7 +61,7 @@ BBG は更新のたびに強い進め方が変わるので、勘や定石に頼�
 | [decisions.md](docs/decisions.md) | 日付ごとに決めたことと、その理由 |
 | [artifacts.md](docs/artifacts.md) | シミュレータ、探索プログラム、データ、スクリプト、mod の一覧と使い方 |
 | [reports/search_methods.md](docs/reports/search_methods.md) | 探索の手法を比べた結果 |
-| [reports/opening.md](docs/reports/opening.md) | 序盤のタイル選び・偵察兵・開拓者の定石 |
+| [reports/opening.md](docs/reports/opening.md) | 序盤のタイル選び・斥候・開拓者の定石 |
 | [reports/france_courser_spike.md](docs/reports/france_courser_spike.md) | フランスでコーサーに上げて攻める作戦の内政の計画 |
 | [reports/persia_20261017.md](docs/reports/persia_20261017.md) | 10/17 のペルシャのマルチ戦の分析 |
 | [reports/france_20261018.md](docs/reports/france_20261018.md) | 10/18 のフランスのマルチ戦の分析 |

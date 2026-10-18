@@ -13,3 +13,24 @@ allies (record's routes): [1]
 start 5660.7, 345 decisions
 kick 1 T32 settle [8,43] -> [6,34]: 5633.5 vs 5660.7 (211s, 17686 tried)
 kick 2 T47 focus "balanced" -> "production": 5655.4 vs 5660.7 (226s, 19947 tried)
+loaded ../data/games/france_20261014.json in 0.1s
+requirement GREAT_PERSON_CLASS_GENERAL: the one on offer at T44 is Some("GREAT_PERSON_INDIVIDUAL_AETHELFLAED"), 75 points
+requirement GREAT_PERSON_CLASS_GENERAL>ERA_RENAISSANCE: the one on offer at T67 is Some("GREAT_PERSON_INDIVIDUAL_GUSTAVUS_ADOLPHUS"), 155 points
+allies (record's routes): [1]
+allies (record's routes): [1]
+allies (record's routes): [1]
+allies (record's routes): [1]
+allies (record's routes): [1]
+allies (record's routes): [1]
+allies (record's routes): [1]
+start 5629.1, 346 decisions
+kick 1 T29 governor ["promote","GOVERNOR_THE_EDUCATOR","GOVERNOR_PROMOTION_EDUCATOR_RESEARCHER"] -> ["promote","GOVERNOR_THE_CARDINAL","GOVERNOR_PROMOTION_CARDINAL_DIVINE_ARCHITECT"]: 4912.9 vs 5629.1 (221s, 17565 tried)
+kick 2 T14 builder ["improve","PARIS",[13,41],"IMPROVEMENT_QUARRY"] -> ["harvest","ROUEN",[8,38],"feature"]: -313.0 vs 5629.1 (478s, 39330 tried)
+kick 3 T53 settle [15,42] -> [6,32]: 5693.5 vs 5629.1 accepted (525s, 45448 tried)
+kick 4 T53 policy "POLICY_URBAN_PLANNING" -> "POLICY_EQUESTRIAN_ORDERS": 5720.1 vs 5693.5 accepted (555s, 49510 tried)
+kick 5 T23 builder ["improve","PARIS",[11,43],"IMPROVEMENT_PASTURE"] -> ["harvest","PARIS",[12,42],"feature"]: 5854.6 vs 5720.1 accepted (943s, 75890 tried)
+kick 6 T13 focus "food" -> "gold": -530.0 vs 5854.6 (1522s, 107437 tried)
+kick 7 T35 buy ["none"] -> ["tile","PARIS",35,[10,40]]: 5878.8 vs 5854.6 accepted (1662s, 117726 tried)
+kick 8 T41 focus "food" -> "gold": 5670.3 vs 5878.8 (1733s, 123974 tried)
+kick 9 T26 buy ["tile","PARIS",45,[13,43]] -> ["tile","PARIS",45,[12,38]]: 4992.7 vs 5878.8 (1924s, 138561 tried)
+kick 10 T52 focus "production" -> "food": 5867.3 vs 5878.8 (1959s, 142805 tried)

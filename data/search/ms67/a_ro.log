@@ -1,4 +1,4 @@
-loaded ../../data/problems/france1014.json in 0.1s
+loaded ../data/games/france_20261014.json in 0.2s
 requirement GREAT_PERSON_CLASS_GENERAL: the one on offer at T44 is Some("GREAT_PERSON_INDIVIDUAL_AETHELFLAED"), 75 points
 requirement GREAT_PERSON_CLASS_GENERAL>ERA_RENAISSANCE: the one on offer at T67 is Some("GREAT_PERSON_INDIVIDUAL_GUSTAVUS_ADOLPHUS"), 155 points
 allies (record's routes): [1]
@@ -8,8 +8,6 @@ allies (record's routes): [1]
 allies (record's routes): [1]
 allies (record's routes): [1]
 allies (record's routes): [1]
-allies (record's routes): [1]
-allies (record's routes): [1]
-start 6396.0
-{"best":6395.971303594631,"tried":4000,"seconds":50.728001059}
-saved data/search/ms67/a.json
+start -10224.8
+{"best":5291.731303594631,"tried":20828,"seconds":298.734555425}
+saved /home/nobu/civ6-sim-optimizer/data/search/ms67/a.json

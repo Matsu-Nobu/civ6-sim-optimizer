@@ -16,6 +16,7 @@ pub mod planner;
 pub mod production;
 pub mod record;
 pub mod rules;
+pub mod save;
 pub mod scenario;
 pub mod sim;
 pub mod skeleton;

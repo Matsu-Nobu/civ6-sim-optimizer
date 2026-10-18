@@ -660,6 +660,32 @@ fn main() {
         build(&args);
         return;
     }
+    // civ6opt export <save dir> <player id> <rules.sqlite>: one JSON line per save (the export rows), in file order;
+    // a save that cannot be read is skipped with a message
+    // civ6opt map <save> <rules.sqlite>: the map of one save as JSON
+    if cmd == "export" || cmd == "map" {
+        let rules = civ6opt::gamedata::open(if cmd == "export" { &args[4] } else { &args[3] });
+        let dict = civ6opt::save::Dict::new(&civ6opt::save::export::rules_types(&rules));
+        let names = civ6opt::save::export::Names::load(&rules);
+        if cmd == "map" {
+            let g = civ6opt::save::parse(&std::fs::read(&args[2]).unwrap_or_else(|e| panic!("{}: {e}", args[2])), &dict);
+            println!("{}", civ6opt::save::export::map_json(&g, &names));
+            return;
+        }
+        let pid: i64 = args[3].parse().expect("player id");
+        let mut files: Vec<String> = std::fs::read_dir(&args[2]).unwrap_or_else(|e| panic!("{}: {e}", args[2])).flatten()
+            .map(|e| e.file_name().to_string_lossy().into_owned()).filter(|f| f.ends_with(".Civ6Save")).collect();
+        files.sort();
+        for f in files {
+            let raw = std::fs::read(std::path::Path::new(&args[2]).join(&f)).unwrap();
+            // e.g. a save written while the game was mid-turn
+            match std::panic::catch_unwind(|| civ6opt::save::parse(&raw, &dict)) {
+                Ok(g) => println!("{}", civ6opt::save::export::row_json(&g, &dict, &names, &f, pid)),
+                Err(e) => eprintln!("skipping {f}: {}", e.downcast_ref::<String>().cloned().or(e.downcast_ref::<&str>().map(|s| s.to_string())).unwrap_or_default()),
+            }
+        }
+        return;
+    }
     // civ6opt text <out.sqlite> [--game <the game's folder>] [--workshop <the workshop content folder 289070>]
     if cmd == "text" {
         let game = arg(&args, "--game").unwrap_or("/mnt/c/Program Files (x86)/Steam/steamapps/common/Sid Meier's Civilization VI".into());

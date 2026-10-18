@@ -5,11 +5,10 @@
 | ディレクトリ | 中身 |
 |---|---|
 | `optimizer/` | シミュレータと探索プログラム（Rust） |
-| `save_export/` | セーブを読んで、毎ターンの記録・地図・mod の版を書き出すスクリプト（Node と bash） |
+| `save_export/` | セーブから記録・地図・mod の版を書き出し、対局データを作るスクリプト（bash） |
 | `python_legacy/` | Python のシミュレータと診断用のスクリプト |
 | `tools/` | 分析のときに使う Python のスクリプト |
 | `game_mods/` | シミュレータの検証に使うゲームの mod |
-| `third_party/` | 他の人が公開しているセーブ解析のプログラム |
 | `data/` | セーブ、書き出した記録、ルールのデータベース、対局データ、探索の結果 |
 | `docs/` | 文書 |
 
@@ -23,7 +22,7 @@ cd optimizer && cargo build --release
 
 ## 主なコマンド
 
-`build` と `text` 以外のコマンドは、`civ6opt <コマンド> <対局データ> <オプション>` の形で実行する。
+`build`、`text`、`export`、`map` 以外のコマンドは、`civ6opt <コマンド> <対局データ> <オプション>` の形で実行する。
 
 | コマンド | すること |
 |---|---|
@@ -34,6 +33,8 @@ cd optimizer && cargo build --release
 | `validate` | 各ターンのセーブの状態から 1 ターンだけ進め、次のセーブと比べる |
 | `build` | 書き出した記録・地図・ルールのデータベースから、対局データを作る |
 | `text` | ゲームの英語の文章のデータベース `data/rules/text_en.sqlite` を作る |
+| `export` | セーブのディレクトリから、プレイヤー 1 人分の毎ターンの記録を書き出す |
+| `map` | 1 つのセーブから地図を書き出す |
 
 ## 条件と点数の指定
 
@@ -56,15 +57,11 @@ cd optimizer && cargo build --release
 
 # セーブの書き出し
 
-`save_export/` のスクリプトは、`third_party/civ6-savegame-parser` でセーブを読む。
+セーブは、`civ6opt` の `export` と `map` のコマンドが読む。セーブを読む処理（`optimizer/src/save/`）は、他の人が公開しているセーブ解析のプログラム（civ6-savegame-parser、MIT ライセンス）を Rust に移したもので、元のライセンスは `optimizer/data/save/NOTICE` にある。
 
 | スクリプト | すること |
 |---|---|
-| `save_export/export_game.sh` | セーブのディレクトリから、プレイヤー 1 人分の毎ターンの状態を書き出す |
-| `save_export/export_map.sh` | 1 つのセーブから地図を書き出す |
 | `save_export/mod_versions.sh` | 対局で使った mod とその版を、セーブから読み出す |
-| `save_export/players.js` | 1 つのセーブにいる全プレイヤーの産出や研究を表示する |
-| `save_export/setup_parser.sh` | セーブ解析のプログラムを取得し、変更を当ててビルドする |
 
 # 対局データ
 

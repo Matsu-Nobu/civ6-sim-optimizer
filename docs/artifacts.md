@@ -26,9 +26,9 @@ cd optimizer && cargo build --release
 
 | コマンド | すること |
 |---|---|
-| `run` | 計画を 1 つ実行し、毎ターンの状態と点数を出力する。`--costs` を付けると、各都市が作っている品目のコストも出力する |
+| `run` | 計画を 1 つ実行し、毎ターンの状態と点数を出力する |
 | `rollout` | 各決定の候補を順に試し、点数が上がる変更を、変化がなくなるまで取り込む |
-| `irollout` | 決定を 1 つランダムに変え、後ろの決定を `rollout` と同じ方法で詰め直し、点数が上がれば採用する。これを時間いっぱい繰り返す |
+| `irollout` | 決定を 1 つ変えて後ろを詰め直すことを、時間いっぱい繰り返す |
 | `decisions` | 計画の決定を、ターン・決定の種類・選んだもの・候補の一覧の形で出力する |
 | `validate` | 各ターンのセーブの状態から 1 ターンだけ進め、次のセーブと比べる |
 
@@ -37,15 +37,17 @@ cd optimizer && cargo build --release
 | オプション | 指定するもの |
 |---|---|
 | `--turn T` | 点数を足すのを止めるターン |
-| `--require X:N@T` | T ターンまでに X を N 個持つことを条件にする。`@T` を省くと `--turn` のターンで判定する。X には技術、社会制度、ユニット、区域、建物、偉人の種類（`GREAT_PERSON_CLASS_GENERAL>ERA_RENAISSANCE` のように時代を絞れる）を指定できる |
+| `--require X:N@T` | T ターンまでに X を N 個持つことを条件にする |
 | `--require-weight W` | 条件を 1 つ満たさないときの罰点 |
 | `--reward X:P@T` | T ターンまでに持つ X 1 個につき、P 点を加える |
-| `--team` | 味方に渡した金を計画からも差し引き、味方からもらった贅沢資源を記録から推定して加える。記録の交易路の行き先から同盟国も推定する |
+| `--team` | 味方との金と贅沢資源のやり取り、同盟国を記録から取り込む |
 | `--allow-military` | 内政に効かない軍事ユニットの生産を許す |
 | `--freeze '[決定の一覧]'` | 指定した決定を変えない |
-| `--window N --passes P --kick-to T` | `irollout` で、変えた決定から N ターン分を最大 P 周詰め直し、T ターンまでの決定だけを変える |
+| `--window N --passes P --kick-to T` | `irollout` の詰め直しの範囲と回数、変える決定の範囲 |
 
-## 途中で止まった探索の再開
+#`--require` の X には、技術、社会制度、ユニット、区域、建物、偉人の種類を指定できる。`@T` を省くと、`--turn` のターンで判定する。
+
+# 途中で止まった探索の再開
 
 探索は、点数が上がるたびに計画を `--out` のファイルに保存する。途中で止まったときは、そのファイルを `--init` に指定すると、続きから回せる。
 
@@ -59,7 +61,7 @@ cd optimizer && cargo build --release
 | `save_export/export_map.sh` | 1 つのセーブから地図を書き出す |
 | `save_export/mod_versions.sh` | 対局で使った mod とその版を、セーブから読み出す |
 | `save_export/players.js` | 1 つのセーブにいる全プレイヤーの産出や研究を表示する |
-| `save_export/setup_parser.sh` | `third_party/civ6-savegame-parser` を取得し、`third_party/civ6-savegame-parser.patch` の変更を当てて、npm でビルドする |
+| `save_export/setup_parser.sh` | セーブ解析のプログラムを取得し、変更を当ててビルドする |
 
 # 対局データ
 
@@ -78,10 +80,10 @@ cd optimizer && cargo build --release
 | 場所 | 中身 | リポジトリに入れるか |
 |---|---|---|
 | `data/saves` | ゲームのオートセーブのコピー。対局ごとにディレクトリを分ける | 入れない |
-| `data/exports` | セーブから書き出した毎ターンの状態（`game_<日付>_p<プレイヤー番号>.jsonl`）、地図、mod の版 | zstd で圧縮した `.zst` と mod の版を入れる |
-| `data/rules` | ゲームが書き出したルールのデータベースのコピー（`<対局データの名前>.sqlite`）と、ゲームの文章のデータベース（`text_en.sqlite`） | 入れない |
+| `data/exports` | セーブから書き出した毎ターンの状態、地図、mod の版 | zstd で圧縮した `.zst` と mod の版を入れる |
+| `data/rules` | ゲームのルールと文章のデータベース | 入れない |
 | `data/games` | 対局データ | 入れない |
-| `data/search` | 探索の実行スクリプト、結果の計画、記録。目的ごとにディレクトリを分ける（騎乗兵は `nest`、皇帝近衛は `ms67`、ペルシャ戦は `persia`） | 入れる |
+| `data/search` | 探索の実行スクリプト、結果の計画、記録 | 入れる |
 
 # Python のプログラム
 
@@ -90,7 +92,7 @@ cd optimizer && cargo build --release
 | 場所 | すること |
 |---|---|
 | `python_legacy/scripts/export_problem.py` | 書き出した記録・地図・ルールのデータベースから、対局データを作る |
-| `python_legacy/scripts/variant_report.py` | `run --costs` の出力から、研究の完了、都市ごとの生産順、改善、食料と生産の累計をまとめて表示する |
+| `python_legacy/scripts/variant_report.py` | `run --costs` の出力を、研究や生産順の表にまとめる |
 | `python_legacy/opening/` | 序盤の首都の簡略化したモデルを最適化するプログラム |
 
 # ゲームの mod

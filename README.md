@@ -33,23 +33,22 @@ BBG は更新のたびに強い進め方が変わるので、勘や定石に頼�
 
 # 実験の再現
 
-リポジトリには、セーブから書き出した対局の記録と地図（`data/exports`）と、探索の実行スクリプトと結果（`data/search`）が入っている。ゲームのルールのデータベースは入れていないので、自分のゲームから作る。
+ゲームのルールのデータベースは著作物なのでリポジトリに入れていない。自分のゲームから作る。
 
 ## 必要なもの
 
-Civilization VI（Steam 版）と、`data/exports/game_<日付>_mods.txt` に記載した版の mod が要る。どの対局も、Better Balanced Game 7.5.1、BBG Expanded 2.1、Better Balanced Map 1.39.5、Multiplayer Helper 1.8.0 を使った。ほかに、Homebrew で `rustup`、`zstd`、`python` を入れる。
+- Civilization VI（Steam 版）
+- mod の Better Balanced Game 7.5.1、BBG Expanded 2.1、Better Balanced Map 1.39.5、Multiplayer Helper 1.8.0
+- Homebrew で入れる `rustup`、`zstd`、`python`
 
 ## 手順
 
-| 手順 | すること |
-|---|---|
-| ルールのデータベースを作る | 上の mod を入れて、記録した対局と同じ設定（勝利条件など）でゲームを始める。ゲームが書き出す `%LOCALAPPDATA%/Firaxis Games/Sid Meier's Civilization VI/Cache/DebugGameplay.sqlite` を、`data/rules/<対局データの名前>.sqlite`（例 `france_20261014.sqlite`）にコピーする |
-| ゲームの文章のデータベースを作る | `python3 python_legacy/scripts/build_text_db.py` を実行する。Steam の既定の場所に入れたゲームと mod から、`data/rules/text_en.sqlite` を作る |
-| 対局データを作る | `save_export/build_games.sh` を実行する。`data/games` に対局データができる |
-| プログラムをビルドする | `cd optimizer && cargo build --release` を実行する |
-| 探索を回す | `data/search/<実験>/run.sh` を実行する。実験の一覧は [docs/artifacts.md](docs/artifacts.md) にある |
-
-ルールのデータベースは、mod の版だけでなく、勝利条件などのゲームの設定でも中身が変わる。設定が違うと、結果は一致しない。
+1. mod を入れて、記録した対局と同じ勝利条件でゲームを始める。
+2. ゲームが作る `Cache/DebugGameplay.sqlite` を、`data/rules/france_20261014.sqlite` のように対局データの名前でコピーする。
+3. `python3 python_legacy/scripts/build_text_db.py` を実行する。
+4. `save_export/build_games.sh` を実行する。
+5. `cd optimizer && cargo build --release` を実行する。
+6. `data/search/<実験>/run.sh` を実行する。
 
 # 文書の案内
 

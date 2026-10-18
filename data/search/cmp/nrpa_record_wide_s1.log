@@ -1,0 +1,36 @@
+loaded ../../data/problems/rome1007b_v2.json in 0.2s
+round 0 run 1000007: best 10308.5 after 2400 rollouts (598s); reuse: repeats 58, turns simulated 95588 skipped 42590
+round 0 run 1000003: best 9739.2 after 2400 rollouts (603s); reuse: repeats 31, turns simulated 94630 skipped 45141
+round 0 run 1000008: best 9914.1 after 2400 rollouts (613s); reuse: repeats 49, turns simulated 96115 skipped 42594
+round 0 run 1000005: best 10301.7 after 2400 rollouts (613s); reuse: repeats 31, turns simulated 96766 skipped 43005
+round 0 run 1000004: best 10054.0 after 2400 rollouts (614s); reuse: repeats 39, turns simulated 94892 skipped 44407
+round 0 run 1000006: best 10473.4 after 2400 rollouts (629s); reuse: repeats 61, turns simulated 96061 skipped 41940
+round 0 run 1000002: best 9908.6 after 2400 rollouts (629s); reuse: repeats 52, turns simulated 94956 skipped 43576
+round 0 run 1000001: best 10891.2 after 2400 rollouts (633s); reuse: repeats 22, turns simulated 96334 skipped 43968
+round 0 run 1000009: best 10569.0 after 2400 rollouts (641s); reuse: repeats 48, turns simulated 92743 skipped 46025
+round 0 run 1000000: best 10538.4 after 2400 rollouts (653s); reuse: repeats 64, turns simulated 94068 skipped 43756
+after round 0: best 10891.2 (654s)
+round 1 run 1000013: best 10522.8 after 2400 rollouts (480s); reuse: repeats 29, turns simulated 97563 skipped 42326
+round 1 run 1000014: best 10276.3 after 2400 rollouts (484s); reuse: repeats 36, turns simulated 96716 skipped 42760
+round 1 run 1000017: best 9645.5 after 2400 rollouts (491s); reuse: repeats 34, turns simulated 95637 skipped 43957
+round 1 run 1000015: best 9841.5 after 2400 rollouts (495s); reuse: repeats 32, turns simulated 96926 skipped 42786
+round 1 run 1000010: best 10087.3 after 2400 rollouts (504s); reuse: repeats 31, turns simulated 97469 skipped 42302
+round 1 run 1000018: best 9810.1 after 2400 rollouts (505s); reuse: repeats 32, turns simulated 97834 skipped 41878
+round 1 run 1000011: best 9994.0 after 2400 rollouts (508s); reuse: repeats 26, turns simulated 97606 skipped 42460
+round 1 run 1000016: best 10076.2 after 2400 rollouts (511s); reuse: repeats 30, turns simulated 98582 skipped 41248
+round 1 run 1000019: best 10662.9 after 2400 rollouts (513s); reuse: repeats 39, turns simulated 95854 skipped 43445
+round 1 run 1000012: best 10429.0 after 2400 rollouts (517s); reuse: repeats 30, turns simulated 97624 skipped 42206
+after round 1: best 10891.2 (1170s)
+round 2 run 1000025: best 9604.0 after 2400 rollouts (487s); reuse: repeats 47, turns simulated 94637 skipped 44190
+round 2 run 1000020: best 9670.3 after 2400 rollouts (489s); reuse: repeats 26, turns simulated 97686 skipped 42380
+round 2 run 1000026: best 10225.2 after 2400 rollouts (493s); reuse: repeats 48, turns simulated 95043 skipped 43725
+round 2 run 1000029: best 10154.8 after 2400 rollouts (503s); reuse: repeats 47, turns simulated 97439 skipped 41388
+round 2 run 1000022: best 9860.9 after 2400 rollouts (505s); reuse: repeats 61, turns simulated 95336 skipped 42665
+round 2 run 1000028: best 10060.5 after 2400 rollouts (510s); reuse: repeats 46, turns simulated 96047 skipped 42839
+round 2 run 1000021: best 10031.9 after 2400 rollouts (513s); reuse: repeats 38, turns simulated 95536 skipped 43822
+round 2 run 1000024: best 10342.0 after 2400 rollouts (514s); reuse: repeats 43, turns simulated 96636 skipped 42427
+round 2 run 1000023: best 10851.7 after 2400 rollouts (515s); reuse: repeats 28, turns simulated 98799 skipped 41149
+round 2 run 1000027: best 10310.0 after 2400 rollouts (520s); reuse: repeats 65, turns simulated 93750 skipped 44015
+after round 2: best 10891.2 (1690s)
+{"runs":[10308.5,9739.2,9914.080000000002,10301.7,10054,10473.4,9908.6,10891.219999999998,10569,10538.400000000001,10522.779999999999,10276.32,9645.48,9841.48,10087.3,9810.119999999999,9994,10076.2,10662.899999999998,10428.98,9603.96,9670.279999999999,10225.2,10154.800000000001,9860.9,10060.539999999999,10031.900000000001,10342,10851.699999999999,10310],"best":10891.219999999998,"seconds":1689.875325864}
+saved ../../data/search/cmp/nrpa_record_wide_s1.json.tmp

@@ -1,0 +1,5 @@
+loaded ../../data/problems/france1014.json in 0.1s
+requirement GREAT_PERSON_CLASS_GENERAL: the one on offer at T44 is Some("GREAT_PERSON_INDIVIDUAL_AETHELFLAED"), 75 points
+start -18087.3
+{"best":4739.900000000001,"tried":7196,"seconds":31.003937233}
+saved data/search/nest/rec44.json

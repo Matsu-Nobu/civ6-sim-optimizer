@@ -1,0 +1,98 @@
+[
+ {
+  "rule": "growth bonus in 1/64 (Happy +8% grows 12 by 12.9375)",
+  "problem": "data/games/rome_20261007b.json",
+  "turn": 44,
+  "get": "city('MEDIOLANUM')['food']",
+  "expect": 32.890625,
+  "game": "save T45: MEDIOLANUM foodStore"
+ },
+ {
+  "rule": "fresh water from an adjacent lake (map lake flag on plots)",
+  "problem": "data/games/rome_20261007b.json",
+  "turn": 23,
+  "get": "city('OSTIA')['housing']",
+  "expect": 5,
+  "game": "housing that lets OSTIA grow at full rate (T23-24 food store 2 -> 5)"
+ },
+ {
+  "rule": "natural wonder adjacency through the city's near plots (Lysefjorden next to (24,45))",
+  "problem": "data/games/rome_20261007b.json",
+  "turn": 22,
+  "get": "tile('OSTIA', [24, 45])['YIELD_PRODUCTION']",
+  "expect": 4,
+  "game": "save T23: OSTIA production 6 = centre 1 + (24,45) 4 + Urban Planning 1"
+ },
+ {
+  "rule": "mod resources on the start map (BBG maple at (32,38))",
+  "problem": "data/games/rome_20261007b.json",
+  "turn": 24,
+  "get": "tile('MEDIOLANUM', [32, 38])",
+  "expect": {
+   "YIELD_FOOD": 2,
+   "YIELD_PRODUCTION": 2,
+   "YIELD_GOLD": 1
+  },
+  "game": "save T25: MEDIOLANUM F8 P10 with (32,38) worked"
+ },
+ {
+  "rule": "Rome's free monument at the end of the turn Early Empire completes",
+  "problem": "data/games/rome_20261007b.json",
+  "turn": 24,
+  "get": "sorted(c['name'] for c in s['cities'] if 'BUILDING_MONUMENT' in c['buildings'])",
+  "expect": [
+   "MEDIOLANUM",
+   "OSTIA",
+   "ROME"
+  ],
+  "game": "save T25: a monument in every city"
+ },
+ {
+  "rule": "techs complete before the cities grow and produce (horses visible with Animal Husbandry)",
+  "problem": "data/games/rome_20261007b.json",
+  "turn": 25,
+  "get": "s['F']",
+  "expect": 25,
+  "game": "save T26: player food 25"
+ },
+ {
+  "rule": "a former government's legacy policy card (Autocracy -> Monarchy)",
+  "problem": "data/games/rome_20261007b.json",
+  "turn": 53,
+  "get": "'POLICY_GOV_AUTOCRACY' in s['policies']",
+  "expect": true,
+  "game": "save T53: policies include POLICY_GOV_AUTOCRACY"
+ },
+ {
+  "rule": "recorded boosts the rules cannot explain come from the record (other sources)",
+  "problem": "data/games/rome_20261007b.json",
+  "turn": 24,
+  "get": "'TECH_MASONRY' in s['exo_boosts']",
+  "expect": true,
+  "game": "save T25: Masonry boosted with no quarry"
+ },
+ {
+  "rule": "chopped production gets the item's production percent (Colonization + Ancestral Hall: +100%)",
+  "problem": "data/games/rome_20261007b.json",
+  "turn": 54,
+  "get": "city('ROME')['progress']['UNIT_SETTLER']",
+  "expect": 192,
+  "game": "save T55: Rome settler 192 = 84 + 21*2 + chop 33*2"
+ },
+ {
+  "rule": "a chop that finishes the item carries over only the plain amount beyond what it lacked",
+  "problem": "data/games/rome_20261007b.json",
+  "turn": 55,
+  "get": "city('ROME')['overflow']",
+  "expect": 20,
+  "game": "save T56: Rome market 40 = carry 20 (chop 33 - lacking 13) + the turn's 20"
+ },
+ {
+  "rule": "traders are built beyond the route capacity; a village's trader is not a purchase",
+  "problem": "data/games/rome_20261007b.json",
+  "turn": 41,
+  "get": "s['units_trained'].get('UNIT_TRADER')",
+  "expect": 3,
+  "game": "save T42: 3 traders (one bought, one from a tribal village) with capacity 2"
+ }
+]

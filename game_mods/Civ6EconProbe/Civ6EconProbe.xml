@@ -1,0 +1,3 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- A hidden UI context: loading it runs Civ6EconProbe.lua in the InGame UI. -->
+<Context Hidden="1" />

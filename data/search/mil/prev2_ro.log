@@ -1,0 +1,4 @@
+loaded ../../data/problems/france1014.json in 0.1s
+start -8011.8
+{"best":-8011.777341553449,"tried":1525,"seconds":5.609773513}
+saved data/search/mil/prev2_ro.json

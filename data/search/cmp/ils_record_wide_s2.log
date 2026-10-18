@@ -1,0 +1,62 @@
+loaded ../../data/problems/rome1007b_v2.json in 0.2s
+start 10407.6
+round 1: 10 kicks, 10 improving, 1 merged: incumbent 10407.6 -> 11462.9, best 11462.9 (93s) | settle 2/2, prod 1/1, research 1/1, governor 1/1, trade 1/1, builder 1/1, buy 1/1, drop 2/2
+   top: +1055.3 trade ["trade",44,0] -> ["route","AQUILEIA","ROME"]
+round 2: 10 kicks, 8 improving, 1 merged: incumbent 11462.9 -> 11787.7, best 11787.7 (181s) | settle 2/2, prod 2/2, research 3/4, governor 3/3, trade 1/1, builder 2/2, buy 2/2, drop 3/4
+   top: +324.8 prod ["prod","ROME",10] -> "BUILDING_GRANARY"
+round 3: 10 kicks, 3 improving, 2 merged: incumbent 11787.7 -> 11868.8, best 11868.8 (255s) | settle 2/3, prod 3/4, research 3/4, civic 0/1, governor 3/3, trade 2/2, builder 2/3, buy 3/3, drop 3/7
+   top: +78.6 trade ["trade",60,0] -> ["route","ROME","MEDIOLANUM"]
+round 4: 10 kicks, 3 improving, 1 merged: incumbent 11868.8 -> 11952.1, best 11952.1 (325s) | settle 2/3, prod 3/4, research 3/4, civic 0/1, governor 4/4, trade 3/4, builder 2/5, buy 4/6, drop 3/9
+   top: +83.3 trade ["trade",48,0] -> ["route","PUTEOLI","OSTIA"]
+round 5: 10 kicks, 3 improving, 2 merged: incumbent 11952.1 -> 12003.9, best 12003.9 (405s) | settle 2/4, prod 4/5, research 3/5, civic 0/1, governor 5/5, trade 3/5, builder 3/6, buy 4/7, drop 3/12
+   top: +28.4 builder ["builder",25,2] -> ["improve","ARPINUM",[23,41],"IMPROVEMENT_FISHING_BOATS"]
+round 6: 10 kicks, 2 improving, 1 merged: incumbent 12003.9 -> 12027.2, best 12027.2 (476s) | settle 2/5, prod 5/7, research 3/5, civic 0/1, governor 6/7, trade 3/7, builder 3/8, buy 4/8, drop 3/12
+   top: +23.3 prod ["prod","PUTEOLI",5] -> "DISTRICT_PRESERVE"
+round 7: 10 kicks, 1 improving, 1 merged: incumbent 12027.2 -> 12028.1, best 12028.1 (559s) | settle 2/6, prod 5/7, research 3/7, civic 0/1, governor 7/10, trade 3/9, builder 3/9, buy 4/9, drop 3/12
+   top: +0.9 governor ["governor","",12] -> ["appoint","GOVERNOR_THE_MERCHANT","AQUILEIA"]
+round 8: 10 kicks, 2 improving, 2 merged: incumbent 12028.1 -> 12098.7, best 12098.7 (637s) | settle 2/8, prod 5/7, research 3/10, civic 1/3, governor 7/10, trade 3/9, builder 3/10, buy 5/11, drop 3/12
+   top: +69.6 civic ["civic","",1] -> "CIVIC_CRAFTSMANSHIP"
+round 9: 10 kicks, 1 improving, 1 merged: incumbent 12098.7 -> 12157.6, best 12157.6 (718s) | settle 2/10, prod 6/10, research 3/11, civic 1/4, governor 7/12, trade 3/9, builder 3/10, buy 5/12, drop 3/12
+   top: +58.9 prod ["prod","MEDIOLANUM",18] -> "UNIT_SCOUT"
+round 10: 10 kicks, 1 improving, 1 merged: incumbent 12157.6 -> 12183.6, best 12183.6 (793s) | settle 2/11, prod 6/11, research 3/11, civic 1/5, governor 7/14, trade 3/11, builder 4/12, buy 5/13, drop 3/12
+   top: +26.0 builder ["builder",4,5] -> ["improve","VELITRAE",[24,33],"IMPROVEMENT_FISHING_BOATS"]
+round 11: 10 kicks, 0 improving, 0 merged: incumbent 12183.6 -> 12183.6, best 12183.6 (857s) | settle 2/12, prod 6/14, research 3/13, civic 1/6, governor 7/15, trade 3/11, builder 4/12, buy 5/15, drop 3/12
+   top: +0.0 governor ["governor","",18] -> ["appoint","GOVERNOR_THE_DEFENDER","ARPINUM"]
+round 12: 10 kicks, 2 improving, 2 merged: incumbent 12183.6 -> 12202.3, best 12202.3 (931s) | settle 2/13, prod 7/15, research 3/14, civic 1/6, governor 7/17, trade 3/14, builder 4/12, buy 6/16, drop 3/13
+   top: +12.0 prod ["prod","AQUILEIA",5] -> "BUILDING_WATER_MILL"
+round 13: 10 kicks, 1 improving, 1 merged: incumbent 12202.3 -> 12235.9, best 12235.9 (1009s) | settle 2/14, prod 7/16, research 3/14, civic 1/8, governor 7/18, trade 3/15, builder 4/13, buy 7/19, drop 3/13
+   top: +33.6 buy ["buy",32,0] -> ["tile","OSTIA",30,[25,45]]
+round 14: 10 kicks, 4 improving, 1 merged: incumbent 12235.9 -> 12308.4, best 12308.4 (1090s) | settle 2/14, prod 8/18, research 4/17, civic 2/10, governor 8/19, trade 3/15, builder 4/13, buy 7/20, drop 3/14
+   top: +72.5 prod ["prod","MEDIOLANUM",19] -> "BUILDING_WORKSHOP"
+round 15: 10 kicks, 2 improving, 1 merged: incumbent 12308.4 -> 12352.4, best 12352.4 (1175s) | settle 2/14, prod 9/22, research 4/17, civic 2/10, governor 8/22, trade 3/15, builder 5/15, buy 7/20, drop 3/15
+   top: +44.0 builder ["builder",14,3] -> ["harvest","ROME",[25,40],"feature"]
+round 16: 10 kicks, 1 improving, 1 merged: incumbent 12352.4 -> 12365.4, best 12365.4 (1256s) | settle 2/14, prod 9/24, research 4/17, civic 2/11, governor 8/25, trade 3/15, builder 6/17, buy 7/22, drop 3/15
+   top: +13.0 builder ["builder",14,3] -> ["harvest","ROME",[25,40],"feature"]
+round 17: 10 kicks, 2 improving, 1 merged: incumbent 12365.4 -> 12400.1, best 12400.1 (1335s) | settle 2/14, prod 9/24, research 4/19, civic 2/11, governor 9/28, trade 3/16, builder 7/18, buy 7/25, drop 3/15
+   top: +34.7 builder ["builder",21,1] -> ["improve","VELITRAE",[23,37],"IMPROVEMENT_LUMBER_MILL"]
+round 18: 10 kicks, 2 improving, 2 merged: incumbent 12400.1 -> 12421.5, best 12421.5 (1411s) | settle 2/14, prod 9/26, research 4/20, civic 2/12, governor 9/28, trade 3/17, builder 8/21, buy 8/26, drop 3/16
+   top: +8.1 buy ["buy",60,0] -> ["tile","VELITRAE",55,[23,34]]
+round 19: 10 kicks, 2 improving, 2 merged: incumbent 12421.5 -> 12464.2, best 12464.2 (1485s) | settle 2/14, prod 10/28, research 4/20, civic 2/14, governor 9/31, trade 3/18, builder 9/22, buy 8/26, drop 3/17
+   top: +28.7 builder ["builder",21,1] -> ["improve","VELITRAE",[23,37],"IMPROVEMENT_LUMBER_MILL"]
+round 20: 10 kicks, 1 improving, 1 merged: incumbent 12464.2 -> 12476.2, best 12476.2 (1562s) | settle 2/15, prod 10/29, research 4/20, civic 2/14, governor 9/33, trade 3/20, builder 10/24, buy 8/28, drop 3/17
+   top: +12.0 builder ["builder",16,0] -> ["harvest","AQUILEIA",[32,36],"feature"]
+round 21: 10 kicks, 2 improving, 2 merged: incumbent 12476.2 -> 12510.7, best 12510.7 (1640s) | settle 2/15, prod 11/33, research 4/20, civic 2/16, governor 9/35, trade 4/21, builder 10/25, buy 8/28, drop 3/17
+   top: +18.5 trade ["trade",59,0] -> ["route","CAESARAUGUSTA","MEDIOLANUM"]
+round 22: 10 kicks, 3 improving, 3 merged: incumbent 12510.7 -> 12586.9, best 12586.9 (1717s) | settle 2/15, prod 11/33, research 5/24, civic 2/16, governor 9/35, trade 4/21, builder 10/28, buy 10/30, drop 3/18
+   top: +62.0 research ["research","",2] -> "TECH_SAILING"
+round 23: 10 kicks, 1 improving, 1 merged: incumbent 12586.9 -> 12633.7, best 12633.7 (1797s) | settle 2/17, prod 11/35, research 5/24, civic 2/18, governor 9/37, trade 4/21, builder 10/28, buy 11/32, drop 3/18
+   top: +46.9 buy ["buy",60,0] -> ["tile","ROME",55,[28,39]]
+round 24: 10 kicks, 1 improving, 1 merged: incumbent 12633.7 -> 12637.7, best 12637.7 (1874s) | settle 2/18, prod 11/36, research 5/26, civic 2/18, governor 9/37, trade 4/24, builder 10/28, buy 12/35, drop 3/18
+   top: +4.0 buy ["buy",60,0] -> ["tile","VELITRAE",55,[23,34]]
+value +1055.3 x1 trade ["trade",44,0] -> ["route","AQUILEIA","ROME"]
+value +618.8 x1 builder ["builder",3,5] -> ["improve","ARPINUM",[23,39],"IMPROVEMENT_MINE"]
+value +221.0 x4 governor ["governor","",18] -> ["appoint","GOVERNOR_THE_DEFENDER","ARPINUM"]
+value +173.0 x2 prod ["prod","ROME",10] -> "BUILDING_GRANARY"
+value +83.3 x1 trade ["trade",48,0] -> ["route","PUTEOLI","OSTIA"]
+value +78.6 x1 trade ["trade",60,0] -> ["route","ROME","MEDIOLANUM"]
+value +72.5 x1 prod ["prod","MEDIOLANUM",19] -> "BUILDING_WORKSHOP"
+value +59.4 x1 builder ["builder",31,0] -> ["harvest","OSTIA",[25,41],"feature"]
+value +52.1 x2 governor ["governor","",12] -> ["appoint","GOVERNOR_THE_MERCHANT","AQUILEIA"]
+value +33.6 x1 buy ["buy",32,0] -> ["tile","OSTIA",30,[25,45]]
+{"best":12637.740000000002,"rounds":24,"seconds":1874.417928341}
+saved ../../data/search/cmp/ils_record_wide_s2.json.tmp

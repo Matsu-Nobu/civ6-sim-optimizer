@@ -1,0 +1,5 @@
+loaded ../../data/problems/france1014.json in 0.2s
+requirement GREAT_PERSON_CLASS_GENERAL: the one on offer at T45 is Some("GREAT_PERSON_INDIVIDUAL_AETHELFLAED"), 75 points
+start -4637.9
+{"best":-1965.1399999999999,"tried":5209,"seconds":39.616230522}
+saved data/search/mil/feasb45.json

@@ -1,0 +1,60 @@
+loaded ../../data/problems/rome1007b_v2.json in 0.2s
+start 10407.6
+round 1: 10 kicks, 7 improving, 1 merged: incumbent 10407.6 -> 11393.0, best 11393.0 (88s) | research 2/2, civic 2/2, buy 2/2, drop 1/4
+   top: +985.5 research ["research","",8] -> "TECH_MASONRY"
+round 2: 10 kicks, 7 improving, 2 merged: incumbent 11393.0 -> 11745.0, best 11745.0 (171s) | prod 1/1, research 2/2, civic 4/5, buy 6/6, drop 1/6
+   top: +334.8 civic ["civic","",12] -> "CIVIC_MEDIEVAL_FAIRES"
+round 3: 10 kicks, 8 improving, 1 merged: incumbent 11745.0 -> 11987.5, best 11987.5 (252s) | settle 1/2, prod 1/1, research 4/4, civic 4/5, governor 0/1, trade 2/2, builder 2/2, buy 7/7, drop 1/6
+   top: +242.5 research ["research","",8] -> "TECH_MASONRY"
+round 4: 10 kicks, 6 improving, 3 merged: incumbent 11987.5 -> 12319.3, best 12319.3 (338s) | settle 1/2, prod 2/2, research 5/6, civic 5/6, governor 1/3, trade 3/3, builder 3/3, buy 7/7, drop 1/8
+   top: +273.2 builder ["builder",10,7] -> ["harvest","OSTIA",[27,42],"feature"]
+round 5: 10 kicks, 5 improving, 2 merged: incumbent 12319.3 -> 12471.2, best 12471.2 (423s) | settle 1/3, prod 4/4, research 6/9, civic 5/7, governor 1/3, trade 4/5, builder 3/3, buy 8/8, drop 1/8
+   top: +77.7 prod ["prod","PUTEOLI",3] -> "BUILDING_ARENA"
+round 6: 10 kicks, 2 improving, 1 merged: incumbent 12471.2 -> 12688.7, best 12688.7 (513s) | settle 1/4, prod 4/5, research 7/12, civic 5/8, governor 1/3, trade 4/6, builder 3/5, buy 9/9, drop 1/8
+   top: +217.5 research ["research","",0] -> "TECH_ANIMAL_HUSBANDRY"
+round 7: 10 kicks, 5 improving, 1 merged: incumbent 12688.7 -> 12848.8, best 12848.8 (602s) | settle 1/6, prod 5/7, research 7/12, civic 5/8, governor 1/3, trade 5/8, builder 4/6, buy 11/12, drop 1/8
+   top: +160.1 trade ["trade",45,0] -> ["route","MEDIOLANUM","AQUILEIA"]
+round 8: 10 kicks, 4 improving, 2 merged: incumbent 12848.8 -> 12933.8, best 12933.8 (678s) | settle 1/6, prod 7/9, research 8/13, civic 5/12, governor 1/3, trade 5/9, builder 4/6, buy 12/14, drop 1/8
+   top: +84.0 prod ["prod","PUTEOLI",4] -> "DISTRICT_CAMPUS"
+round 9: 10 kicks, 1 improving, 1 merged: incumbent 12933.8 -> 13043.2, best 13043.2 (763s) | settle 1/7, prod 7/10, research 8/13, civic 5/12, governor 1/5, trade 5/10, builder 5/8, buy 12/15, drop 1/10
+   top: +109.4 builder ["builder",15,1] -> ["wait"]
+round 10: 10 kicks, 2 improving, 2 merged: incumbent 13043.2 -> 13055.5, best 13055.5 (838s) | settle 1/9, prod 7/11, research 8/14, civic 5/12, governor 1/6, trade 5/10, builder 6/11, buy 13/17, drop 1/10
+   top: +9.7 buy ["buy",59,0] -> ["tile","PUTEOLI",80,[28,43]]
+round 11: 10 kicks, 0 improving, 0 merged: incumbent 13055.5 -> 13055.5, best 13055.5 (915s) | settle 1/9, prod 7/13, research 8/17, civic 5/12, governor 1/6, trade 5/12, builder 6/13, buy 13/18, drop 1/10
+   top: +0.0 research ["research","",0] -> "TECH_ANIMAL_HUSBANDRY"
+round 12: 10 kicks, 5 improving, 2 merged: incumbent 13055.5 -> 13139.2, best 13139.2 (983s) | settle 1/10, prod 8/14, research 8/18, civic 5/13, governor 1/6, trade 5/14, builder 8/15, buy 15/20, drop 1/10
+   top: +56.5 builder ["builder",19,1] -> ["improve","PUTEOLI",[30,42],"IMPROVEMENT_MINE"]
+round 13: 10 kicks, 3 improving, 1 merged: incumbent 13139.2 -> 13179.4, best 13179.4 (1063s) | settle 1/10, prod 8/14, research 8/18, civic 5/14, governor 1/6, trade 5/15, builder 10/18, buy 16/24, drop 1/11
+   top: +40.2 builder ["builder",17,0] -> ["harvest","OSTIA",[27,42],"feature"]
+round 14: 10 kicks, 2 improving, 2 merged: incumbent 13179.4 -> 13205.5, best 13205.5 (1143s) | settle 1/10, prod 8/14, research 9/21, civic 5/14, governor 1/7, trade 5/16, builder 11/20, buy 16/27, drop 1/11
+   top: +15.0 research ["research","",17] -> "TECH_BRONZE_WORKING"
+round 15: 10 kicks, 0 improving, 0 merged: incumbent 13205.5 -> 13205.5, best 13205.5 (1219s) | settle 1/11, prod 8/15, research 9/24, civic 5/15, governor 1/8, trade 5/17, builder 11/22, buy 16/27, drop 1/11
+   top: +0.0 builder ["builder",21,0] -> ["improve","MEDIOLANUM",[32,40],"IMPROVEMENT_MINE"]
+round 16: 10 kicks, 2 improving, 1 merged: incumbent 13205.5 -> 13236.2, best 13236.2 (1300s) | settle 1/11, prod 8/16, research 9/25, civic 5/16, governor 1/9, trade 5/17, builder 13/27, buy 16/28, drop 1/11
+   top: +30.7 builder ["builder",15,0] -> ["harvest","AQUILEIA",[34,36],"feature"]
+round 17: 10 kicks, 2 improving, 1 merged: incumbent 13236.2 -> 13272.1, best 13272.1 (1375s) | settle 1/11, prod 8/17, research 9/26, civic 5/16, governor 1/9, trade 5/17, builder 15/30, buy 16/33, drop 1/11
+   top: +35.9 builder ["builder",17,1] -> ["improve","MEDIOLANUM",[30,37],"IMPROVEMENT_MINE"]
+round 18: 10 kicks, 1 improving, 1 merged: incumbent 13272.1 -> 13280.9, best 13280.9 (1455s) | settle 1/11, prod 9/18, research 9/27, civic 5/17, governor 1/10, trade 5/19, builder 15/33, buy 16/34, drop 1/11
+   top: +8.8 prod ["prod","PUTEOLI",4] -> "DISTRICT_CAMPUS"
+round 19: 10 kicks, 1 improving, 1 merged: incumbent 13280.9 -> 13291.1, best 13291.1 (1538s) | settle 1/11, prod 9/21, research 9/29, civic 5/18, governor 1/12, trade 5/20, builder 16/34, buy 16/34, drop 1/11
+   top: +10.2 builder ["builder",19,1] -> ["improve","CAESARAUGUSTA",[35,39],"IMPROVEMENT_MINE"]
+round 20: 10 kicks, 0 improving, 0 merged: incumbent 13291.1 -> 13291.1, best 13291.1 (1611s) | settle 1/12, prod 9/24, research 9/30, civic 5/19, governor 1/13, trade 5/20, builder 16/34, buy 16/36, drop 1/12
+   top: +0.0 prod ["prod","OSTIA",11] -> "UNIT_BUILDER"
+round 21: 10 kicks, 2 improving, 2 merged: incumbent 13291.1 -> 13300.5, best 13300.5 (1690s) | settle 1/13, prod 10/25, research 9/30, civic 5/19, governor 1/13, trade 5/22, builder 16/37, buy 17/39, drop 1/12
+   top: +6.4 prod ["prod","OSTIA",11] -> "UNIT_BUILDER"
+round 22: 10 kicks, 0 improving, 0 merged: incumbent 13300.5 -> 13300.5, best 13300.5 (1764s) | settle 1/14, prod 10/27, research 9/33, civic 5/20, governor 1/14, trade 5/22, builder 16/38, buy 17/39, drop 1/13
+   top: +0.0 research ["research","",10] -> "TECH_HORSEBACK_RIDING"
+round 23: 10 kicks, 0 improving, 0 merged: incumbent 13300.5 -> 13300.5, best 13300.5 (1845s) | settle 1/15, prod 10/27, research 9/34, civic 5/21, governor 1/16, trade 5/23, builder 16/40, buy 17/41, drop 1/13
+   top: -9.8 buy ["buy",58,0] -> ["item","AQUILEIA","UNIT_SCOUT",60]
+value +614.0 x2 research ["research","",8] -> "TECH_MASONRY"
+value +339.7 x3 buy ["buy",40,0] -> ["tile","ARPINUM",35,[21,41]]
+value +334.8 x1 civic ["civic","",12] -> "CIVIC_MEDIEVAL_FAIRES"
+value +226.2 x1 prod ["prod","PUTEOLI",1] -> "BUILDING_ETEMENANKI"
+value +216.2 x1 buy ["buy",57,0] -> ["tile","RAVENNA",50,[31,35]]
+value +207.1 x2 trade ["trade",44,0] -> ["route","MEDIOLANUM","ROME"]
+value +179.7 x4 buy ["buy",54,0] -> ["item","ROME","BUILDING_GRANARY",130]
+value +162.7 x1 prod ["prod","ROME",16] -> "BUILDING_TEMPLE_ARTEMIS"
+value +160.1 x1 trade ["trade",45,0] -> ["route","MEDIOLANUM","AQUILEIA"]
+value +157.8 x1 builder ["builder",16,2] -> ["improve","ROME",[28,41],"IMPROVEMENT_MINE"]
+{"best":13300.5,"rounds":23,"seconds":1844.622644593}
+saved ../../data/search/cmp/ils_record_wide_s1.json.tmp

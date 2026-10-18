@@ -1,0 +1,15 @@
+loaded ../../data/problems/france1014.json in 0.1s
+requirement GREAT_PERSON_CLASS_GENERAL: the one on offer at T44 is Some("GREAT_PERSON_INDIVIDUAL_AETHELFLAED"), 75 points
+requirement GREAT_PERSON_CLASS_GENERAL>ERA_RENAISSANCE: the one on offer at T67 is Some("GREAT_PERSON_INDIVIDUAL_GUSTAVUS_ADOLPHUS"), 155 points
+allies (record's routes): [1]
+allies (record's routes): [1]
+allies (record's routes): [1]
+allies (record's routes): [1]
+allies (record's routes): [1]
+allies (record's routes): [1]
+allies (record's routes): [1]
+allies (record's routes): [1]
+allies (record's routes): [1]
+start -8176.6
+{"best":6395.971303594631,"tried":19944,"seconds":268.313621517}
+saved data/search/ms67/a.json

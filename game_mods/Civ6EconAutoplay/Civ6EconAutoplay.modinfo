@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Mod id="7d3c2f1a-6b4e-4c1e-9a52-econautoplay1" version="2">
+  <Properties>
+    <Name>Civ6 Econ Autoplay</Name>
+    <Description>Runner for the civ6-econ project: driven by Civ6EconRunnerConfig.lua (written by the project's scripts). With MODE = "off" it does nothing, so it is safe to leave enabled.</Description>
+    <Teaser>Automated runs for civ6-econ (off by default)</Teaser>
+    <Authors>civ6-econ</Authors>
+    <CompatibleVersions>1.2,2.0</CompatibleVersions>
+    <AffectsSavedGames>0</AffectsSavedGames>
+  </Properties>
+  <FrontEndActions>
+    <AddUserInterfaces id="econrunner_frontend">
+      <Properties>
+        <Context>FrontEnd</Context>
+      </Properties>
+      <File>Civ6EconRunnerFront.xml</File>
+    </AddUserInterfaces>
+    <ImportFiles id="econrunner_frontend_files">
+      <Properties>
+        <LoadOrder>10000</LoadOrder>
+      </Properties>
+      <File>MainMenu.lua</File>
+      <File>MainMenu.xml</File>
+      <File>LoadScreen.lua</File>
+      <File>Civ6EconRunnerConfig.lua</File>
+    </ImportFiles>
+  </FrontEndActions>
+  <InGameActions>
+    <AddUserInterfaces id="econautoplay_ui">
+      <Properties>
+        <Context>InGame</Context>
+      </Properties>
+      <File>Civ6EconAutoplay.xml</File>
+    </AddUserInterfaces>
+    <ImportFiles id="econautoplay_files">
+      <File>Civ6EconAutoplay.lua</File>
+      <File>Civ6EconRunnerConfig.lua</File>
+      <File>Civ6EconPlanRunner.lua</File>
+      <File>Civ6EconPlan.lua</File>
+    </ImportFiles>
+  </InGameActions>
+  <Files>
+    <File>Civ6EconAutoplay.xml</File>
+    <File>Civ6EconAutoplay.lua</File>
+    <File>Civ6EconRunnerFront.xml</File>
+    <File>Civ6EconRunnerFront.lua</File>
+    <File>Civ6EconRunnerConfig.lua</File>
+    <File>MainMenu.lua</File>
+    <File>MainMenu.xml</File>
+    <File>LoadScreen.lua</File>
+    <File>Civ6EconPlanRunner.lua</File>
+    <File>Civ6EconPlan.lua</File>
+  </Files>
+</Mod>

@@ -1,0 +1,67 @@
+# 概要
+
+Civilization VI に BBG（対戦向けにバランスを調整する mod）を入れたマルチプレイで、強い内政の進め方を計算で見つけ、自分の対局を振り返るためのプロジェクトである。自分の対局の記録をシミュレータで再現し、探索プログラムで最良の計画を作り、自分のプレイと比べる。
+
+# 目的
+
+## 強い内政の進め方を見つける
+
+BBG は更新のたびに強い進め方が変わるので、勘や定石に頼らず、ルールの表から計算し直せる方法で見つけたい。作戦ごとに、必要な技術やユニットを期限までにそろえたうえで、食料と生産が最も伸びる計画を探す。
+
+## 自分の対局を振り返る
+
+最終的には、対局ごとに、決定ごとの損失の一覧を作りたい。決定とは、何を生産するか、どこに都市を建てるか、何を研究するか、総督をどう使うか、といった選択である。損失は、その決定を最良の計画の決定に替えたときに、食料と生産の合計がどれだけ増えるかで表す。
+
+この一覧はまだ作っていない。今は、作戦ごとの最良の計画と自分のプレイの違いを、レポートにまとめている。
+
+# 現状の制約
+
+次のものは、今のシミュレータでは扱えないか、簡略化している。どれも、必要になれば対応する。
+
+| 制約 | 今の扱い |
+|---|---|
+| 都市の占領 | 計算できないので、計画の中では占領が起きない前提にしている |
+| 時代スコア、黄金時代と暗黒時代、献身 | 計算せず、対局の記録の時代をそのまま与えている |
+| 政策の有料の入れ替え | 社会制度の完成と政体の変更のときの、無料の入れ替えだけを扱う |
+| 研究の同盟の 2 段目以降 | 1 段目の、同盟国への交易路の科学だけを扱う |
+
+# スコープ外
+
+戦闘の勝敗と軍事の強さは計算しない。軍事が要る作戦では、必要なユニットの数を条件として与え、そのユニットを期限までにそろえるための内政だけを最適化する。
+
+他のプレイヤーの行動も予測しない。他のプレイヤーが建てた遺産や取った偉人、ゲームの時代の変わり目は、対局の記録で起きたとおりに与える。
+
+# 実験の再現
+
+リポジトリには、セーブから書き出した対局の記録と地図（`data/exports`）と、探索の実行スクリプトと結果（`data/search`）が入っている。ゲームのルールのデータベースは入れていないので、自分のゲームから作る。
+
+## 必要なもの
+
+Civilization VI（Steam 版）と、`data/exports/game_<日付>_mods.txt` に記載した版の mod が要る。どの対局も、Better Balanced Game 7.5.1、BBG Expanded 2.1、Better Balanced Map 1.39.5、Multiplayer Helper 1.8.0 を使った。ほかに、Homebrew で `rustup`、`zstd`、`python` を入れる。
+
+## 手順
+
+| 手順 | すること |
+|---|---|
+| ルールのデータベースを作る | 上の mod を入れて、記録した対局と同じ設定（勝利条件など）でゲームを始める。ゲームが書き出す `%LOCALAPPDATA%/Firaxis Games/Sid Meier's Civilization VI/Cache/DebugGameplay.sqlite` を、`data/rules/<対局データの名前>.sqlite`（例 `france_20261014.sqlite`）にコピーする |
+| ゲームの文章のデータベースを作る | `python3 python_legacy/scripts/build_text_db.py` を実行する。Steam の既定の場所に入れたゲームと mod から、`data/rules/text_en.sqlite` を作る |
+| 対局データを作る | `save_export/build_games.sh` を実行する。`data/games` に対局データができる |
+| プログラムをビルドする | `cd optimizer && cargo build --release` を実行する |
+| 探索を回す | `data/search/<実験>/run.sh` を実行する。実験の一覧は [docs/artifacts.md](docs/artifacts.md) にある |
+
+ルールのデータベースは、mod の版だけでなく、勝利条件などのゲームの設定でも中身が変わる。設定が違うと、結果は一致しない。
+
+# 文書の案内
+
+初めて読むときは、この文書、`docs/approach.md`、`docs/reports/` のレポートの順に読むと、全体がつかめる。特定の日の作業、決めたことの理由、ファイルの場所を調べるときは、それぞれ `docs/history.md`、`docs/decisions.md`、`docs/artifacts.md` を読む。
+
+| 文書 | 内容 |
+|---|---|
+| [approach.md](docs/approach.md) | 対局の記録を取り込んでから計画を比べるまでの進め方と、計画の点数の付け方 |
+| [history.md](docs/history.md) | 日付ごとの作業と結果 |
+| [decisions.md](docs/decisions.md) | 日付ごとに決めたことと、その理由 |
+| [artifacts.md](docs/artifacts.md) | シミュレータ、探索プログラム、データ、スクリプト、mod の一覧と使い方 |
+| [reports/search_methods.md](docs/reports/search_methods.md) | 探索の手法を比べた結果 |
+| [reports/opening.md](docs/reports/opening.md) | 序盤のタイル選び・偵察兵・開拓者の定石 |
+| [reports/france_courser_spike.md](docs/reports/france_courser_spike.md) | フランスでコーサーに上げて攻める作戦の内政の計画 |
+| [reports/persia_20261017.md](docs/reports/persia_20261017.md) | 10/17 のペルシャのマルチ戦の分析 |

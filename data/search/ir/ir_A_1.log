@@ -1,0 +1,18 @@
+loaded ../../data/problems/rome1007b_v2.json in 0.2s
+milestone TECH_COMBUSTION by T85: path 28 items, cost 7258; growth x78.6, recorded boosts 3021
+milestone CIVIC_TOTALITARIANISM by T90: path 28 items, cost 9854; growth x33.2, recorded boosts 2449
+start 22922.7, 444 decisions
+kick 1 T32 focus "balanced" -> "faith": 24809.0 vs 22922.7 accepted (501s, 814 tried)
+kick 2 T58 gp "wait" -> "GREAT_PERSON_INDIVIDUAL_MARCUS_LICINIUS_CRASSUS": 30576.1 vs 24809.0 accepted (1107s, 1964 tried)
+kick 3 T51 prod "BUILDING_WORKSHOP" -> "BUILDING_LIBRARY": 32368.2 vs 30576.1 accepted (2222s, 4482 tried)
+kick 4 T52 prod "DISTRICT_BATH" -> "DISTRICT_INDUSTRIAL_ZONE": 32239.9 vs 32368.2 (3385s, 7046 tried)
+kick 5 T21 research "TECH_CURRENCY" -> "TECH_ASTROLOGY": 4164.4 vs 32368.2 (3570s, 7314 tried)
+kick 6 T32 governor ["promote","GOVERNOR_THE_BUILDER","BBG_AGRICULTURE_PROMOTION"] -> ["appoint","GOVERNOR_THE_EDUCATOR","OSTIA"]: 26295.6 vs 32368.2 (3949s, 8032 tried)
+kick 7 T52 civic "CIVIC_RECORDED_HISTORY" -> "CIVIC_THEOLOGY": 32837.5 vs 32368.2 accepted (5147s, 10709 tried)
+kick 8 T37 builder ["improve","ROME",[27,39],"IMPROVEMENT_MINE"] -> ["harvest","CAESARAUGUSTA",[33,41],"feature"]: 30336.2 vs 32837.5 (5987s, 11995 tried)
+kick 9 T44 builder ["improve","CAESARAUGUSTA",[35,39],"IMPROVEMENT_MINE"] -> ["improve","MEDIOLANUM",[29,42],"IMPROVEMENT_MINE"]: 32772.5 vs 32837.5 (6979s, 13611 tried)
+kick 10 T55 focus "balanced" -> "production": 33061.5 vs 32837.5 accepted (7955s, 15752 tried)
+kick 11 T45 focus "balanced" -> "culture": 33319.2 vs 33061.5 accepted (8808s, 17266 tried)
+kick 12 T59 policy "POLICY_CRAFTSMEN" -> "POLICY_LIMITANEI": 33348.9 vs 33319.2 accepted (9006s, 17652 tried)
+{"best":33319.22000000001,"kicks":12,"accepted":6,"tried":17652,"seconds":9006.25974298}
+saved data/search/ir/ir_A.json

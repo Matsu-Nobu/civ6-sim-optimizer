@@ -1,0 +1,15 @@
+# セーブにはほかのプレイヤーの名前が入っている
+data/saves/
+# ゲームのルールと文章のデータベース、それを含む対局データ（ゲームと mod の著作物）
+data/rules/
+data/games/
+# ゲームから読んだ検証用の値と、計画をゲームで再生した記録
+data/probe/
+data/plans/
+data/regress_validate.log
+# 書き出した記録と地図は、圧縮した .zst だけを入れる
+data/exports/*.jsonl
+data/exports/*_map_T*.json
+# ビルドの出力
+optimizer/target/
+__pycache__/

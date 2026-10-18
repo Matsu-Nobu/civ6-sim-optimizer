@@ -1,0 +1,14 @@
+loaded ../../data/problems/france1014.json in 0.1s
+requirement GREAT_PERSON_CLASS_GENERAL: the one on offer at T44 is Some("GREAT_PERSON_INDIVIDUAL_AETHELFLAED"), 75 points
+allies (record's routes): [1]
+allies (record's routes): [1]
+allies (record's routes): [1]
+allies (record's routes): [1]
+allies (record's routes): [1]
+allies (record's routes): [1]
+allies (record's routes): [1]
+allies (record's routes): [1]
+allies (record's routes): [1]
+start 7242.8, 368 decisions
+kick 1 T48 focus "balanced" -> "faith": 7242.8 vs 7242.8 (16s, 2043 tried)
+kick 2 T49 prod "BUILDING_WATER_MILL" -> "UNIT_HEAVY_CHARIOT": 7180.8 vs 7242.8 (44s, 5979 tried)

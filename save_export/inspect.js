@@ -1,0 +1,13 @@
+const { parseCiv6Save } = require('../third_party/civ6-savegame-parser');
+const fs = require('fs');
+const g = parseCiv6Save(fs.readFileSync(process.argv[2]));
+const short = (v) => JSON.stringify(v, (k, x) => (k === 'offset' ? undefined : x)).slice(0, 600);
+console.log('top keys:', Object.keys(g));
+console.log('metadata:', short(g.metadata));
+console.log('map keys:', Object.keys(g.map), 'plots:', g.map.plots?.length);
+console.log('plot[0]:', short(g.map.plots[0]));
+console.log('cities:', g.cities.length);
+for (const c of g.cities) console.log(' city:', short(c));
+const players = Array.isArray(g.players) ? g.players : Object.values(g.players);
+console.log('players:', players.length);
+console.log('player keys:', Object.keys(players[0]));

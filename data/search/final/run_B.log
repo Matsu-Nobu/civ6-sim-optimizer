@@ -1,0 +1,9 @@
+13:05 attempt 1 from data/search/final/ma_B.json, 200 minutes left
+scripts/long_ma.sh: line 24:  1097 Aborted                    nice -n 19 $BIN ma $P --turn 60 --ext 10 --seed $((SEED + try - 1)) --threads $THREADS --pop ${POP:-10} --init $init --budget 70 --minutes $left --stall $STALL --out "$OUT" > "${OUT%.json}_$try.log" 2>&1
+free(): invalid size
+attempt 1 died (exit 134); restarting from the saved best
+13:24 attempt 2 from data/search/final/ma_B.json, 181 minutes left
+scripts/long_ma.sh: line 24:  5102 Aborted                    nice -n 19 $BIN ma $P --turn 60 --ext 10 --seed $((SEED + try - 1)) --threads $THREADS --pop ${POP:-10} --init $init --budget 70 --minutes $left --stall $STALL --out "$OUT" > "${OUT%.json}_$try.log" 2>&1
+free(): invalid size
+attempt 2 died (exit 134); restarting from the saved best
+14:13 attempt 3 from data/search/final/ma_B.json, 132 minutes left

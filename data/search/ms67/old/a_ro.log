@@ -1,0 +1,14 @@
+loaded ../../data/problems/france1014.json in 0.1s
+requirement GREAT_PERSON_CLASS_GENERAL: the one on offer at T44 is Some("GREAT_PERSON_INDIVIDUAL_AETHELFLAED"), 75 points
+allies (record's routes): [1]
+allies (record's routes): [1]
+allies (record's routes): [1]
+allies (record's routes): [1]
+allies (record's routes): [1]
+allies (record's routes): [1]
+allies (record's routes): [1]
+allies (record's routes): [1]
+allies (record's routes): [1]
+start 105.7
+{"best":7242.77130359463,"tried":20067,"seconds":269.257702932}
+saved data/search/ms67/a.json

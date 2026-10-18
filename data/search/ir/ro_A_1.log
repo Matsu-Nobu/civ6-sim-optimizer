@@ -1,0 +1,6 @@
+loaded ../../data/problems/rome1007b_v2.json in 0.2s
+milestone TECH_COMBUSTION by T85: path 28 items, cost 7258; growth x78.6, recorded boosts 3021
+milestone CIVIC_TOTALITARIANISM by T90: path 28 items, cost 9854; growth x33.2, recorded boosts 2449
+start 22922.7
+pass 0 T31 buy ["none"] -> ["tile","OSTIA",30,[27,42]]: 22922.7 -> 22936.7 (344s, 539 tried)
+free(): invalid pointer

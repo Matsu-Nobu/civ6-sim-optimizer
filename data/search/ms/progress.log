@@ -1,0 +1,6 @@
+04:10 B attempt 1 from data/search/rollout/ro_B.json (90 min left)
+04:10 C attempt 1 from data/search/rollout/ro_C.json (90 min left)
+04:10 A attempt 1 from data/search/rollout/ro_A.json (90 min left)
+05:10 C done: saved data/search/ms/ms_C.json
+05:40 A done: saved data/search/ms/ms_A.json
+05:40 B done: saved data/search/ms/ms_B.json

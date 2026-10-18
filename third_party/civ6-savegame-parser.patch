@@ -1,0 +1,208 @@
+diff --git a/src/internal/hash-tables.ts b/src/internal/hash-tables.ts
+index d0c238d..c5f9ff3 100644
+--- a/src/internal/hash-tables.ts
++++ b/src/internal/hash-tables.ts
+@@ -79,6 +79,18 @@ function typeIndex(): Map<number, Civ6Type> {
+     return typeByHash;
+ }
+ 
++/**
++ * Add types the bundled dictionary lacks (mod additions such as BBG's governor promotions), e.g. from the
++ * game's post-mod Types table. Existing names are kept; the hash index is rebuilt on next use.
++ */
++export function registerTypes(entries: Array<{ name: string; kind: string }>): void {
++    for (const { name, kind } of entries) {
++        const list = (CIV6_TYPES[kind] ??= []);
++        if (!list.includes(name)) list.push(name);
++    }
++    typeByHash = null;
++}
++
+ /** The database type behind a hash from either storage form, or null when no type has it. */
+ export function resolveTypeHash(hash: number): Civ6Type | null {
+     if (hash === 0xffffffff || hash === 0) return null;
+diff --git a/src/internal/parse-city-history.ts b/src/internal/parse-city-history.ts
+index 7285ee8..300f9ad 100644
+--- a/src/internal/parse-city-history.ts
++++ b/src/internal/parse-city-history.ts
+@@ -4,7 +4,8 @@ const LP_RE = /^[A-Za-z][A-Za-z0-9_]*$/;
+ 
+ function readLpStrings(payload: Buffer, start: number, end: number): string[] {
+     const out: string[] = [];
+-    let i = start;
++    let i = Math.max(0, start);
++    end = Math.min(end, payload.length);
+     while (i + 8 < end) {
+         const len = payload.readUInt32LE(i);
+         if (len < 1 || len > 80) {
+diff --git a/src/internal/parse-great-people.ts b/src/internal/parse-great-people.ts
+index c6f8fb9..10cde24 100644
+--- a/src/internal/parse-great-people.ts
++++ b/src/internal/parse-great-people.ts
+@@ -37,6 +37,7 @@ export interface Civ6GreatPeople {
+     ledger: Civ6GreatPersonOffer[];
+ }
+ 
++/** Base game classes; mods (BBG) add more, which makes the tables longer. */
+ const CLASS_ENTRIES = 10;
+ 
+ /** A unit record is at most this long; the player's own tables start past the last one. */
+@@ -54,11 +55,11 @@ export function parseGreatPeople(
+         const from = players[i]!.payloadOffset;
+         const to = players[i + 1]?.payloadOffset ?? payload.length;
+         const lastUnit = Math.max(from, ...units.filter(u => u.ownerId === i && u.payloadOffset > from && u.payloadOffset < to).map(u => u.payloadOffset + UNIT_SPAN));
+-        const mine = tables.filter(t => t.kind === 'KIND_GREAT_PERSON_CLASS' && t.stride === 8 && t.count === CLASS_ENTRIES && t.start > lastUnit && t.start < to);
++        const mine = tables.filter(t => t.kind === 'KIND_GREAT_PERSON_CLASS' && t.stride === 8 && t.count >= CLASS_ENTRIES && t.start > lastUnit && t.start < to);
+         const [banked, perTurn] = mine;
+         const points: Record<string, { banked: number; perTurn: number }> = {};
+         if (banked && perTurn) {
+-            for (let k = 0; k < CLASS_ENTRIES; k++) {
++            for (let k = 0; k < Math.min(banked.count, perTurn.count); k++) {
+                 const b = getTableEntry(payload, banked, k)!, r = getTableEntry(payload, perTurn, k)!;
+                 if (b.int !== 0 || r.int !== 0) points[b.name] = { banked: b.int / 256, perTurn: r.int / 256 };
+             }
+diff --git a/src/internal/parse-players.ts b/src/internal/parse-players.ts
+index a943ee6..2ea455d 100644
+--- a/src/internal/parse-players.ts
++++ b/src/internal/parse-players.ts
+@@ -26,7 +26,7 @@
+  */
+ 
+ import { resolveTypeHash } from './hash-tables';
+-import { activeEntries, detectTypedTables, type TypedTable } from './typed-tables';
++import { activeEntries, allEntries, detectTypedTables, type TypedTable } from './typed-tables';
+ 
+ export interface Civ6PlayerState {
+     /** Civ6 player id — the `ownerId` on tiles, cities and units. */
+@@ -328,7 +328,8 @@ export function parsePlayerStates(payload: Buffer, tables?: TypedTable[]): Civ6P
+             // A card never slotted cannot be slotted now: an empty legacy set (city-states) means
+             // whatever the backwards scan found ahead of the table is not a slot list.
+             policiesSlotted: slottedTable
+-                ? activeEntries(payload, slottedTable).filter(e => e.int >= 0 && e.int <= 15).map(e => ({ policy: e.name, slot: e.int }))
++                // allEntries, not activeEntries: a card in slot 0 has the value 0 and would be dropped as inactive.
++                ? allEntries(payload, slottedTable).filter(e => e.int >= 0 && e.int <= 15).map(e => ({ policy: e.name, slot: e.int }))
+                 : civicsOk && civicsCompleted && names(payload, everSlotted).length > 0 ? slottedPolicies(payload, civicsCompleted.start) : [],
+             policiesEverSlotted: names(payload, everSlotted),
+             yields: scaled(payload, yields, 256),
+diff --git a/src/internal/parse-plot-yield-changes.ts b/src/internal/parse-plot-yield-changes.ts
+index def9743..0b63bc7 100644
+--- a/src/internal/parse-plot-yield-changes.ts
++++ b/src/internal/parse-plot-yield-changes.ts
+@@ -49,7 +49,8 @@ export function parsePlotYieldChanges(payload: Buffer, plotCount: number): Map<n
+             index.push(v);
+         }
+         if (!ok) continue;
+-        if (entryCount === 0) return out;
++        // An all-empty table of the same shape can come first (seen on BBG saves); keep looking for the real one.
++        if (entryCount === 0) continue;
+         const entries: Civ6YieldChanges[] = [];
+         let cursor = recordsAt;
+         for (let e = 0; e < entryCount; e++) {
+diff --git a/src/internal/parse-tiles.ts b/src/internal/parse-tiles.ts
+index 7c39784..12c3458 100644
+--- a/src/internal/parse-tiles.ts
++++ b/src/internal/parse-tiles.ts
+@@ -13,26 +13,32 @@ function readU32(buf: Buffer, offset: number): number {
+ }
+ 
+ export function parseMapTiles(payload: Buffer): Civ6MapSection {
+-    const markerStart = payload.indexOf(TILE_SECTION_MARKER);
++    // The marker bytes can also occur by chance before the real tile section (a standard Pangaea map seen with
++    // a false hit reading 13 tiles): take the first occurrence whose tile count is a whole number of map rows.
++    let markerStart = payload.indexOf(TILE_SECTION_MARKER);
+     if (markerStart < 0) {
+         throw new Error('Civ6Save: tile section marker not found in payload');
+     }
+-
+-    const tileCount = payload.readUInt32LE(markerStart + 12);
+-    const widthSearch = Buffer.concat([
+-        Buffer.from([0, 0, 0, 0]),
+-        payload.subarray(markerStart + 12, markerStart + 16),
+-    ]);
+-
++    let tileCount = 0;
+     let width = 0;
+-    let searchPos = -1;
+-    while (width <= 0) {
+-        searchPos = payload.indexOf(widthSearch, searchPos + 1);
+-        if (searchPos < 0) throw new Error('Civ6Save: map width pattern not found');
+-        width = payload.readInt16LE(searchPos + 8);
++    for (; markerStart >= 0; markerStart = payload.indexOf(TILE_SECTION_MARKER, markerStart + 1)) {
++        tileCount = payload.readUInt32LE(markerStart + 12);
++        if (tileCount < 100 || tileCount > 100000) continue;
++        const widthSearch = Buffer.concat([
++            Buffer.from([0, 0, 0, 0]),
++            payload.subarray(markerStart + 12, markerStart + 16),
++        ]);
++        width = 0;
++        let searchPos = -1;
++        while (width <= 0) {
++            searchPos = payload.indexOf(widthSearch, searchPos + 1);
++            if (searchPos < 0) break;
++            width = payload.readInt16LE(searchPos + 8);
++        }
++        if (width > 0 && tileCount % width === 0) break;
+     }
+-    if (tileCount % width !== 0) {
+-        throw new Error(`Civ6Save: tile count ${tileCount} not divisible by width ${width}`);
++    if (markerStart < 0 || width <= 0 || tileCount % width !== 0) {
++        throw new Error(`Civ6Save: no tile section with a tile count divisible by the map width`);
+     }
+     const height = tileCount / width;
+ 
+diff --git a/src/internal/parse-timelines.ts b/src/internal/parse-timelines.ts
+index 0153bd9..2d0d942 100644
+--- a/src/internal/parse-timelines.ts
++++ b/src/internal/parse-timelines.ts
+@@ -1,7 +1,7 @@
+ import { CITY_YIELD_SERIES_NAMES, PLAYER_TIMELINE_NAMES } from './constants';
+ import type { Civ6CityYieldSnapshot, Civ6PlayerTimelines, Civ6TimelinePoint, Civ6TimelineSeries } from './types';
+ 
+-function readTimelineAt(payload: Buffer, offset: number, name: string): Civ6TimelineSeries | null {
++export function readTimelineAt(payload: Buffer, offset: number, name: string): Civ6TimelineSeries | null {
+     const nameBuf = Buffer.from(name, 'ascii');
+     const pat = Buffer.concat([Buffer.from([nameBuf.length, 0, 0, 0]), nameBuf]);
+     const i = payload.indexOf(pat, offset);
+diff --git a/src/model.ts b/src/model.ts
+index 761bbae..1ef2f46 100644
+--- a/src/model.ts
++++ b/src/model.ts
+@@ -29,6 +29,8 @@ function plotOf(tile: Civ6Tile): Civ6Plot {
+         form: tile.terrain?.form ?? null,
+         feature: typeName(tile.featureHash, tile.feature),
+         resource: typeName(tile.resourceHash, tile.resource),
++        // Raw hash, so callers can resolve resources missing from the bundled dictionary (mod-added ones).
++        resourceHash: tile.resourceHash,
+         improvement: typeName(tile.improvementHash, tile.improvement),
+         continent: typeName(tile.continentHash, tile.continent),
+         routeIndex: tile.routeIndex,
+@@ -141,7 +143,7 @@ export function toModel(internal: Civ6SaveParsed, payload: Buffer): Civ6Save {
+             unitsTrained: state.unitsTrained,
+             relations: (diplomacy?.relations ?? []).map(r => ({ playerId: r.other, state: r.state })),
+             envoys: diplomacy?.envoys ?? {},
+-            governors: internal.governors.filter(g => g.playerIndex === index).map(g => ({ type: g.governor, promotions: g.promotions, cityId: g.cityId, ...(g.established != null ? { established: g.established } : {}) })),
++            governors: internal.governors.filter(g => g.playerIndex === index).map(g => ({ type: g.governor, promotions: g.promotions, cityId: g.cityId, cityOwnerId: g.cityOwnerId, ...(g.established != null ? { established: g.established } : {}) })),
+             offset: state.payloadOffset,
+         };
+     });
+diff --git a/src/types.ts b/src/types.ts
+index 0ad5885..9f1b5c2 100644
+--- a/src/types.ts
++++ b/src/types.ts
+@@ -144,6 +144,8 @@ export interface Civ6Governor {
+     promotions: string[];
+     /** The city the governor is assigned to, by city id, or null when unassigned. */
+     cityId: number | null;
++    /** Player id owning that city (a city-state for the Ambassador), or null when unassigned. */
++    cityOwnerId: number | null;
+     /** False while the governor is still establishing in its city; absent when unassigned. */
+     established?: boolean;
+ }
+@@ -176,6 +178,7 @@ export interface Civ6Plot {
+      * improvement (`YIELD_*` → amount). Absent when there are none. Gathering Storm rolls these
+      * per tile, so two Volcanic Soil hexes side by side can differ.
+      */
++    resourceHash?: number;
+     yieldChanges?: Record<string, number>;
+     owner: {
+         playerId: number;

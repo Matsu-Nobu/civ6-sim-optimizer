@@ -1,0 +1,15 @@
+loaded ../../data/problems/france1014.json in 0.2s
+requirement GREAT_PERSON_CLASS_GENERAL: the one on offer at T44 is Some("GREAT_PERSON_INDIVIDUAL_AETHELFLAED"), 75 points
+requirement GREAT_PERSON_CLASS_GENERAL>ERA_RENAISSANCE: the one on offer at T67 is Some("GREAT_PERSON_INDIVIDUAL_GUSTAVUS_ADOLPHUS"), 155 points
+allies (record's routes): [1]
+allies (record's routes): [1]
+allies (record's routes): [1]
+allies (record's routes): [1]
+allies (record's routes): [1]
+allies (record's routes): [1]
+allies (record's routes): [1]
+allies (record's routes): [1]
+allies (record's routes): [1]
+start 5660.7, 345 decisions
+kick 1 T32 settle [8,43] -> [6,34]: 5633.5 vs 5660.7 (211s, 17686 tried)
+kick 2 T47 focus "balanced" -> "production": 5655.4 vs 5660.7 (226s, 19947 tried)

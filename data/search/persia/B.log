@@ -1,0 +1,9 @@
+loaded ../../data/problems/persia1017.json in 0.2s
+allies (record's routes): [9, 10]
+start 1065.4
+allies (record's routes): [9, 10]
+allies (record's routes): [9, 10]
+allies (record's routes): [9, 10]
+allies (record's routes): [9, 10]
+{"best":1190.3000000000002,"tried":1750,"seconds":6.170652543}
+saved data/search/persia/B.json

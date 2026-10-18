@@ -1,0 +1,3 @@
+[submodule "third_party/civ6-savegame-parser"]
+	path = third_party/civ6-savegame-parser
+	url = https://github.com/bestander/civ6-savegame-parser

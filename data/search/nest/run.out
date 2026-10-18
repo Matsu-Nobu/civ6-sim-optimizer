@@ -1,0 +1,1 @@
+./run.sh: line 12: 42218 Aborted                    nice $B irollout ../../data/problems/france1014.json $C --threads 8 --minutes 55 --window 50 --passes 20 --kick-to 30 --seed 2 --init $D/rec44.json --out $D/from_rec.json > $D/from_rec.log 2>&1

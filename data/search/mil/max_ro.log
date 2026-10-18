@@ -1,0 +1,5 @@
+loaded ../../data/problems/france1014.json in 0.2s
+requirement GREAT_PERSON_CLASS_GENERAL: the one on offer at T43 is Some("GREAT_PERSON_INDIVIDUAL_AETHELFLAED"), 75 points
+start 2383.0
+{"best":3765.9,"tried":2892,"seconds":9.253154879}
+saved data/search/mil/max.json

@@ -1,0 +1,4 @@
+loaded ../../data/problems/france1014.json in 0.2s
+start -16769.8
+{"best":-1998.8199999999997,"tried":8630,"seconds":67.686623615}
+saved data/search/mil/feas45.json

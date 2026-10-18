@@ -1,0 +1,6 @@
+{
+  "_comment": "Facts not yet readable from the saves. Trade routes inferred from the trader shuttling between Cumae (24,34) and Rome (27,38); built in Cumae on T19.",
+  "trade_routes": [
+    {"origin": "CUMAE", "destination": "ROME", "from_turn": 19}
+  ]
+}

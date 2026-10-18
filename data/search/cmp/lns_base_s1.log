@@ -1,0 +1,17 @@
+loaded ../../data/problems/rome1007b_v2.json in 0.2s
+start 5225.4
+pass 0 turns 2-6: 5225.4 -> 5916.1 (6s)
+pass 0 turns 7-11: 5916.1 -> 6088.4 (13s)
+pass 0 turns 12-16: 6088.4 -> 6747.3 (22s)
+pass 0 turns 17-21: 6747.3 -> 7288.9 (33s)
+pass 0 turns 22-26: 7288.9 -> 7884.7 (46s)
+pass 0 turns 27-31: 7884.7 -> 8169.0 (59s)
+pass 0 turns 32-36: 8169.0 -> 8722.7 (72s)
+pass 0 turns 37-41: 8722.7 -> 9053.8 (86s)
+pass 0 turns 42-46: 9053.8 -> 9600.5 (102s)
+pass 0 turns 47-51: 9600.5 -> 9986.6 (116s)
+pass 0 turns 52-56: 9986.6 -> 10178.1 (129s)
+pass 0 turns 57-60: 10178.1 -> 10365.8 (141s)
+pass 1 turns 2-6: 10365.8 -> 10391.8 (152s)
+pass 1 turns 7-11: 10391.8 -> 10391.8 (165s)
+free(): invalid pointer

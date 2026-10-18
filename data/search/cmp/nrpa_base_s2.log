@@ -1,0 +1,36 @@
+loaded ../../data/problems/rome1007b_v2.json in 0.1s
+round 0 run 2000009: best 8277.2 after 2400 rollouts (363s); reuse: repeats 59, turns simulated 97267 skipped 40852
+round 0 run 2000000: best 8237.2 after 2400 rollouts (366s); reuse: repeats 51, turns simulated 99391 skipped 39200
+round 0 run 2000002: best 8537.8 after 2400 rollouts (376s); reuse: repeats 32, turns simulated 99248 skipped 40464
+round 0 run 2000005: best 7964.4 after 2400 rollouts (379s); reuse: repeats 33, turns simulated 99832 skipped 39821
+round 0 run 2000006: best 7978.4 after 2400 rollouts (381s); reuse: repeats 34, turns simulated 100233 skipped 39361
+round 0 run 2000001: best 8280.9 after 2400 rollouts (382s); reuse: repeats 33, turns simulated 99897 skipped 39756
+round 0 run 2000003: best 8361.9 after 2400 rollouts (383s); reuse: repeats 35, turns simulated 100212 skipped 39323
+round 0 run 2000007: best 8177.1 after 2400 rollouts (389s); reuse: repeats 45, turns simulated 98289 skipped 40656
+round 0 run 2000008: best 8161.1 after 2400 rollouts (395s); reuse: repeats 32, turns simulated 101426 skipped 38286
+round 0 run 2000004: best 8582.3 after 2400 rollouts (396s); reuse: repeats 23, turns simulated 101913 skipped 38330
+after round 0: best 8582.3 (396s)
+round 1 run 2000019: best 9110.3 after 2400 rollouts (377s); reuse: repeats 51, turns simulated 97564 skipped 41027
+round 1 run 2000010: best 9031.2 after 2400 rollouts (379s); reuse: repeats 51, turns simulated 97645 skipped 40946
+round 1 run 2000016: best 9127.4 after 2400 rollouts (382s); reuse: repeats 50, turns simulated 99056 skipped 39594
+round 1 run 2000012: best 8855.2 after 2400 rollouts (383s); reuse: repeats 53, turns simulated 95384 skipped 43089
+round 1 run 2000017: best 9254.4 after 2400 rollouts (383s); reuse: repeats 32, turns simulated 99494 skipped 40218
+round 1 run 2000018: best 8924.7 after 2400 rollouts (385s); reuse: repeats 51, turns simulated 98395 skipped 40196
+round 1 run 2000013: best 9240.4 after 2400 rollouts (386s); reuse: repeats 51, turns simulated 98618 skipped 39973
+round 1 run 2000011: best 9421.0 after 2400 rollouts (389s); reuse: repeats 49, turns simulated 97985 skipped 40724
+round 1 run 2000014: best 9778.8 after 2400 rollouts (390s); reuse: repeats 26, turns simulated 99576 skipped 40490
+round 1 run 2000015: best 9219.2 after 2400 rollouts (406s); reuse: repeats 27, turns simulated 99292 skipped 40715
+after round 1: best 9778.8 (802s)
+round 2 run 2000022: best 9254.8 after 2400 rollouts (392s); reuse: repeats 46, turns simulated 93212 skipped 45674
+round 2 run 2000020: best 9412.5 after 2400 rollouts (394s); reuse: repeats 59, turns simulated 93761 skipped 44358
+round 2 run 2000021: best 9203.0 after 2400 rollouts (401s); reuse: repeats 49, turns simulated 95410 skipped 43299
+round 2 run 2000029: best 9960.3 after 2400 rollouts (404s); reuse: repeats 45, turns simulated 94974 skipped 43971
+round 2 run 2000024: best 9337.5 after 2400 rollouts (406s); reuse: repeats 28, turns simulated 94173 skipped 45775
+round 2 run 2000028: best 9772.1 after 2400 rollouts (409s); reuse: repeats 41, turns simulated 94528 skipped 44653
+round 2 run 2000025: best 9289.9 after 2400 rollouts (409s); reuse: repeats 42, turns simulated 95429 skipped 43693
+round 2 run 2000026: best 9339.3 after 2400 rollouts (409s); reuse: repeats 43, turns simulated 96198 skipped 42865
+round 2 run 2000027: best 9846.4 after 2400 rollouts (415s); reuse: repeats 29, turns simulated 96842 skipped 43047
+round 2 run 2000023: best 9618.2 after 2400 rollouts (426s); reuse: repeats 48, turns simulated 96427 skipped 42341
+after round 2: best 9960.3 (1229s)
+{"runs":[8277.2,8237.2,8537.800000000001,7964.4,7978.400000000001,8280.900000000001,8361.9,8177.1,8161.1,8582.26,9110.3,9031.2,9127.420000000002,8855.24,9254.4,8924.7,9240.44,9421,9778.8,9219.18,9254.800000000001,9412.5,9203,9960.3,9337.54,9772.100000000002,9289.9,9339.3,9846.36,9618.2],"best":9960.3,"seconds":1228.77448397}
+saved ../../data/search/cmp/nrpa_base_s2.json.tmp

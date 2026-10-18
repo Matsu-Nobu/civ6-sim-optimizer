@@ -1,0 +1,17 @@
+05:41 ir A attempt 1 from data/search/ms/ms_A.json (150 min left)
+05:41 ro A attempt 1 from data/search/ms/ms_A.json (150 min left)
+05:41 ro C attempt 1 from data/search/ms/ms_C.json (150 min left)
+05:41 ir C attempt 1 from data/search/ms/ms_C.json (150 min left)
+./run.sh: line 9: 100856 Aborted                    nice -n 19 $D/civ6opt_bin $M ../../data/problems/rome1007b_v2.json $C $X --threads 4 --minutes $left --init $init --out $D/${m}_$x.json > $D/${m}_${x}_$try.log 2>&1
+05:48 ro C attempt 1 died
+05:48 ro C attempt 2 from data/search/ir/ro_C.json (144 min left)
+./run.sh: line 9: 100855 Aborted                    nice -n 19 $D/civ6opt_bin $M ../../data/problems/rome1007b_v2.json $C $X --threads 4 --minutes $left --init $init --out $D/${m}_$x.json > $D/${m}_${x}_$try.log 2>&1
+05:48 ro A attempt 1 died
+05:48 ro A attempt 2 from data/search/ir/ro_A.json (144 min left)
+./run.sh: line 9: 100857 Aborted                    nice -n 19 $D/civ6opt_bin $M ../../data/problems/rome1007b_v2.json $C $X --threads 4 --minutes $left --init $init --out $D/${m}_$x.json > $D/${m}_${x}_$try.log 2>&1
+05:48 ir C attempt 1 died
+05:48 ir C attempt 2 from data/search/ir/ir_C.json (144 min left)
+07:42 ro C done: saved data/search/ir/ro_C.json
+08:11 ir A done: saved data/search/ir/ir_A.json
+08:12 ir C done: saved data/search/ir/ir_C.json
+08:12 ro A done: saved data/search/ir/ro_A.json

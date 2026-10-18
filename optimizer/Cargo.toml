@@ -1,0 +1,14 @@
+[package]
+name = "civ6opt"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+
+[profile.release]
+opt-level = 3
+debug = 1
+
+# Windows only: mimalloc (Microsoft's allocator) — the system heap does not scale over the search threads there
+[target.'cfg(windows)'.dependencies]
+mimalloc = { version = "0.1", default-features = false }

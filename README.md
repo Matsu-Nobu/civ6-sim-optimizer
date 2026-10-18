@@ -38,13 +38,13 @@ BBG は更新のたびに強い進め方が変わるので、勘や定石に頼�
 ## 必要なもの
 
 - Civilization VI（Steam 版）
-- mod の Better Balanced Game 7.5.1、BBG Expanded 2.1、Better Balanced Map 1.39.5、Multiplayer Helper 1.8.0
+- Steam ワークショップの mod の [Better Balanced Game 7.5.1](https://steamcommunity.com/sharedfiles/filedetails/?id=2865001760)、[BBG Expanded 2.1](https://steamcommunity.com/sharedfiles/filedetails/?id=3533091092)、[Better Balanced Map 1.39.5](https://steamcommunity.com/sharedfiles/filedetails/?id=3179425402)、[Multiplayer Helper 1.8.0](https://steamcommunity.com/sharedfiles/filedetails/?id=3307282026)
 - Homebrew で入れる `rustup`、`zstd`、`python`
 
 ## 手順
 
-1. mod を入れて、記録した対局と同じ勝利条件でゲームを始める。
-2. ゲームが作る `Cache/DebugGameplay.sqlite` を、`data/rules/france_20261014.sqlite` のように対局データの名前でコピーする。
+1. 上の 4 つの mod を入れて、記録した対局と同じ勝利条件でゲームを始める。
+2. ゲームを始めると書き出される `Cache/DebugGameplay.sqlite` を、`data/rules/france_20261014.sqlite` のように対局データの名前でコピーする。
 3. `python3 python_legacy/scripts/build_text_db.py` を実行する。
 4. `save_export/build_games.sh` を実行する。
 5. `cd optimizer && cargo build --release` を実行する。

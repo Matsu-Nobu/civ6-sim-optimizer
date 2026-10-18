@@ -130,8 +130,14 @@ impl Milestones {
 const REWARD_KEY: u32 = 1 << 16;
 
 /// How many of `what` the plan has: districts of a type placed, cities with a building (or wonder), ("military") idle units trained, units of a type
-/// trained, or ("civics") civics completed.
+/// trained, ("civics") civics completed, ("cities") cities, or ("gold") whole gold in the treasury.
 pub fn have(st: &State, what: &str) -> i64 {
+    if what == "cities" {
+        return st.cities.len() as i64;
+    }
+    if what == "gold" {
+        return st.acc.gold.floor() as i64;
+    }
     if what == "military" {
         return st.acc.units_trained.0.iter().filter(|(u, _)| crate::opt::idle_unit(*u)).map(|(_, n)| *n).sum();
     }

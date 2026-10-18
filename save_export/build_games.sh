@@ -19,6 +19,7 @@ one 20261007b rome_20261007b 0 85 8
 one 20261013 france_20261013 8 60 8
 one 20261014 france_20261014 5 68 8
 one 20261017 persia_20261017 2 45 4
+one 20261018 france_20261018 1 45 8
 # 10/17: the slinger (T15) and the trader (T16) were bought with gold given by an ally the same turn, so the record's
 # gold does not show the purchases; they are given as gifts.
 python3 - "$out/persia_20261017.json" <<'PY'

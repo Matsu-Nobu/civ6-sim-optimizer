@@ -1,0 +1,8 @@
+loaded data/games/france_20261018.json in 0.1s
+allies (record's routes): []
+require DISTRICT_GOVERNMENT:1 by end: met
+require DISTRICT_ENCAMPMENT:1 by end: met
+require BUILDING_MONUMENT:1 by end: met
+require UNIT_SLINGER:2 by T25: met
+require cities:2 by T12: NOT met, penalty 5000
+require cities:3 by T20: NOT met, penalty 5000

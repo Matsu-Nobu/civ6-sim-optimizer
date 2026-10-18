@@ -7,6 +7,7 @@
 | `optimizer/` | シミュレータと探索プログラム（Rust） |
 | `save_export/` | セーブを読んで、毎ターンの記録・地図・mod の版を書き出すスクリプト（Node と bash） |
 | `python_legacy/` | Python のシミュレータと診断用のスクリプト |
+| `tools/` | 分析のときに使う Python のスクリプト |
 | `game_mods/` | シミュレータの検証に使うゲームの mod |
 | `third_party/` | 他の人が公開しているセーブ解析のプログラム |
 | `data/` | セーブ、書き出した記録、ルールのデータベース、対局データ、探索の結果 |
@@ -74,6 +75,7 @@ cd optimizer && cargo build --release
 | `france_20261013.json` | 10/13 のフランスのマルチ戦 |
 | `france_20261014.json` | 10/14 のフランスのマルチ戦 |
 | `persia_20261017.json` | 10/17 のペルシャのマルチ戦 |
+| `france_20261018.json` | 10/18 のフランスのマルチ戦 |
 
 # データの配置
 
@@ -94,6 +96,14 @@ cd optimizer && cargo build --release
 | `python_legacy/scripts/export_problem.py` | 書き出した記録・地図・ルールのデータベースから、対局データを作る |
 | `python_legacy/scripts/variant_report.py` | `run --costs` の出力を、研究や生産順の表にまとめる |
 | `python_legacy/opening/` | 序盤の首都の簡略化したモデルを最適化するプログラム |
+
+# 分析に使うスクリプト
+
+`tools/` には、分析のときに使う Python のスクリプトを置く。`python_legacy/` のプログラムは使わず、`tools/` の中だけで動くように作る。
+
+| 場所 | すること |
+|---|---|
+| `tools/ja_names.py` | ゲームの種類（`DISTRICT_ENCAMPMENT` など）と、ゲームの日本語版での名前の一覧を、`data/rules/names_ja.tsv` に出力する |
 
 # ゲームの mod
 

@@ -1,5 +1,5 @@
 //! The planner's state (civ6sim/plan2.py State, sim.py PlayerAcc / CityAcc) and the export-format city / plot
-//! records it carries, loaded from the problem file's "start" (python_legacy/scripts/export_problem.py).
+//! records it carries, loaded from the game data's "start" (gamedata.rs start_state).
 use crate::sym::{sym, Sym};
 use crate::json::Value;
 use std::collections::BTreeSet;
@@ -500,7 +500,7 @@ pub fn symset(v: &Value) -> BTreeSet<Sym> {
     v.as_array().map(|a| a.iter().filter_map(osym).collect()).unwrap_or_default()
 }
 
-/// The start state (jsonable(State) from python_legacy/scripts/export_problem.py). Decision logs and counters start empty.
+/// The start state (gamedata.rs start_state). Decision logs and counters start empty.
 pub fn state_from(v: &Value) -> State {
     let a = &v["acc"];
     let acc = PlayerAcc {

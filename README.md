@@ -45,9 +45,9 @@ BBG は更新のたびに強い進め方が変わるので、勘や定石に頼�
 
 1. 上の 4 つの mod を入れて、記録した対局と同じ勝利条件でゲームを始める。
 2. ゲームを始めると書き出される `Cache/DebugGameplay.sqlite` を、`data/rules/france_20261014.sqlite` のように対局データの名前でコピーする。
-3. `python3 python_legacy/scripts/build_text_db.py` を実行する。
-4. `save_export/build_games.sh` を実行する。
-5. `cd optimizer && cargo build --release` を実行する。
+3. `cd optimizer && cargo build --release` を実行する。
+4. `optimizer/target/x86_64-unknown-linux-gnu/release/civ6opt text data/rules/text_en.sqlite` を実行する。
+5. `save_export/build_games.sh` を実行する。
 6. `data/search/<実験>/run.sh` を実行する。
 
 # 文書の案内

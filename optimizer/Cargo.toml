@@ -4,6 +4,8 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+quick-xml = "0.42.0"
+rusqlite = { version = "0.40.2", features = ["bundled"] }
 
 [profile.release]
 opt-level = 3

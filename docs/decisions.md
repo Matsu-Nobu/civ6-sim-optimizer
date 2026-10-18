@@ -26,6 +26,7 @@
 | 10/18 | Node と Rust の実行環境はリポジトリに置かず、Homebrew の `node@24` と `rustup` で入れる。Rust の版は `optimizer/rust-toolchain.toml` で固定する | プロジェクトの中に置く必要がない | 合意 | `~/dotfiles/Brewfile`、`optimizer/rust-toolchain.toml` |
 | 10/18 | Python のプログラムは、後で Rust に置き換えて消す。それまでは `python_legacy/` に置く | Rust だけで保守する方針なのに、対局データの作成が Python に残っていた | あなた | `python_legacy/` |
 | 10/18 | 分析のときの一時的なスクリプトは Python で書いてよい。ただし `tools/` に置き、`python_legacy/` のプログラムを使わず、`python_legacy/` にも手を入れない | Claude が、ゲームの日本語版の名前を引くスクリプトを `python_legacy/` に足して、Python 版を凍結する決定を破った | あなた | `tools/` |
+| 10/19 | 対局データと英語の文章のデータベースは、Rust の `civ6opt build` と `civ6opt text` で作る。SQLite と XML を読むため、Rust の部品 `rusqlite` と `quick-xml` を使う | Python の `export_problem.py` と `build_text_db.py` だけが、Python 版のシミュレータを必要としていた | あなた | `optimizer/src/gamedata.rs` |
 | 10/18 | ゲームの中の名前は、ゲームの日本語版の名前を `data/rules/names_ja.tsv` で引いて使い、自分で訳さない。あなたの言ったゲームの用語は、条件に使う前にこの一覧で種類を確認する | Claude が兵営（区域）を兵舎（建物）と取り違え、探索の条件と「兵営か労働者か」の答えを間違えた | あなた | `tools/ja_names.py` |
 | 10/18 | 対局の分析では、あなたのプレイヤーを名前ではなく文明と指導者で特定し、都市の持ち主で確かめる | セーブ解析のプログラムが出す名前が文明とずれていて、別のプレイヤーを分析しかけた | 合意 | Claude の記憶 |
 | 10/18 | 文書を書く前に、背景を知らないサブエージェントに読ませる確認はしない | トークンの消費が大きい | あなた | Claude の記憶 |

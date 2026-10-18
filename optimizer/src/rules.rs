@@ -1,4 +1,4 @@
-//! The rules database (exported by python_legacy/scripts/export_problem.py): tables with rows in rowid order, and per column the
+//! The rules database (exported by civ6opt build, gamedata.rs): tables with rows in rowid order, and per column the
 //! rows matching a value in the order SQLite returns them, so lookups see rows in the same order as the Python side.
 //! `Rules` mirrors civ6sim/rules.py.
 use crate::sym::{sym, Sym};
@@ -284,7 +284,7 @@ impl Rules {
         r
     }
 
-    /// Row numbers of a whole-table read in the order the Python side saw them (see export_problem.SCANS); rowid
+    /// Row numbers of a whole-table read in the order the Python side saw them (see gamedata.rs SCANS); rowid
     /// order when not exported. Rows outside the read's WHERE are not in an exported list.
     pub fn scan(&self, name: &str, table: &str) -> Vec<u32> {
         match self.scans.get(name) {

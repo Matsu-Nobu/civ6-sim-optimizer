@@ -392,6 +392,12 @@ fn genome_from(v: &Value) -> HashMap<Key, Choice> {
 /// record's chooser (crate::record) and every decision it takes is kept. `wide`: every builder action is offered
 /// (as in the replay), else the search's candidates only.
 fn record_genome(p: &Problem, wide: bool) -> HashMap<Key, Choice> {
+    record_genome_with(p, wide, false, None)
+}
+
+/// record_genome; `tiles`: the recorded cities also get their tiles on the recorded turns (Settings.recorded_tiles);
+/// `until`: the last turn played (default: the last recorded turn).
+fn record_genome_with(p: &Problem, wide: bool, tiles: bool, until: Option<i64>) -> HashMap<Key, Choice> {
     struct Keep<'a, 'r> {
         inner: civ6opt::record::RecordedChooser<'r>,
         g: &'a mut HashMap<Key, Choice>,
@@ -408,12 +414,15 @@ fn record_genome(p: &Problem, wide: bool) -> HashMap<Key, Choice> {
     if wide {
         pl.s.builder_candidates = None;
     }
+    if tiles {
+        pl.s.recorded_tiles = Some(civ6opt::scenario::recorded_tiles_from(&p.v["settings"]["recorded_tiles"]));
+    }
     let rec = std::rc::Rc::new(civ6opt::record::Record::load(&p.v["rows"], &pl.sc.unit_gifts));
     pl.tiles_rec = Some(rec.clone());
     let last = p.v["rows"].as_array().unwrap().iter().filter_map(|r| r["turn"].as_i64()).max().unwrap_or(0);
     let mut g = HashMap::new();
     let mut ch = Keep { inner: civ6opt::record::RecordedChooser::new(&rec), g: &mut g };
-    opt::play(&pl, &st0, &mut ch, opt::Horizon::plain(last));
+    opt::play(&pl, &st0, &mut ch, opt::Horizon::plain(until.unwrap_or(last)));
     g
 }
 
@@ -500,6 +509,69 @@ fn genome_arg(p: &Problem, which: Option<&str>) -> HashMap<Key, Choice> {
     }
 }
 
+/// civ6opt build <export prefix> <rules.sqlite> <out.json> [--player 0] [--start 2] [--horizon 60] [--builder-candidates 4]
+///     [--text data/rules/text_en.sqlite] [--unit-gift 14:UNIT_SLINGER,15:UNIT_TRADER]
+/// (--unit-gift: units the record shows without a city making them, given to the plan on that turn, for those the
+/// record does not explain, such as units bought with gold an ally gave the same turn)
+/// Writes the game data file of a recorded game (gamedata.rs): the export rows <prefix>_p<player>.jsonl, the map
+/// <prefix>_map_T<start>.json and the rules database, with the recorded game replayed as plans.
+fn build(args: &[String]) {
+    let t0 = Instant::now();
+    let num = |name: &str, default: i64| arg(args, name).map(|x| x.parse().unwrap()).unwrap_or(default);
+    let (prefix, rules, out) = (&args[2], &args[3], &args[4]);
+    let text = arg(args, "--text").unwrap_or("data/rules/text_en.sqlite".into());
+    let mut v = civ6opt::gamedata::assemble(prefix, rules, &text, num("--player", 0), num("--start", 2), num("--horizon", 60),
+        num("--builder-candidates", 4));
+    if let Some(gifts) = arg(args, "--unit-gift") {
+        let Value::Obj(top) = &mut v else { unreachable!() };
+        let (_, Value::Obj(sc)) = top.iter_mut().find(|(k, _)| k == "scenario").unwrap() else { unreachable!() };
+        let (_, Value::Obj(ug)) = sc.iter_mut().find(|(k, _)| k == "unit_gifts").unwrap() else { unreachable!() };
+        for g in gifts.split(',') {
+            let (t, u) = g.split_once(':').expect("--unit-gift turn:UNIT_TYPE,...");
+            match ug.iter_mut().find(|(k, _)| k == t) {
+                Some((_, Value::Arr(a))) => a.push(Value::from(u)),
+                _ => ug.push((t.to_string(), Value::Arr(vec![Value::from(u)]))),
+            }
+        }
+    }
+    let rules_ref: &'static Rules = Box::leak(Box::new(Rules::load(&v["rules"])));
+    let mut p = Problem { v: Value::Null, rules: rules_ref };
+    std::mem::swap(&mut p.v, &mut v);
+    // the recorded game as plans, played with every builder action offered (as the replay does)
+    let as_list = |g: &HashMap<Key, Choice>| {
+        let mut items: Vec<(Value, Value)> = g.iter().map(|(k, c)| (key_json(k), choice_json(c))).collect();
+        items.sort_by_key(|(k, _)| k.to_string());
+        Value::Arr(items.into_iter().map(|(k, c)| Value::Arr(vec![k, c])).collect())
+    };
+    // played to the planner's horizon, past the record's last turn if it is later (the record's chooser then
+    // falls back to the planner's own choices)
+    let until = Some(p.v["settings"]["horizon"].as_i64().unwrap());
+    let g = record_genome_with(&p, true, false, until);
+    let g_tiles = record_genome_with(&p, true, true, until);
+    let mut builder: Vec<(Key, Choice)> = g.iter().filter(|(k, c)| k.kind == sym("builder") && !matches!(choice_json(c), Value::Arr(ref a) if a.first().and_then(|x| x.as_str()) == Some("wait")))
+        .map(|(k, c)| (k.clone(), c.clone())).collect();
+    builder.sort_by_key(|(k, _)| key_json(k).to_string());
+    let (genome, genome_tiles) = (as_list(&g), as_list(&g_tiles));
+    let Value::Obj(top) = &mut p.v else { unreachable!() };
+    for (k, val) in top.iter_mut() {
+        match k.as_str() {
+            "recorded_genome" => *val = genome.clone(),
+            "recorded_genome_tiles" => *val = genome_tiles.clone(),
+            "settings" => if let Value::Obj(s) = val {
+                if let Some((_, eb)) = s.iter_mut().find(|(k, _)| k == "extra_builder") {
+                    *eb = Value::Arr(builder.iter().map(|(_, c)| choice_json(c)).collect());
+                }
+            },
+            _ => {}
+        }
+    }
+    if let Some(dir) = std::path::Path::new(out).parent() {
+        std::fs::create_dir_all(dir).unwrap();
+    }
+    std::fs::write(out, p.v.to_string()).unwrap_or_else(|e| panic!("{out}: {e}"));
+    eprintln!("wrote {out} in {:.1}s", t0.elapsed().as_secs_f64());
+}
+
 /// Follows a genome (base policy elsewhere) and records every decision with its turn and options.
 struct Recorder<'g> {
     genome: &'g HashMap<Key, Choice>,
@@ -584,6 +656,17 @@ fn main() {
     }
     let args: Vec<String> = std::env::args().collect();
     let cmd = args.get(1).map(|s| s.as_str()).unwrap_or("");
+    if cmd == "build" {
+        build(&args);
+        return;
+    }
+    // civ6opt text <out.sqlite> [--game <the game's folder>] [--workshop <the workshop content folder 289070>]
+    if cmd == "text" {
+        let game = arg(&args, "--game").unwrap_or("/mnt/c/Program Files (x86)/Steam/steamapps/common/Sid Meier's Civilization VI".into());
+        let workshop = arg(&args, "--workshop").unwrap_or("/mnt/c/Program Files (x86)/Steam/steamapps/workshop/content/289070".into());
+        civ6opt::gamedata::build_text_db(&args[2], &game, &workshop);
+        return;
+    }
     let path = args.get(2).expect("problem file");
     let p = load(path);
     let turn: i64 = arg(&args, "--turn").map(|x| x.parse().unwrap()).unwrap_or(30);

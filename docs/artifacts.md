@@ -23,7 +23,7 @@ cd optimizer && cargo build --release
 
 ## 主なコマンド
 
-どのコマンドも `civ6opt <コマンド> <対局データ> <オプション>` の形で実行する。
+`build` と `text` 以外のコマンドは、`civ6opt <コマンド> <対局データ> <オプション>` の形で実行する。
 
 | コマンド | すること |
 |---|---|
@@ -32,6 +32,8 @@ cd optimizer && cargo build --release
 | `irollout` | 決定を 1 つ変えて後ろを詰め直すことを、時間いっぱい繰り返す |
 | `decisions` | 計画の決定を、ターン・決定の種類・選んだもの・候補の一覧の形で出力する |
 | `validate` | 各ターンのセーブの状態から 1 ターンだけ進め、次のセーブと比べる |
+| `build` | 書き出した記録・地図・ルールのデータベースから、対局データを作る |
+| `text` | ゲームの英語の文章のデータベース `data/rules/text_en.sqlite` を作る |
 
 ## 条件と点数の指定
 
@@ -66,7 +68,7 @@ cd optimizer && cargo build --release
 
 # 対局データ
 
-対局データは、1 つの対局について、書き出した記録・地図・ルールのデータベースの全部の表を 1 つにまとめた JSON で、`data/games` に置く。`python_legacy/scripts/export_problem.py` が作る。`save_export/build_games.sh` を実行すると、下の表の全部の対局データを作る。
+対局データは、1 つの対局について、書き出した記録・地図・ルールのデータベースの全部の表を 1 つにまとめた JSON で、`data/games` に置く。`civ6opt build` が作る。`save_export/build_games.sh` を実行すると、下の表の全部の対局データを作る。
 
 | ファイル | 対局 |
 |---|---|
@@ -89,11 +91,10 @@ cd optimizer && cargo build --release
 
 # Python のプログラム
 
-`python_legacy/` は、Rust に移す前に使っていた Python のシミュレータ（`civ6sim`）と、シミュレータとゲームの差を調べた診断用のスクリプトである。後で Rust に置き換えて消す。
+`python_legacy/` は、Rust に移す前に使っていた Python のシミュレータ（`civ6sim`）と、シミュレータとゲームの差を調べた診断用のスクリプトである。対局データを作るのには使わない。
 
 | 場所 | すること |
 |---|---|
-| `python_legacy/scripts/export_problem.py` | 書き出した記録・地図・ルールのデータベースから、対局データを作る |
 | `python_legacy/scripts/variant_report.py` | `run --costs` の出力を、研究や生産順の表にまとめる |
 | `python_legacy/opening/` | 序盤の首都の簡略化したモデルを最適化するプログラム |
 

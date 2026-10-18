@@ -4,6 +4,7 @@ pub mod alloc;
 pub mod amenities;
 pub mod consumed;
 pub mod engine;
+pub mod gamedata;
 pub mod geo;
 pub mod gp;
 pub mod growth;

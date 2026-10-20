@@ -1805,7 +1805,9 @@ fn main() {
                         let sv = ca.progress.get(&item).copied().unwrap_or(0.0) + if !idle_now && (c.current.is_none() || c.current == Some(item) && ca.progress.get(&item).copied().unwrap_or(0.0) == 0.0) { ca.overflow } else { 0.0 };
                         let started = d["cities"].as_array().and_then(|a| a.iter().find(|cc| osym(&cc["name"]) == Some(c.name)))
                             .map(|cc| cc["production"]["progress"][item.as_string().as_str()].as_f64().unwrap_or(0.0) == 0.0).unwrap_or(true);
-                        if (g - sv).abs() > 0.5 && g > 0.0 {
+                        // the overflow the model holds may already be in the game's next item or still held apart
+                        let sv_held = ca.progress.get(&item).copied().unwrap_or(0.0);
+                        if (g - sv).abs() > 0.5 && (g - sv_held).abs() > 0.5 && g > 0.0 {
                             // an item begun this turn gets the overflow of the last one, which the saves do not hold
                             if started && sv < g {
                                 note("progress (overflow, not in the save)", format!("{} {} progress {:.1}/{:.1}", c.name, item, sv, g), &mut diffs);

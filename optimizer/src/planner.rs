@@ -2064,6 +2064,27 @@ impl<'a> Planner<'a> {
         // purchase: as many as the player chooses in a turn (each item once per city), the options offered again
         // after each (gold, faith and tile prices change)
         let mut bought_now: Vec<(Sym, Sym)> = vec![];
+        // replay: the saves hold the treasury at the start of each turn, so gold an ally gave during a turn and spent
+        // on a purchase the same turn shows only as a smaller fall of the treasury (10/19 T3: a scout for 60, the
+        // treasury 45 lower). The part of the recorded purchases' price beyond that fall came in during the turn.
+        if let Some(rec) = self.rec.as_ref().or(self.tiles_rec.as_ref()) {
+            if let (Some(a), Some(b)) = (rec.turn(t_now), rec.turn(t_now + 1)) {
+                let e = self.engine(&env, &st.cities);
+                let mut env_cost = env.clone();
+                env_cost.units_trained = st.acc.units_trained.clone();
+                let mut price = 0.0;
+                for &(_, city, item) in rec.purchases.iter().filter(|p| p.0 == t_now) {
+                    let Some(c) = st.cities.iter().find(|c| c.name == city) else { continue };
+                    if let Some(cost) = item_cost(r, &env_cost, item, self.speed, None, true) {
+                        price += gold_price(cost, purchase_discount_percent(r, &e, c, item, true));
+                    }
+                }
+                let fall = a.gold + a.gold_income - b.gold;
+                if price > fall + 0.5 {
+                    st.acc.gold += price - fall.max(0.0);
+                }
+            }
+        }
         for _ in 0..8 {
             let buys: Vec<Choice> = self.buy_options(st, &env, t_now).into_iter()
                 .filter(|o| !matches!(o, Choice::BuyItem(c, it, _, _) if bought_now.contains(&(*c, *it)))).collect();

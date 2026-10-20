@@ -1960,6 +1960,28 @@ impl<'a> Planner<'a> {
                 }
             }
         }
+        // replay: a district the record placed this turn on a plot its city did not own yet: the game sells the plot
+        // with the placement (its price leaves the treasury; gold the record lacked came in during the turn)
+        if let Some(rec) = self.rec.as_ref().or(self.tiles_rec.as_ref()) {
+            if let Some(next) = rec.turn(t_now + 1) {
+                let e = self.engine(&env, &st.cities);
+                for ci in 0..st.cities.len() {
+                    let Some(rc) = next.city(st.cities[ci].name) else { continue };
+                    for &(d, xy, _) in &rc.districts {
+                        let owned = st.cities.iter().any(|c| c.owned.iter().any(|p| p.xy() == xy));
+                        if owned || st.cities[ci].districts.iter().any(|x| x.dtype == d) || !rc.owned.contains(&xy) {
+                            continue;
+                        }
+                        let Some(pl) = self.w.map.plots.get(&xy).cloned() else { continue };
+                        let g = tile_price(r, &e, &st.cities[ci], &pl, self.speed, st.acc.techs.len(), st.acc.civics.len());
+                        st.acc.gold = (st.acc.gold - g).max(0.0);
+                        st.cities[ci].owned.push(pl);
+                        self.refresh_near(&mut st.cities[ci]);
+                        st.tiles_bought += 1;
+                    }
+                }
+            }
+        }
         // production choices
         for ci in 0..st.cities.len() {
             if st.cities[ci].current.is_some() || idle.contains(&st.cities[ci].name) {

@@ -443,11 +443,15 @@ impl Chooser for RecordedChooser<'_> {
             return Some(Choice::Nothing).filter(has).or_else(|| p.base(st, key, options));
         } else if k == s!("prod") {
             if crate::envcfg::trace() == Some("prod") {
-                eprintln!("PROD OPTIONS T{t} {:?}: {:?}", key.ent, options.iter().filter_map(|o| o.sym()).map(|x| x.as_string()).collect::<Vec<_>>());
+                eprintln!("PROD OPTIONS T{t} {}: {:?}", match key.ent { Ent::S(c) => c.as_string(), _ => format!("{:?}", key.ent) }, options.iter().filter_map(|o| o.sym()).map(|x| x.as_string()).collect::<Vec<_>>());
             }
             if let (Ent::S(city), true) = (&key.ent, p.rec.is_none() && p.tiles_rec.is_some()) {
-                // the recorded player's play replayed (items switched as recorded): the item the record works on now
-                if let Some(x) = rec.turn(t).and_then(|r| r.city(*city)).and_then(|c| c.current).map(Choice::S).filter(has) {
+                // the recorded player's play replayed (items switched as recorded): the item the record works on now;
+                // when the save has none (an item finished, or a city founded the turn before), the one chosen during
+                // this turn (the next save's)
+                let now = rec.turn(t).and_then(|r| r.city(*city)).and_then(|c| c.current)
+                    .or_else(|| rec.turn(t + 1).and_then(|r| r.city(*city)).and_then(|c| c.current));
+                if let Some(x) = now.map(Choice::S).filter(has) {
                     return Some(x);
                 }
             }

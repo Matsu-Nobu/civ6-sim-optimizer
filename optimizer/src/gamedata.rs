@@ -234,10 +234,14 @@ pub fn scenario(rows: &[Value], db: &Connection) -> Value {
     }
     // recon units trained by each turn: exploration rewards go only to a plan that has scouted as much by then
     let scouts: Vec<(String, Value)> = rows.iter().map(|d| (turn(d).to_string(), Value::from(units_trained(&d["player"], "UNIT_SCOUT")))).collect();
-    // units from tribal villages: new units no city produced, on a turn the hut count went up
+    // units from outside (tribal villages, allies, city-states): new units no city produced, on a turn the hut count
+    // went up or no gold or faith was spent (a unit bought with them is a purchase, replayed as one)
     let mut gifts = vec![];
     for (a, b) in &pairs {
-        if huts(&b["player"]) <= huts(&a["player"]) {
+        let (pa, pb) = (&a["player"], &b["player"]);
+        let gold_spent = pa["gold"].as_f64().unwrap() + pa["goldPerTurn"].as_f64().unwrap_or(0.0) - pb["gold"].as_f64().unwrap() > 10.0;
+        let faith_spent = pa["faithStock"].as_f64().unwrap_or(0.0) - pb["faithStock"].as_f64().unwrap_or(0.0) > 10.0;
+        if huts(pb) <= huts(pa) && (gold_spent || faith_spent) {
             continue;
         }
         for (u, n) in b["player"]["unitsTrained"].as_object().unwrap() {

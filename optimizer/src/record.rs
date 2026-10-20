@@ -432,6 +432,12 @@ impl Chooser for RecordedChooser<'_> {
             if crate::envcfg::trace() == Some("prod") {
                 eprintln!("PROD OPTIONS T{t} {:?}: {:?}", key.ent, options.iter().filter_map(|o| o.sym()).map(|x| x.as_string()).collect::<Vec<_>>());
             }
+            if let (Ent::S(city), true) = (&key.ent, p.rec.is_none() && p.tiles_rec.is_some()) {
+                // the recorded player's play replayed (items switched as recorded): the item the record works on now
+                if let Some(x) = rec.turn(t).and_then(|r| r.city(*city)).and_then(|c| c.current).map(Choice::S).filter(has) {
+                    return Some(x);
+                }
+            }
             if let (Ent::S(city), true) = (&key.ent, p.rec.is_none()) {
                 // under the model's rules the timing differs: the next item of the city's recorded sequence that is
                 // available now

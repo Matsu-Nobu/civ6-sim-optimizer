@@ -724,7 +724,7 @@ impl<'a> Planner<'a> {
         let homes: Vec<(Sym, XY)> = st.cities.iter().map(|c| (c.name, c.center)).collect();
         for (home, xy) in homes {
             // replay: the route starts on the recorded turn (the trader's walk is not in the saves)
-            let k = if home == origin || self.rec.is_some() { 0 } else { match self.travel(st, at, xy, "UNIT_TRADER") { Some(k) => k, None => continue } };
+            let k = if home == origin || self.rec.is_some() || self.tiles_rec.is_some() { 0 } else { match self.travel(st, at, xy, "UNIT_TRADER") { Some(k) => k, None => continue } };
             for (v, dn, d) in self.route_options(st, home).into_iter().take(3) {
                 opts.push((v * (1.0 - k as f64 / 30.0).max(0.0), Choice::Route(home, dn), d, k));
             }
@@ -1227,7 +1227,7 @@ impl<'a> Planner<'a> {
             let Some(ind) = self.sc.gp_offer(cls, st.turn, &st.gp_ours) else { continue };
             let cost = self.gp_cost(st, cls, ind);
             // replay: recruited on the turn the record shows it (its points can run a little behind)
-            let recorded = self.rec.as_ref().and_then(|r| r.turn(st.turn + 1)).map(|r| r.great_people.contains(&ind)).unwrap_or(false);
+            let recorded = self.rec.as_ref().or(self.tiles_rec.as_ref()).and_then(|r| r.turn(st.turn + 1)).map(|r| r.great_people.contains(&ind)).unwrap_or(false);
             if st.gp.get(&cls).copied().unwrap_or(0.0) < cost && !recorded {
                 continue;
             }
@@ -1607,7 +1607,7 @@ impl<'a> Planner<'a> {
         if rec_now.is_some() || rec_next.is_some() {
             // replay: a tile the recorded city works that another of the player's cities owns was swapped to it
             // (a tile bought by one city and later worked by a neighbour)
-            let want: Vec<XY> = rec_now.iter().chain(rec_next.iter()).flat_map(|r| r.worked.iter().copied()).collect();
+            let want: Vec<XY> = rec_now.iter().flat_map(|r| r.worked.iter().copied()).collect();
             let center = st.cities[ci].center;
             for xy in want {
                 if xy == center || st.cities[ci].owned_at(xy).is_some() || self.w.map.distance(xy, center) > 3 {
@@ -1801,7 +1801,7 @@ impl<'a> Planner<'a> {
         // pantheon
         let cost = r.param("RELIGION_PANTHEON_MIN_FAITH") * r.game_speed_cost_multiplier(self.speed);
         // replay: on the turn the recorded player founded it (its faith count can differ a little)
-        let rec_pantheon = self.rec.as_ref().and_then(|r| r.turn(t_now + 1)).map(|r| r.pantheon.is_some()).unwrap_or(false);
+        let rec_pantheon = self.rec.as_ref().or(self.tiles_rec.as_ref()).and_then(|r| r.turn(t_now + 1)).map(|r| r.pantheon.is_some()).unwrap_or(false);
         if st.player.pantheon.is_none() && (st.acc.faith >= cost || rec_pantheon) {
             let t = r.tab("Beliefs");
             let opts: Vec<Choice> = r.scan("Pantheons", "Beliefs").into_iter().filter(|&i| t.v(i, "BeliefClassType").sym() == Some(s!("BELIEF_CLASS_PANTHEON"))).map(|i| Choice::S(t.v(i, "BeliefType").sym().unwrap())).collect();
@@ -1839,6 +1839,25 @@ impl<'a> Planner<'a> {
             }
         }
         self.rome_free_buildings(st);
+        // replay: tiles the player swapped between their own cities belong to the city the record shows at the start
+        // of the turn
+        if let Some(rec) = self.rec.as_ref().or(self.tiles_rec.as_ref()) {
+            for ci in 0..st.cities.len() {
+                let name = st.cities[ci].name;
+                let Some(rc) = rec.turn(t_now).and_then(|rt| rt.city(name)) else { continue };
+                for &xy in &rc.owned {
+                    let Some(j) = st.cities.iter().position(|o| o.name != name && o.center != xy && o.owned_at(xy).is_some()) else { continue };
+                    if st.cities[j].districts.iter().any(|d| (d.x, d.y) == xy) {
+                        continue;
+                    }
+                    let k = st.cities[j].owned.iter().position(|p| p.xy() == xy).unwrap();
+                    let mut p = st.cities[j].owned.remove(k);
+                    st.cities[j].worked.retain(|q| q.xy() != xy);
+                    p.workers = 0;
+                    st.cities[ci].owned.push(p);
+                }
+            }
+        }
         // citizens
         for ci in 0..st.cities.len() {
             let n = st.cities[ci].name;
@@ -1874,7 +1893,7 @@ impl<'a> Planner<'a> {
             }
         }
         // replay: the item each city works on as recorded (switching keeps the progress of the old one)
-        if let Some(rt) = self.rec.as_ref().and_then(|r| r.turn(t_now)) {
+        if let Some(rt) = self.rec.as_ref().or(self.tiles_rec.as_ref()).and_then(|r| r.turn(t_now)) {
             for ci in 0..st.cities.len() {
                 let Some(x) = rt.city(st.cities[ci].name).and_then(|c| c.current) else { continue };
                 if st.cities[ci].current == Some(x) {

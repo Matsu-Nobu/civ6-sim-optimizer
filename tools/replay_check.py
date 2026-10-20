@@ -50,7 +50,7 @@ for t in sorted(sim):
           f" {o[3]:4.0f}/{y.get('YIELD_SCIENCE', 0):<4.0f} {o[4]:4.0f}/{y.get('YIELD_CULTURE', 0):<4.0f} | {', '.join(notes)}")
     rc = {c["name"]: rec_city(c) for c in r["cities"]}
     # the worked tiles and the item of turn t + 1 (the replay's next state; the record's row t + 1 shows them at the
-    # start of that turn); a replay item of None (one finished, the next not yet chosen) is not compared
+    # start of that turn); an item of None (one finished, the next not yet chosen) is not compared
     nxt = {c["name"]: c for c in sim.get(t + 1, {"cities": []})["cities"]}
     for c in s["cities"]:
         name = c["name"]
@@ -62,7 +62,7 @@ for t in sorted(sim):
         checks = [("pop", c["pop"], rcc["pop"])]
         if n is not None:
             checks.append(("worked", sorted(tuple(xy) for xy in n["worked"]), rcc["worked"]))
-            if n["item"] is not None:
+            if n["item"] is not None and rcc["item"] is not None:
                 checks.append(("item", n["item"], rcc["item"]))
         for k, a, b in checks:
             if a != b:

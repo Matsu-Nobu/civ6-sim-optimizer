@@ -435,6 +435,8 @@ fn user_play_setup(p: &Problem, pl: &mut Planner, which: Option<&str>) {
             pl.s.builder_candidates = None;
         }
         pl.tiles_rec = Some(std::rc::Rc::new(civ6opt::record::Record::load(&p.v["rows"], &pl.sc.unit_gifts)));
+        // the recorded cities' borders grow as recorded (which plot a city gets next is not decided by the rules)
+        pl.s.recorded_tiles = Some(civ6opt::scenario::recorded_tiles_from(&p.v["settings"]["recorded_tiles"]));
     }
 }
 

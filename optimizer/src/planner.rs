@@ -1146,6 +1146,21 @@ impl<'a> Planner<'a> {
                 out.push(o.clone());
             }
         }
+        // replay: the record's improvements of a plot its city acquired the same turn (the replay acquires recorded
+        // plots after the builders; the improvement waits for the plot, State::improving)
+        if let Some(rec) = self.rec.as_ref().or(self.tiles_rec.as_ref()) {
+            let owned: HashSet<XY> = st.cities.iter().flat_map(|c| c.owned.iter().map(|p| p.xy())).collect();
+            for &(t, kind, xy, what) in &rec.acts {
+                if t > t_now || kind != s!("improve") || owned.contains(&xy) || st.improving.iter().any(|i| i.1 == xy) {
+                    continue;
+                }
+                let Some(city) = rec.turn(t + 1).and_then(|rt| rt.cities.iter().find(|c| c.owned.contains(&xy))).map(|c| c.name) else { continue };
+                let o = Choice::Act(kind, city, xy.0, xy.1, what);
+                if st.cities.iter().any(|c| c.name == city) && !out.contains(&o) {
+                    out.push(o);
+                }
+            }
+        }
         out.push(Choice::Wait);
         out
     }
@@ -1663,9 +1678,12 @@ impl<'a> Planner<'a> {
     // ---------------------------------------------------------------- the turn
     pub fn advance(&self, st: &mut State, ch: &mut dyn Chooser) {
         crate::value::turn_start(st);
+        // (on a plot no city owns yet, the improvement waits for the plot: the record acquires a plot and improves it
+        // in one turn, and the replay acquires recorded plots after the builders)
         for (cname, xy, imp) in std::mem::take(&mut st.improving) {
-            if let Some(p) = st.cities.iter_mut().find(|c| c.name == cname).and_then(|c| c.owned.iter_mut().find(|p| p.xy() == xy)) {
-                p.improvement = Some(imp);
+            match st.cities.iter_mut().find_map(|c| c.owned.iter_mut().find(|p| p.xy() == xy)) {
+                Some(p) => p.improvement = Some(imp),
+                None => st.improving.push((cname, xy, imp)),
             }
         }
         let r = self.r;
@@ -2002,6 +2020,9 @@ impl<'a> Planner<'a> {
                 act
             };
             let Choice::Act(kind, cname, x, y, what) = act.clone() else { bi += 1; continue };
+            if crate::envcfg::trace_city(&cname.as_string()) {
+                eprintln!("ACT T{t_now} {kind} {cname} {:?} {what} builder {bi} charges {}", (x, y), st.builders[bi].charges);
+            }
             st.builders[bi].at = (x, y);
             let ci = st.cities.iter().position(|c| c.name == cname);
             if kind == s!("rush") {
@@ -2022,7 +2043,14 @@ impl<'a> Planner<'a> {
                 continue;
             }
             let Some(ci) = ci else { bi += 1; continue };
-            let Some(pi) = st.cities[ci].owned.iter().position(|p| p.xy() == (x, y)) else { bi += 1; continue };
+            let Some(pi) = st.cities[ci].owned.iter().position(|p| p.xy() == (x, y)) else {
+                if kind == s!("improve") && !st.improving.iter().any(|i| i.1 == (x, y)) {
+                    st.improving.push((cname, (x, y), what));
+                    st.builders[bi].charges -= 1;
+                }
+                bi += 1;
+                continue;
+            };
             {
                 let p = &st.cities[ci].owned[pi];
                 let improving = st.improving.iter().any(|i| i.1 == (x, y));

@@ -161,6 +161,11 @@ pub fn step<'a>(r: &'a Rules, ec: &mut EngineCache<'a>, acc: &mut PlayerAcc, cit
         let (nonfood_pct, growth_pct) = happiness(r, score);
         let pop = acc.cities.get(&c.name).unwrap().population;
         let y = city_turn_yields(r, &e, c, pop, routes, nonfood_pct, Some(score));
+        if crate::envcfg::trace_city(&c.name.as_string()) {
+            let mods: &[crate::engine::PlotMod] = e.plot_effects.get(&c.name).map(|v| v.as_slice()).unwrap_or(&[]);
+            let tiles: Vec<_> = c.worked.iter().map(|p| (p.xy(), crate::yields::to_y(&crate::yields::tile_yields(r, p, &env.techs, &env.civics, p.xy() == c.center, mods, Some(&e.plots), Some(c), None)))).collect();
+            eprintln!("YIELDS {} pop {pop} {:?} tiles {:?}", c.name, y, tiles);
+        }
         log.push(Event::Yields(c.name, y));
         let mut y = y;
         for &k in &PCT_TOTALS {

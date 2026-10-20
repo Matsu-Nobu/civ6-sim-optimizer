@@ -743,7 +743,10 @@ impl<'a> Planner<'a> {
         let hc = st.city(home).unwrap();
         let dist = self.w.map.distance(hc.center, (d.x, d.y)) as i64;
         let info = if d.player_id != st.player.player_id { Some(d) } else { None };
-        let start = st.turn + k;
+        // replay: the route the record started from that home to that destination, yielding from the turn after
+        let recorded = self.rec.as_ref().or(self.tiles_rec.as_ref())
+            .and_then(|r| r.routes.iter().filter(|x| x.1 == home && x.2 == dn && x.0 >= st.turn).map(|x| x.0).min());
+        let start = match recorded { Some(t) => t + 1, None => st.turn + k };
         Trader { origin: home, dest: Some(dn), info, until: Some(start + (self.r.param("TRADE_ROUTE_TURN_DURATION_BASE") as i64).max(2 * dist + 4)), start }
     }
 
@@ -1546,7 +1549,7 @@ impl<'a> Planner<'a> {
                 owned.push(self.w.map.plots[&xy].clone());
             }
         }
-        if let Some(first) = self.rec.as_ref().and_then(|r| r.first_owned.get(&site)) {
+        if let Some(first) = self.rec.as_ref().or(self.tiles_rec.as_ref()).and_then(|r| r.first_owned.get(&site)) {
             // replay: the tiles the recorded city had on its first turn
             owned = first.iter().filter(|xy| !mine.contains(xy) && self.w.map.plots.contains_key(xy)).map(|xy| self.w.map.plots[xy].clone()).collect();
         }

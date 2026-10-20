@@ -1104,7 +1104,7 @@ impl<'a> Planner<'a> {
                     continue;
                 }
                 let n = left(xy);
-                if p.improvement.is_none() {
+                if p.improvement.is_none() && !st.improving.iter().any(|x| x.1 == xy) {
                     let base = wv(p);
                     let lake = |q: XY| self.w.map.is_lake(q);
                     for imp in improvement_options(r, &e, p, &self.near_with(&nm, xy), &st.acc.techs, &st.acc.civics, Some(c), &lake) {
@@ -1663,6 +1663,11 @@ impl<'a> Planner<'a> {
     // ---------------------------------------------------------------- the turn
     pub fn advance(&self, st: &mut State, ch: &mut dyn Chooser) {
         crate::value::turn_start(st);
+        for (cname, xy, imp) in std::mem::take(&mut st.improving) {
+            if let Some(p) = st.cities.iter_mut().find(|c| c.name == cname).and_then(|c| c.owned.iter_mut().find(|p| p.xy() == xy)) {
+                p.improvement = Some(imp);
+            }
+        }
         let r = self.r;
         let t_now = st.turn;
         if let Some(rt) = self.rec.as_ref().and_then(|r| r.turn(t_now)) {
@@ -2020,13 +2025,14 @@ impl<'a> Planner<'a> {
             let Some(pi) = st.cities[ci].owned.iter().position(|p| p.xy() == (x, y)) else { bi += 1; continue };
             {
                 let p = &st.cities[ci].owned[pi];
-                if (kind == s!("improve") || kind == s!("plant")) && (p.improvement.is_some() || (kind == s!("plant") && p.feature.is_some())) {
+                let improving = st.improving.iter().any(|i| i.1 == (x, y));
+                if (kind == s!("improve") || kind == s!("plant")) && (p.improvement.is_some() || improving || (kind == s!("plant") && p.feature.is_some())) {
                     bi += 1;
                     continue;
                 }
             }
             if kind == s!("improve") {
-                st.cities[ci].owned[pi].improvement = Some(what);
+                st.improving.push((cname, (x, y), what));
             } else if kind == s!("plant") {
                 st.cities[ci].owned[pi].feature = Some(what);
             } else {
@@ -2195,13 +2201,13 @@ impl<'a> Planner<'a> {
         let events = {
             let mut cache = self.cache.borrow_mut();
             let _g = crate::prof::start(5);
-            // replay: the tiles the recorded city works at the start of the next turn; else the citizens reassigned
-            // by the rule
+            // replay: the tiles the recorded city works at the start of the next turn (the player reassigned them)
             let rec = self.rec.as_ref().or(self.tiles_rec.as_ref()).cloned();
             let focus = st.focus.clone();
             let after_settler = |c: &City, e: &Engine| -> City {
                 let mut out = c.clone();
-                if let Some(rc) = rec.as_ref().and_then(|r| r.turn(t_now + 1)).and_then(|rt| rt.city(c.name)) {
+                // (only when the next save's city has the population left after the settler: no growth in between)
+                if let Some(rc) = rec.as_ref().and_then(|r| r.turn(t_now + 1)).and_then(|rt| rt.city(c.name)).filter(|rc| rc.pop == c.population as i64) {
                     let mut worked = vec![c.worked[0].clone()];
                     for xy in rc.worked.iter().filter(|xy| **xy != c.center).take(c.population.max(0) as usize) {
                         if let Some(p) = c.owned_at(*xy) {
@@ -2215,8 +2221,15 @@ impl<'a> Planner<'a> {
                         return out;
                     }
                 }
-                let w = focus_weights(*focus.get(&c.name).unwrap_or(&s!("balanced")));
-                self.w.assign_citizens(&mut out, e, &w, 1.0);
+                // else the game takes the citizen off the tile with the least food (then production); the others stay
+                let _ = (e, &focus);
+                let value = |p: &Plot| {
+                    let y = crate::yields::tile_yields(r, p, &env.techs, &env.civics, false, &[], None, None, None);
+                    (crate::yields::get_y(&y, s!("YIELD_FOOD")), crate::yields::get_y(&y, s!("YIELD_PRODUCTION")))
+                };
+                if let Some(k) = (1..out.worked.len()).min_by(|&a, &b| value(&out.worked[a]).partial_cmp(&value(&out.worked[b])).unwrap()) {
+                    out.worked.remove(k);
+                }
                 out
             };
             step(r, &mut cache, &mut st.acc, &cities_now, &env, &st.units, self.speed, st.research, st.civic, &uniq, &routes, &after_settler)

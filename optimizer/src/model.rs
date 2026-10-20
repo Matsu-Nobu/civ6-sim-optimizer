@@ -349,6 +349,8 @@ pub struct State {
     pub tiles_bought: i64,
     /// the last turn whose recorded gifts (Scenario: gold, faith, units) the plan has received
     pub gifts_through: i64,
+    /// improvements built this turn (city, plot, improvement): their yields count from the next turn (the records)
+    pub improving: Vec<(Sym, XY, Sym)>,
     pub gp: OMap<Sym, f64>,
     pub gp_ours: Vec<Sym>,
     pub gp_pending: Vec<GpUse>,
@@ -579,6 +581,7 @@ pub fn state_from(v: &Value) -> State {
         gp: OMap::new(),
         gp_ours: vec![],
         gp_pending: vec![],
+        improving: vec![],
         req_at: vec![],
     }
 }
@@ -680,6 +683,7 @@ pub fn state_from_row(d: &Value) -> State {
         gp: OMap(p["greatPersonPoints"].as_object().map(|o| o.iter().map(|(k, v)| (crate::sym::sym(k), v["banked"].as_f64().unwrap_or(0.0))).collect()).unwrap_or_default()),
         gp_ours: p["greatPeopleRecruited"].as_array().map(|a| a.iter().filter_map(|g| osym(&g["individual"])).collect()).unwrap_or_default(),
         gp_pending: vec![],
+        improving: vec![],
         req_at: vec![],
     }
 }

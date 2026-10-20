@@ -238,7 +238,8 @@ pub fn step<'a>(r: &'a Rules, ec: &mut EngineCache<'a>, acc: &mut PlayerAcc, cit
             if let Some(cost) = cost {
                 let prog = *ca.progress.get(&item).unwrap();
                 if prog >= cost {
-                    ca.overflow = prog - cost;
+                    // the overflow carries the city's own production: the item's percent bonus does not come with it
+                    ca.overflow = (prog - cost) / (1.0 + pct / 100.0);
                     ca.progress.insert(item, 0.0);
                     ca.locked_cost.remove(&item);
                     log.push(Event::Completed(c.name, item));

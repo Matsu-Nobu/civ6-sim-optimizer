@@ -255,7 +255,10 @@ fn read_entry(c: &[u8], d: &Dict) -> Option<(u32, Value)> {
             if c[11] != 0x21 || 16 + len > c.len() {
                 return None;
             }
-            Value::from(String::from_utf8_lossy(&c[16..16 + len.saturating_sub(1)]).into_owned())
+            // The string ends at its first NUL; the bytes after it, up to the stored length, are not part of it.
+            let raw = &c[16..16 + len.saturating_sub(1)];
+            let end = raw.iter().position(|&b| b == 0).unwrap_or(raw.len());
+            Value::from(String::from_utf8_lossy(&raw[..end]).into_owned())
         }
         _ => return None,
     };

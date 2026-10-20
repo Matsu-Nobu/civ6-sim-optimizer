@@ -540,6 +540,8 @@ pub struct PlayerState {
     pub faith: Option<f64>,
     pub pantheon: Option<&'static str>,
     pub era_score: Option<f64>,
+    /// the game score at the end of the last turn played (the score shown in the game)
+    pub score: Option<f64>,
     pub goody_huts: Vec<(&'static str, f64)>,
     pub offset: i64,
 }
@@ -699,6 +701,7 @@ fn parse_players(p: &Bytes, d: &Dict, all: &[Table]) -> Vec<PlayerState> {
             faith: religion.map(|r| r.0),
             pantheon: religion.and_then(|r| r.1),
             era_score: None,
+            score: None,
             goody_huts: scaled(p, goody, 1.0),
             offset: researched.start,
         });
@@ -1021,24 +1024,29 @@ fn great_work_slots(p: &Bytes, d: &Dict, from: i64, span: i64) -> Vec<(&'static 
 
 /// The last era score of each player from the `REPLAYDATASET_ERASCORE` graph: name, `LOC_HOF_` label, five bytes,
 /// kind (1 or 2), count, `(player, turn, value×256)` records.
-fn era_scores(p: &Bytes) -> HashMap<i64, f64> {
+/// Each player's latest era score and game score (the replay datasets REPLAYDATASET_ERASCORE and
+/// REPLAYDATASET_SCOREPERTURN).
+fn era_scores(p: &Bytes) -> (HashMap<i64, f64>, HashMap<i64, f64>) {
     let prefix = b"REPLAYDATASET_";
     let mut out = HashMap::new();
+    let mut score = HashMap::new();
     let mut at = p.index_of(prefix, 0);
     while at >= 0 {
         let len = p.u32(at - 4) as i64;
         let name = latin1(p.sub(at, at + len));
         let shaped = name.len() > 14 && name[14..].chars().all(|c| c.is_ascii_uppercase() || c == '_');
-        // every dataset is read (a malformed one stops the parse, as in the original); only the era score is kept
+        // every dataset is read (a malformed one stops the parse, as in the original); the era and game scores are kept
         if len < 64 && shaped && !name.ends_with("_NAME") {
             let series = replay_dataset(p, &name, at - 4);
             if !series.is_empty() && name == "REPLAYDATASET_ERASCORE" {
                 out = series;
+            } else if !series.is_empty() && name == "REPLAYDATASET_SCOREPERTURN" {
+                score = series;
             }
         }
         at = p.index_of(prefix, at + 1);
     }
-    out
+    (out, score)
 }
 
 fn replay_dataset(p: &Bytes, name: &str, from: i64) -> HashMap<i64, f64> {
@@ -1419,9 +1427,15 @@ pub fn parse(file: &[u8], d: &Dict) -> Save {
     let ded = dedications(&p, d, moments.last().map(|m| m.offset).unwrap_or(0));
     let tail = states.last().map(|s| s.offset).unwrap_or(0);
     let great_works = great_works(&p, d, tail);
-    for (pl, score) in era_scores(&p) {
+    let (eras, scores) = era_scores(&p);
+    for (pl, score) in eras {
         if let Some(s) = states.iter_mut().find(|s| s.player_id == pl) {
             s.era_score = Some(score);
+        }
+    }
+    for (pl, score) in scores {
+        if let Some(s) = states.iter_mut().find(|s| s.player_id == pl) {
+            s.score = Some(score);
         }
     }
     let great_people = great_people_ledger(&p, d, &states);

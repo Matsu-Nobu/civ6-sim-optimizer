@@ -485,6 +485,7 @@ pub fn row_json(g: &Save, d: &Dict, n: &Names, file: &str, pid: i64) -> Value {
     let player = Value::obj(vec![
         ("playerId", Value::from(pid)), ("civilization", s(&me.civilization)), ("leader", s(&me.leader)),
         ("eraScore", st.era_score.map(Value::from).unwrap_or(Value::Null)),
+        ("score", st.score.map(Value::from).unwrap_or(Value::Null)),
         ("dedications", me.dedications.as_ref().map(|x| list(x)).unwrap_or(Value::Arr(vec![]))),
         // major civilizations met: one MET_MAJOR moment per meeting (the last one is recorded as MET_ALL_MAJORS)
         ("majorsMet", Value::from(moments_of(&["MOMENT_PLAYER_MET_MAJOR", "MOMENT_PLAYER_MET_ALL_MAJORS"]).len())),

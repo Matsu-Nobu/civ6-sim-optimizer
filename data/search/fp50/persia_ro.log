@@ -1,0 +1,9 @@
+loaded ../data/games/persia_20261017.json in 0.2s
+allies (record's routes): [9, 10]
+allies (record's routes): [9, 10]
+allies (record's routes): [9, 10]
+start 4532.0
+allies (record's routes): [9, 10]
+allies (record's routes): [9, 10]
+{"best":4564,"tried":1686,"seconds":4.937581335}
+saved /home/nobu/civ6-sim-optimizer/data/search/fp50/persia_ro.json

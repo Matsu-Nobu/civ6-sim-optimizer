@@ -1,0 +1,10 @@
+loaded ../data/games/gran_colombia_20261019.json in 0.2s
+allies (record's routes): [12, 14, 8]
+allies (record's routes): [12, 14, 8]
+start 3967.0
+allies (record's routes): [12, 14, 8]
+allies (record's routes): [12, 14, 8]
+allies (record's routes): [12, 14, 8]
+allies (record's routes): [12, 14, 8]
+{"best":4884.4,"tried":2193,"seconds":5.931510695}
+saved /home/nobu/civ6-sim-optimizer/data/search/fp50/gc_ro.json

@@ -130,10 +130,15 @@ impl Milestones {
 const REWARD_KEY: u32 = 1 << 16;
 
 /// How many of `what` the plan has: districts of a type placed, cities with a building (or wonder), ("military") idle units trained, units of a type
-/// trained, ("civics") civics completed, ("cities") cities, or ("gold") whole gold in the treasury.
+/// trained, ("civics") civics completed, ("cities") cities, ("gold") whole gold in the treasury, or the whole food
+/// ("food"), production ("production") or the smaller of the two ("fp_min") of the last turn played.
 pub fn have(st: &State, what: &str) -> i64 {
     if what == "cities" {
         return st.cities.len() as i64;
+    }
+    if what == "food" || what == "production" || what == "fp_min" {
+        let (f, p) = (st.last_output[0], st.last_output[1]);
+        return match what { "food" => f, "production" => p, _ => f.min(p) }.floor() as i64;
     }
     if what == "gold" {
         return st.acc.gold.floor() as i64;

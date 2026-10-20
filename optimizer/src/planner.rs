@@ -2279,6 +2279,11 @@ impl<'a> Planner<'a> {
                 let name = st.cities[ci].name;
                 let Some(rc) = rec.turn(t_now + 1).and_then(|rt| rt.city(name)) else { continue };
                 for &(d, _, complete) in &rc.districts {
+                    // the cost the save holds for it
+                    if let Some(&(_, cost)) = rc.district_costs.iter().find(|x| x.0 == d).filter(|_| !complete) {
+                        st.cacc_mut(name).locked_cost.insert(d, cost);
+                        continue;
+                    }
                     let placed = st.cities[ci].districts.iter().any(|x| x.dtype == d);
                     if complete || placed || st.acc.cities.get(&name).map(|ca| ca.locked_cost.contains(&d)).unwrap_or(true) {
                         continue;

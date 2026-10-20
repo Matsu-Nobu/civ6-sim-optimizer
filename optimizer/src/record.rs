@@ -37,6 +37,8 @@ pub struct RecCity {
     pub owned: Vec<XY>,
     pub buildings: Vec<Sym>,
     pub districts: Vec<(Sym, XY, bool)>,
+    /// each district's cost as the save holds it (fixed when the district was placed)
+    pub district_costs: Vec<(Sym, f64)>,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -143,6 +145,8 @@ impl Record {
                 owned: c["owned"].as_array().map(|w| w.iter().map(xy_of).collect()).unwrap_or_default(),
                 buildings: syms(&c["buildings"]),
                 districts: c["districts"].as_array().map(|a| a.iter().filter_map(|x| Some((osym(&x["type"])?, xy_of(x), x["complete"].as_bool().unwrap_or(true))))
+                    .collect()).unwrap_or_default(),
+                district_costs: c["districts"].as_array().map(|a| a.iter().filter_map(|x| Some((osym(&x["type"])?, x["cost"].as_f64()?))).filter(|x| x.1 > 0.0)
                     .collect()).unwrap_or_default(),
             }).collect()).unwrap_or_default();
             turns.insert(t, RecTurn {

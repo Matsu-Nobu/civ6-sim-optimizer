@@ -1799,7 +1799,10 @@ fn main() {
                     if let (Some(item), Some(gc)) = (rc.current, gprog) {
                         let g = gc["production"]["progress"][item.as_string().as_str()].as_f64().unwrap_or(0.0);
                         // the model holds a finished item's overflow apart until the next item; the game puts it in the next one
-                        let sv = ca.progress.get(&item).copied().unwrap_or(0.0) + if c.current.is_none() || c.current == Some(item) && ca.progress.get(&item).copied().unwrap_or(0.0) == 0.0 { ca.overflow } else { 0.0 };
+                        // (a city the record left without an item this turn keeps its production apart too: not in the save)
+                        let idle_now = d["cities"].as_array().and_then(|a| a.iter().find(|cc| osym(&cc["name"]) == Some(c.name)))
+                            .map(|cc| cc["production"]["current"].is_null()).unwrap_or(false);
+                        let sv = ca.progress.get(&item).copied().unwrap_or(0.0) + if !idle_now && (c.current.is_none() || c.current == Some(item) && ca.progress.get(&item).copied().unwrap_or(0.0) == 0.0) { ca.overflow } else { 0.0 };
                         let started = d["cities"].as_array().and_then(|a| a.iter().find(|cc| osym(&cc["name"]) == Some(c.name)))
                             .map(|cc| cc["production"]["progress"][item.as_string().as_str()].as_f64().unwrap_or(0.0) == 0.0).unwrap_or(true);
                         if (g - sv).abs() > 0.5 && g > 0.0 {

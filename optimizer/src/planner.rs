@@ -1895,10 +1895,17 @@ impl<'a> Planner<'a> {
                 }
             }
         }
-        // replay: the item each city works on as recorded (switching keeps the progress of the old one)
+        // replay: the item each city works on as recorded (switching keeps the progress of the old one); a city the
+        // record shows working on nothing works on nothing this turn (its production waits for the next item)
+        let mut idle: Vec<Sym> = vec![];
         if let Some(rt) = self.rec.as_ref().or(self.tiles_rec.as_ref()).and_then(|r| r.turn(t_now)) {
             for ci in 0..st.cities.len() {
-                let Some(x) = rt.city(st.cities[ci].name).and_then(|c| c.current) else { continue };
+                let Some(rc) = rt.city(st.cities[ci].name) else { continue };
+                let Some(x) = rc.current else {
+                    st.cities[ci].current = None;
+                    idle.push(st.cities[ci].name);
+                    continue;
+                };
                 if st.cities[ci].current == Some(x) {
                     continue;
                 }
@@ -1912,7 +1919,7 @@ impl<'a> Planner<'a> {
         }
         // production choices
         for ci in 0..st.cities.len() {
-            if st.cities[ci].current.is_some() {
+            if st.cities[ci].current.is_some() || idle.contains(&st.cities[ci].name) {
                 continue;
             }
             let opts = self.buildable(st, ci);

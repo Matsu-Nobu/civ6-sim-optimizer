@@ -385,7 +385,7 @@ impl<'a> Planner<'a> {
             let info = if foreign { self.sc.world_cities(st.turn).iter().find(|c| c.name == dn).cloned() } else { None };
             let start = r["started"].as_i64().unwrap_or(st.turn);
             let until = Some(start + (self.r.param("TRADE_ROUTE_TURN_DURATION_BASE") as i64).max(30));
-            st.traders.push(Trader { origin: o, dest: Some(dn), info, until, start });
+            st.traders.push(Trader { origin: o, dest: Some(dn), info, until, start, lost: false });
         }
         if let Some(rec) = self.rec.as_ref() {
             // governments held before this turn (their legacy cards)
@@ -714,7 +714,7 @@ impl<'a> Planner<'a> {
     /// A trader's next route: any of the player's cities as its home (it walks there first; the route starts on
     /// arrival), to one of the best destinations in that city's range.
     fn start_route(&self, st: &mut State, origin: Sym, ch: &mut dyn Chooser) -> Trader {
-        let idle = Trader { origin, dest: None, info: None, until: None, start: 0 };
+        let idle = Trader { origin, dest: None, info: None, until: None, start: 0, lost: false };
         if st.traders.iter().filter(|t| t.dest.is_some()).count() as i64 >= self.trade_capacity(st) {
             return idle;
         }
@@ -730,6 +730,17 @@ impl<'a> Planner<'a> {
             }
         }
         opts.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap());
+        // replay: the record's routes, also those not among the three best of their home
+        if let Some(rec) = self.rec.as_ref().or(self.tiles_rec.as_ref()) {
+            for &(_, home, dn) in &rec.routes {
+                if opts.iter().any(|o| o.1 == Choice::Route(home, dn)) || st.city(home).is_none() {
+                    continue;
+                }
+                if let Some((v, _, d)) = self.route_options(st, home).into_iter().find(|x| x.1 == dn) {
+                    opts.push((v, Choice::Route(home, dn), d, 0));
+                }
+            }
+        }
         let names: Vec<Choice> = opts.iter().map(|o| o.1.clone()).collect();
         if names.is_empty() {
             return idle;
@@ -744,10 +755,19 @@ impl<'a> Planner<'a> {
         let dist = self.w.map.distance(hc.center, (d.x, d.y)) as i64;
         let info = if d.player_id != st.player.player_id { Some(d) } else { None };
         // replay: the route the record started from that home to that destination, yielding from the turn after
-        let recorded = self.rec.as_ref().or(self.tiles_rec.as_ref())
-            .and_then(|r| r.routes.iter().filter(|x| x.1 == home && x.2 == dn && x.0 >= st.turn).map(|x| x.0).min());
-        let start = match recorded { Some(t) => t + 1, None => st.turn + k };
-        Trader { origin: home, dest: Some(dn), info, until: Some(start + (self.r.param("TRADE_ROUTE_TURN_DURATION_BASE") as i64).max(2 * dist + 4)), start }
+        let rec = self.rec.as_ref().or(self.tiles_rec.as_ref());
+        let recorded = rec.and_then(|r| r.routes.iter().filter(|x| x.1 == home && x.2 == dn && x.0 >= st.turn).min_by_key(|x| x.0).copied());
+        let start = match recorded { Some(x) => x.0 + 1, None => st.turn + k };
+        let mut until = start + (self.r.param("TRADE_ROUTE_TURN_DURATION_BASE") as i64).max(2 * dist + 4);
+        let mut lost = false;
+        // replay: a route the record lost before its course ran out (the trader was killed) ends after its last save
+        if let Some(seen) = recorded.and_then(|x| rec.unwrap().route_seen.get(&x)) {
+            if seen + 1 < until && rec.unwrap().turn(seen + 1).is_some() {
+                until = seen + 1;
+                lost = true;
+            }
+        }
+        Trader { origin: home, dest: Some(dn), info, until: Some(until), start, lost }
     }
 
     fn routes_now(&self, st: &State) -> Vec<Route> {
@@ -2142,10 +2162,11 @@ impl<'a> Planner<'a> {
             }
         }
         // routes that ran their course
+        st.traders.retain(|t| !(t.lost && t.until.map(|u| t_now >= u).unwrap_or(false)));
         for i in 0..st.traders.len() {
             let t = st.traders[i].clone();
             if t.until.map(|u| t_now >= u).unwrap_or(false) || t.dest.is_none() {
-                st.traders[i] = Trader { origin: t.origin, dest: None, info: None, until: None, start: 0 };
+                st.traders[i] = Trader { origin: t.origin, dest: None, info: None, until: None, start: 0, lost: false };
                 let nt = self.start_route(st, t.origin, ch);
                 st.traders[i] = nt;
             }

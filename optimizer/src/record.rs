@@ -89,6 +89,8 @@ pub struct Record {
     pub purchases: Vec<(i64, Sym, Sym)>,
     /// (turn started, origin, destination)
     pub routes: Vec<(i64, Sym, Sym)>,
+    /// each recorded route's last save (by the route): a route gone before its course ran out lost its trader
+    pub route_seen: HashMap<(i64, Sym, Sym), i64>,
     /// (turn founded, name, site), in founding order
     pub sites: Vec<(i64, Sym, XY)>,
     /// city centre -> [(turn, plot)] the city got after its founding turn
@@ -168,7 +170,7 @@ impl Record {
                 cities,
             });
         }
-        let mut rec = Record { turns, research: HashMap::new(), civic: HashMap::new(), acts: vec![], purchases: vec![], routes: vec![], sites: vec![],
+        let mut rec = Record { turns, research: HashMap::new(), civic: HashMap::new(), acts: vec![], purchases: vec![], routes: vec![], route_seen: HashMap::new(), sites: vec![],
                                tiles: HashMap::new(), first_owned: HashMap::new() };
         rec.read_choices(rows, gifts);
         rec
@@ -193,6 +195,7 @@ impl Record {
                 for r in d["tradeRoutes"].as_array().map(|a| a.as_slice()).unwrap_or(&[]) {
                     let (Some(o), Some(de)) = (osym(&r["origin"]["name"]), osym(&r["destination"]["name"])) else { continue };
                     let k = (r["started"].as_i64().unwrap_or(t), o, de);
+                    self.route_seen.insert(k, t);
                     if seen_route.insert(k) {
                         self.routes.push(k);
                     }

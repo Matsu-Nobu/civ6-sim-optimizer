@@ -313,6 +313,8 @@ pub struct Trader {
     pub until: Option<i64>,
     /// the turn the route starts (after the trader walked to a new home city)
     pub start: i64,
+    /// replay: the record lost the trader when the route ends
+    pub lost: bool,
 }
 
 #[derive(Clone, Debug)]

@@ -1,0 +1,39 @@
+loaded gran_colombia_20261019.json in 0.1s
+allies (record's routes): [12, 14, 8]
+allies (record's routes): [12, 14, 8]
+allies (record's routes): [12, 14, 8]
+allies (record's routes): [12, 14, 8]
+allies (record's routes): [12, 14, 8]
+allies (record's routes): [12, 14, 8]
+allies (record's routes): [12, 14, 8]
+allies (record's routes): [12, 14, 8]
+start -1318.0, 265 decisions
+kick 1 T44 gp "wait" -> "GREAT_PERSON_INDIVIDUAL_EUCLID": 3953.0 vs -1318.0 accepted (24s, 3565 tried)
+kick 2 T33 prod "BUILDING_MONUMENT" -> "UNIT_WARRIOR": 4578.0 vs 3953.0 accepted (78s, 8929 tried)
+kick 3 T42 focus "balanced" -> "science": 4578.0 vs 4578.0 (83s, 9956 tried)
+kick 4 T41 gp "wait" -> "GREAT_PERSON_INDIVIDUAL_EUCLID": 4578.0 vs 4578.0 (89s, 11092 tried)
+kick 5 T32 policy "POLICY_AGOGE" -> "POLICY_CONSCRIPTION": 4714.8 vs 4578.0 accepted (134s, 15378 tried)
+kick 6 T37 governor ["appoint","GOVERNOR_THE_RESOURCE_MANAGER","CUENCA"] -> ["none"]: 4715.5 vs 4714.8 accepted (184s, 20831 tried)
+kick 7 T18 prod "UNIT_BUILDER" -> "DISTRICT_CAMPUS": 4713.1 vs 4715.5 (277s, 27869 tried)
+kick 8 T38 policy "POLICY_CHARISMATIC_LEADER" -> "POLICY_DIPLOMATIC_LEAGUE": 4715.5 vs 4715.5 (292s, 29691 tried)
+kick 9 T23 prod "UNIT_SLINGER" -> "UNIT_TRADER": 4840.6 vs 4715.5 accepted (423s, 39940 tried)
+kick 10 T44 builder ["improve","QUITO",[75,22],"IMPROVEMENT_PLANTATION"] -> ["harvest","CUMANA",[81,23],"feature"]: 4827.3 vs 4840.6 (429s, 40997 tried)
+kick 11 T42 policy "POLICY_GOD_KING" -> "POLICY_URBAN_PLANNING": 4840.6 vs 4840.6 (447s, 43685 tried)
+kick 12 T42 research "TECH_APPRENTICESHIP" -> "TECH_ENGINEERING": 4821.2 vs 4840.6 (477s, 47954 tried)
+kick 13 T16 policy "POLICY_DISCIPLINE" -> "NONE": 4844.6 vs 4840.6 accepted (549s, 53400 tried)
+kick 14 T27 settle [73,29] -> [70,29]: 4908.5 vs 4844.6 accepted (700s, 64813 tried)
+kick 15 T30 buy ["none"] -> ["tile","QUITO",30,[76,22]]: 4902.0 vs 4908.5 (776s, 70879 tried)
+kick 16 T35 civic "CIVIC_DEFENSIVE_TACTICS" -> "CIVIC_MILITARY_TRADITION": 4911.2 vs 4908.5 accepted (836s, 76116 tried)
+kick 17 T42 builder ["wait"] -> ["harvest","QUITO",[78,21],"feature"]: 4915.8 vs 4911.2 accepted (861s, 79457 tried)
+kick 18 T29 pantheon "BELIEF_FERTILITY_RITES" -> "BELIEF_SACRED_PATH": 4771.4 vs 4915.8 (947s, 86076 tried)
+kick 19 T30 prod "BUILDING_GRANARY" -> "BUILDING_LIBRARY": 4789.1 vs 4915.8 (1027s, 92487 tried)
+kick 20 T30 settle [0,24] -> [79,18]: 4877.7 vs 4915.8 (1107s, 98875 tried)
+kick 21 T42 policy "POLICY_CHARISMATIC_LEADER" -> "NONE": 4915.8 vs 4915.8 (1115s, 99991 tried)
+kick 22 T21 focus "balanced" -> "gold": 4919.1 vs 4915.8 accepted (1184s, 104825 tried)
+kick 23 T34 buy ["none"] -> ["tile","CITY_4",35,[69,28]]: 4892.2 vs 4919.1 (1245s, 110166 tried)
+kick 24 T38 prod "UNIT_BUILDER" -> "BUILDING_WALLS": 4847.9 vs 4919.1 (1286s, 114579 tried)
+kick 25 T33 policy "POLICY_CONSCRIPTION" -> "POLICY_SURVEY": 4919.1 vs 4919.1 (1309s, 116504 tried)
+kick 26 T41 builder ["improve","CUMANA",[81,24],"IMPROVEMENT_PASTURE"] -> ["improve","CUMANA",[80,20],"IMPROVEMENT_LUMBER_MILL"]: 4918.5 vs 4919.1 (1337s, 120097 tried)
+kick 27 T36 prod "UNIT_BUILDER" -> "UNIT_ARCHER": 4865.7 vs 4919.1 (1384s, 124935 tried)
+kick 28 T5 prod "UNIT_SCOUT" -> "UNIT_WARRIOR_MONK": 4535.5 vs 4919.1 (1500s, 132776 tried)
+saved tall.json

@@ -1,0 +1,27 @@
+loaded gran_colombia_20261019.json in 0.1s
+allies (record's routes): [12, 14, 8]
+allies (record's routes): [12, 14, 8]
+allies (record's routes): [12, 14, 8]
+allies (record's routes): [12, 14, 8]
+allies (record's routes): [12, 14, 8]
+allies (record's routes): [12, 14, 8]
+allies (record's routes): [12, 14, 8]
+allies (record's routes): [12, 14, 8]
+start -1318.0, 265 decisions
+kick 1 T44 gp "wait" -> "GREAT_PERSON_INDIVIDUAL_EUCLID": 3915.9 vs -1318.0 accepted (41s, 5190 tried)
+kick 2 T33 prod "UNIT_SETTLER" -> "BUILDING_WALLS": 4354.1 vs 3915.9 accepted (160s, 13955 tried)
+kick 3 T23 policy "POLICY_DISCIPLINE" -> "NONE": 4373.1 vs 4354.1 accepted (243s, 19565 tried)
+kick 4 T35 buy ["item","MARACAIBO","BUILDING_GRANARY",130] -> ["item","BOGOTA","UNIT_WARRIOR",80]: 4350.4 vs 4373.1 (321s, 25880 tried)
+kick 5 T19 buy ["none"] -> ["tile","CUMANA",25,[79,21]]: 4406.4 vs 4373.1 accepted (495s, 37413 tried)
+kick 6 T24 focus "balanced" -> "culture": 4406.4 vs 4406.4 (535s, 40138 tried)
+kick 7 T41 builder ["improve","BOGOTA",[76,25],"IMPROVEMENT_QUARRY"] -> ["wait"]: 4409.1 vs 4406.4 accepted (576s, 44803 tried)
+kick 8 T8 focus "balanced" -> "food": 4489.1 vs 4409.1 accepted (782s, 57207 tried)
+kick 9 T34 prod "BUILDING_GRANARY" -> "BUILDING_WALLS": 4414.1 vs 4489.1 (895s, 66131 tried)
+kick 10 T27 settle [73,29] -> [70,29]: 4433.6 vs 4489.1 (1001s, 73234 tried)
+kick 11 T44 builder ["improve","QUITO",[75,22],"IMPROVEMENT_PLANTATION"] -> ["harvest","CUMANA",[80,20],"feature"]: 4480.2 vs 4489.1 (1016s, 75436 tried)
+kick 12 T28 civic "CIVIC_POLITICAL_PHILOSOPHY" -> "CIVIC_DRAMA_POETRY": 4560.1 vs 4489.1 accepted (1191s, 86459 tried)
+kick 13 T43 builder ["harvest","MARACAIBO",[74,30],"resource"] -> ["harvest","MARACAIBO",[72,27],"feature"]: 4548.9 vs 4560.1 (1213s, 89065 tried)
+kick 14 T32 policy "POLICY_URBAN_PLANNING" -> "POLICY_CORVEE": 4554.1 vs 4560.1 (1284s, 93961 tried)
+kick 15 T16 focus "balanced" -> "gold": 4560.1 vs 4560.1 (1333s, 97035 tried)
+kick 16 T18 prod "BUILDING_MONUMENT" -> "UNIT_BUILDER": 4510.3 vs 4560.1 (1500s, 106336 tried)
+saved wide.json

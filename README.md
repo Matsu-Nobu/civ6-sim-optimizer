@@ -64,4 +64,5 @@ BBG は更新のたびに強い進め方が変わるので、勘や定石に頼�
 | [reports/opening.md](docs/reports/opening.md) | 序盤のタイル選び・斥候・開拓者の定石 |
 | [reports/france_courser_spike.md](docs/reports/france_courser_spike.md) | フランスでコーサーに上げて攻める作戦の内政の計画 |
 | [reports/persia_20261017.md](docs/reports/persia_20261017.md) | 10/17 のペルシャのマルチ戦の分析 |
+| [reports/gran_colombia_20261019.md](docs/reports/gran_colombia_20261019.md) | 10/19 の大コロンビアのマルチ戦の分析と、祖廟と謁見の間の比較 |
 | [reports/france_20261018.md](docs/reports/france_20261018.md) | 10/18 のフランスのマルチ戦の分析 |

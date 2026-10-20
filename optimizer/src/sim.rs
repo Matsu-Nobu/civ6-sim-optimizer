@@ -207,6 +207,8 @@ pub fn step<'a>(r: &'a Rules, ec: &mut EngineCache<'a>, acc: &mut PlayerAcc, cit
             };
             ca.chopped = None;
             let ov = ca.overflow;
+            // the part of this turn's production that the item's percent bonus added
+            let bonus = into - into / (1.0 + pct / 100.0);
             *ca.progress.entry_or(item, 0.0) += into + ov;
             ca.overflow = 0.0;
             if item_kind(item) == Kind::Project {
@@ -238,8 +240,9 @@ pub fn step<'a>(r: &'a Rules, ec: &mut EngineCache<'a>, acc: &mut PlayerAcc, cit
             if let Some(cost) = cost {
                 let prog = *ca.progress.get(&item).unwrap();
                 if prog >= cost {
-                    // the overflow carries the city's own production: the item's percent bonus does not come with it
-                    ca.overflow = (prog - cost) / (1.0 + pct / 100.0);
+                    // the overflow is what the production without the item's percent bonus has beyond the cost; none
+                    // when the item needed the bonus to finish (Civ6 wiki, Production (Civ6), Gathering Storm)
+                    ca.overflow = (prog - bonus - cost).max(0.0);
                     ca.progress.insert(item, 0.0);
                     ca.locked_cost.remove(&item);
                     log.push(Event::Completed(c.name, item));

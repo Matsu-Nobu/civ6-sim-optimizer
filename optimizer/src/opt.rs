@@ -118,7 +118,8 @@ pub fn play_from(p: &Planner, st0: &State, start: &State, prefix: f64, ch: &mut 
     total + h.w * ext - IDLE_UNIT_PENALTY * idle_units(st0, &st) - floor
 }
 
-/// Follow a genome; elsewhere the base policy.
+/// Follow a genome; elsewhere the lookahead with the learned value (crate::value) when one is set, else the base
+/// policy.
 pub struct GenomeChooser<'g> {
     pub genome: &'g HashMap<Key, Choice>,
 }
@@ -130,7 +131,7 @@ impl Chooser for GenomeChooser<'_> {
                 return Some(c.clone());
             }
         }
-        p.base(st, key, options)
+        crate::value::choose(p, st, key, options, self.genome).or_else(|| p.base(st, key, options))
     }
 }
 

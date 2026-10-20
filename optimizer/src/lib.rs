@@ -21,6 +21,7 @@ pub mod scenario;
 pub mod sim;
 pub mod skeleton;
 pub mod milestones;
+pub mod value;
 pub mod world;
 pub mod yields;
 

@@ -709,7 +709,91 @@ fn main() {
     let seed: u64 = arg(&args, "--seed").map(|x| x.parse().unwrap()).unwrap_or(0);
     let ext_w: f64 = arg(&args, "--ext-weight").map(|x| x.parse().unwrap()).unwrap_or(1.0);
     let horizon = opt::Horizon { turn, ext, w: ext_w, free: None, general: args.iter().any(|a| a == "--general") };
+    // --value model.json: decisions the plan does not fix take the option with the best learned value --look turns
+    // (default 3) after their own (crate::value; the model from civ6opt learn)
+    if let Some(f) = arg(&args, "--value") {
+        let model = civ6opt::value::ValueModel::from_json(&json::parse(&std::fs::read_to_string(&f).unwrap()).unwrap());
+        let look: i64 = arg(&args, "--look").map(|x| x.parse().unwrap()).unwrap_or(3);
+        let _ = civ6opt::value::LOOKAHEAD.set(civ6opt::value::Lookahead { model, turns: look });
+    }
     match cmd {
+        "learn" => {
+            // fits the value model (crate::value) to plays around the --init plan: each play but the first changes one
+            // of its decisions (turn T) to another option at random and plays to the end, the plan's choices elsewhere;
+            // the state at the start of every turn after T with the play's score is one row of that turn (the value of
+            // a state when the plan carries on from it). --plays (default 2000) on --threads
+            // (default 8). Every fifth play is held out first to report the fit (R2: the share of the scores' variance
+            // the value explains), then the model is fitted on all and saved to --out.
+            let plays: usize = arg(&args, "--plays").map(|x| x.parse().unwrap()).unwrap_or(2000);
+            let threads: usize = arg(&args, "--threads").map(|x| x.parse().unwrap()).unwrap_or(8);
+            let ridge: f64 = arg(&args, "--ridge").map(|x| x.parse().unwrap()).unwrap_or(0.01);
+            let out = arg(&args, "--out").expect("--out model.json");
+            let g0 = genome_arg(&p, arg(&args, "--init").as_deref());
+            let (mut pl, st0) = planner(&p);
+            pl.s.horizon = turn + ext;
+            let mut rec = Recorder { genome: &g0, log: vec![] };
+            opt::play(&pl, &st0, &mut rec, opt::Horizon::plain(turn));
+            let cands: Vec<(i64, Key, Vec<Choice>)> = rec.log.iter().filter(|d| d.3.len() > 1).map(|d| (d.0, d.1.clone(), d.3.clone())).collect();
+            type Row = (usize, i64, [f64; civ6opt::value::N_FEATURES], f64);
+            let rows = std::sync::Mutex::new(Vec::<Row>::new());
+            let t0 = Instant::now();
+            std::thread::scope(|sc| {
+                for w in 0..threads {
+                    let (p, cands, g0, rows) = (&p, &cands, &g0, &rows);
+                    sc.spawn(move || {
+                        let (mut wpl, wst0) = planner(p);
+                        wpl.s.horizon = turn + ext;
+                        let mut rng = opt::Rng::new(1000 + w as u64 + seed);
+                        let mut i = w;
+                        while i < plays {
+                            let mut g = g0.clone();
+                            let mut after = 0;
+                            if i > 0 {
+                                let (t, k, o) = &cands[(rng.next_u64() % cands.len() as u64) as usize];
+                                g.insert(k.clone(), o[(rng.next_u64() % o.len() as u64) as usize].clone());
+                                after = *t;
+                            }
+                            let mut st = wst0.clone();
+                            let mut feats = vec![];
+                            while st.turn <= turn {
+                                feats.push((st.turn, civ6opt::value::features(&wpl, &st)));
+                                wpl.advance(&mut st, &mut GenomeChooser { genome: &g });
+                            }
+                            let score = opt::play(&wpl, &wst0, &mut GenomeChooser { genome: &g }, horizon).0;
+                            rows.lock().unwrap().extend(feats.into_iter().filter(|x| x.0 > after).map(|(t, f)| (i, t, f, score)));
+                            i += threads;
+                        }
+                    });
+                }
+            });
+            let rows = rows.into_inner().unwrap();
+            let mut by_turn: std::collections::BTreeMap<i64, Vec<&Row>> = Default::default();
+            for r in &rows {
+                by_turn.entry(r.1).or_default().push(r);
+            }
+            let mut model = civ6opt::value::ValueModel { turns: HashMap::new() };
+            let mut report = vec![];
+            for (t, rs) in &by_turn {
+                let (train, test): (Vec<&&Row>, Vec<&&Row>) = rs.iter().partition(|r| r.0 % 5 != 4);
+                let fit = civ6opt::value::ValueModel::fit_turn(&train.iter().map(|r| r.2).collect::<Vec<_>>(), &train.iter().map(|r| r.3).collect::<Vec<_>>(), ridge);
+                let one = civ6opt::value::ValueModel { turns: [(*t, fit)].into_iter().collect() };
+                let pred: Vec<f64> = test.iter().map(|r| {
+                    let (w, m, s) = &one.turns[t];
+                    w[0] + (1..civ6opt::value::N_FEATURES).map(|i| w[i] * (r.2[i] - m[i]) / s[i]).sum::<f64>()
+                }).collect();
+                let y: Vec<f64> = test.iter().map(|r| r.3).collect();
+                let my = y.iter().sum::<f64>() / y.len().max(1) as f64;
+                let sst: f64 = y.iter().map(|v| (v - my).powi(2)).sum();
+                let sse: f64 = y.iter().zip(&pred).map(|(a, b)| (a - b).powi(2)).sum();
+                report.push((*t, if sst > 0.0 { 1.0 - sse / sst } else { 0.0 }));
+                model.turns.insert(*t, civ6opt::value::ValueModel::fit_turn(&rs.iter().map(|r| r.2).collect::<Vec<_>>(), &rs.iter().map(|r| r.3).collect::<Vec<_>>(), ridge));
+            }
+            std::fs::write(&out, model.to_json().to_string()).unwrap();
+            let r2 = Value::Arr(report.iter().map(|(t, v)| Value::Arr(vec![Value::from(*t), Value::from((v * 1000.0).round() / 1000.0)])).collect());
+            println!("{}", Value::obj(vec![("plays", Value::from(plays as i64)), ("rows", Value::from(rows.len() as i64)), ("held_out_r2", r2),
+                ("seconds", Value::from(t0.elapsed().as_secs_f64()))]));
+            eprintln!("saved {out}");
+        }
         "run" => {
             let (mut pl, st0) = planner(&p);
             pl.s.horizon = turn + ext; // the builders' returns count to the end of the evaluation

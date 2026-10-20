@@ -1650,6 +1650,7 @@ impl<'a> Planner<'a> {
 
     // ---------------------------------------------------------------- the turn
     pub fn advance(&self, st: &mut State, ch: &mut dyn Chooser) {
+        crate::value::turn_start(st);
         let r = self.r;
         let t_now = st.turn;
         if let Some(rt) = self.rec.as_ref().and_then(|r| r.turn(t_now)) {

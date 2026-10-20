@@ -23,4 +23,4 @@ one 20261014 france_20261014 5 68 8
 # gold does not show the purchases; they are given as gifts.
 one 20261017 persia_20261017 2 45 4 --unit-gift 14:UNIT_SLINGER,15:UNIT_TRADER
 one 20261018 france_20261018 1 45 8
-one 20261019 gran_colombia_20261019 0 45 8
+one 20261019 gran_colombia_20261019 0 55 8

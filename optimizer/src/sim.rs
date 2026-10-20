@@ -238,7 +238,9 @@ pub fn step<'a>(r: &'a Rules, ec: &mut EngineCache<'a>, acc: &mut PlayerAcc, cit
             if let Some(cost) = cost {
                 let prog = *ca.progress.get(&item).unwrap();
                 if prog >= cost {
-                    ca.overflow = prog - cost;
+                    // an item finished with a percent bonus of its own (a policy card) passes no overflow on (the
+                    // records: Persia 10/17 Pasargadae's settler under Colonization, France 10/14 Paris's scout)
+                    ca.overflow = if pct > 0.0 { 0.0 } else { prog - cost };
                     ca.progress.insert(item, 0.0);
                     ca.locked_cost.remove(&item);
                     log.push(Event::Completed(c.name, item));

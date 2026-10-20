@@ -216,10 +216,20 @@ impl Record {
                     .min_by(|x, y| ((x.1 - pa.get(x.0).copied().unwrap_or(0.0)) - rate).abs().partial_cmp(&((y.1 - pa.get(y.0).copied().unwrap_or(0.0)) - rate).abs()).unwrap())
                     .map(|(k, _)| *k)
             };
-            if let Some(x) = pick(&a.techs, &b.techs, &a.tech_progress, &b.tech_progress, b.science) {
+            // the one the save shows under research at the start of the turn, if it progressed (or finished); else the
+            // one whose progress grew as the turn's science would
+            let raw = rows.iter().find(|d| d["turn"].as_i64() == Some(t));
+            let current = |key: &str, done_a: &Vec<Sym>, done_b: &Vec<Sym>, pa: &HashMap<Sym, f64>, pb: &HashMap<Sym, f64>| -> Option<Sym> {
+                let x = raw.and_then(|d| osym(&d["player"][key]))?;
+                let grew = pb.get(&x).copied().unwrap_or(0.0) > pa.get(&x).copied().unwrap_or(0.0) + 1e-9;
+                ((done_b.contains(&x) && !done_a.contains(&x)) || grew).then_some(x)
+            };
+            if let Some(x) = current("currentResearch", &a.techs, &b.techs, &a.tech_progress, &b.tech_progress)
+                .or_else(|| pick(&a.techs, &b.techs, &a.tech_progress, &b.tech_progress, b.science)) {
                 self.research.insert(t, x);
             }
-            if let Some(x) = pick(&a.civics, &b.civics, &a.civic_progress, &b.civic_progress, b.culture) {
+            if let Some(x) = current("currentCivic", &a.civics, &b.civics, &a.civic_progress, &b.civic_progress)
+                .or_else(|| pick(&a.civics, &b.civics, &a.civic_progress, &b.civic_progress, b.culture)) {
                 self.civic.insert(t, x);
             }
             // builder actions, tiles. A plot's last state: any of the player's cities (a tile moved between cities and

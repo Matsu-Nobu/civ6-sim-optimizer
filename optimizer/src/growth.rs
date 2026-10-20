@@ -108,7 +108,8 @@ pub fn food_added(r: &Rules, c: &City, pop: i32, food: f64, growth_pct: f64, e: 
     }
     let mut cc = c.clone();
     cc.population = pop;
-    let left = housing(r, &cc, e) - pop as f64;
+    // the game compares whole housing (5.5 counts as 5)
+    let left = housing(r, &cc, e).floor() - pop as f64;
     let g = growth_pct + e.map(|e| e.city_effects(s!("EFFECT_ADJUST_CITY_GROWTH"), c.name).iter().map(|x| x.args.f("Amount")).sum::<f64>()).unwrap_or(0.0);
     // the game works in fixed point: the growth bonus counts in 1/64 (8% grows a 12 surplus by 12.9375, 12 x 69/64)
     let g = (g / 100.0 * 64.0).floor() / 64.0;

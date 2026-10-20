@@ -307,6 +307,22 @@ impl<'a> Planner<'a> {
     fn slots(&self, gov: Sym, st: &State) -> Vec<Sym> {
         policy_slots(self.r, &self.eng(st), gov)
     }
+    /// ObsoletePolicies: a policy can no longer be slotted once the policy replacing it is unlocked (Ilkum once
+    /// Feudalism unlocks Serfdom). Rows conditioned on a great person class are not modelled.
+    fn obsolete_policy(&self, st: &State, pol: Sym) -> bool {
+        let o = self.r.tab("ObsoletePolicies");
+        let p = self.r.tab("Policies");
+        o.find("PolicyType", pol).iter().any(|&i| {
+            if o.v(i, "RequiresAvailableGreatPersonClass").sym().is_some_and(|x| !x.is_empty()) {
+                return false;
+            }
+            let Some(by) = o.v(i, "ObsoletePolicy").sym().filter(|x| !x.is_empty()) else { return false };
+            let j = p.first("PolicyType", by).unwrap_or_else(|| panic!("ObsoletePolicies: no policy {}", by.as_string()));
+            let pc = p.v(j, "PrereqCivic").sym().filter(|x| !x.is_empty());
+            let pt = p.v(j, "PrereqTech").sym().filter(|x| !x.is_empty());
+            pc.map(|x| st.acc.civics.contains(&x)).unwrap_or(true) && pt.map(|x| st.acc.techs.contains(&x)).unwrap_or(true)
+        })
+    }
     fn policies_for_slot(&self, st: &State, slot: Sym) -> Vec<Sym> {
         let t = self.r.tab("Policies");
         let mut out = vec![];
@@ -318,6 +334,9 @@ impl<'a> Planner<'a> {
             let pc = t.v(i, "PrereqCivic").sym().filter(|x| !x.is_empty());
             let pt = t.v(i, "PrereqTech").sym().filter(|x| !x.is_empty());
             if pc.map(|x| !st.acc.civics.contains(&x)).unwrap_or(false) || pt.map(|x| !st.acc.techs.contains(&x)).unwrap_or(false) {
+                continue;
+            }
+            if self.obsolete_policy(st, pol) {
                 continue;
             }
             // Policies_XP1: game-era range and dark / golden age (the age from the record, scenario.age)

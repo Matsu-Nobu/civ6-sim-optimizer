@@ -526,8 +526,17 @@ pub fn tile_yields_bbcc(r: &Rules, plot: &Plot, techs: &BTreeSet<Sym>, civics: &
     let resource = p.resource.filter(|&res| r.resource_revealed(res, techs));
     let terrain = if p.feature.is_some() && is_impassable(r, None, p.feature) { None } else { Some(p.terrain) };
     if let Some(t) = terrain {
+        // Features.DoubleAdjacentTerrainYield (Torres del Paine): the terrain's own yields count twice next to it
+        let mut times = 1.0;
+        for xy in neighbour_xy(p.x, p.y) {
+            if let Some(f) = plots.and_then(|m| m.get(&xy)).and_then(|q| q.feature) {
+                if r.lookup_truthy("Features", "FeatureType", f, "DoubleAdjacentTerrainYield") {
+                    times = 2.0;
+                }
+            }
+        }
         for (k, v) in r.yield_rows("Terrain_YieldChanges", "TerrainType", t, "YieldType", "YieldChange") {
-            push_y(&mut y, k, v);
+            push_y(&mut y, k, times * v);
         }
     }
     if let Some(f) = p.feature {

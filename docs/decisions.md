@@ -84,3 +84,4 @@
 | 10/11 | 長い探索は、作業のセッションから切り離して回し、落ちても保存した最良の計画から再開できるようにする | 探索がヒープの破損で数時間に 1 回止まる。セッションの終了でも止まった | 合意 | `optimizer/scripts/long_ma.sh`、`data/search/ms67/run.sh` |
 | 10/16 | 練習用の mod の Lua は、ゲームを閉じてから編集する | ゲームが動いている間に書き換えて、画面が壊れた | 合意 | `~/civ6-practice-panel/PracticePanel` |
 | 10/18 | PC が落ちる原因は、高い負荷をかけて再現し、ハードウェアか WSL かを分けてから直す | BIOS の更新でも WSL が落ちた。MemTest86 は合格した | あなた | [history.md](history.md) の途中の作業 |
+| 10/20 | 探索は、WSL では落ちる原因が分かって再現できるまで、Windows で直接動かす（`optimizer/scripts/win_run.sh`） | 同じ探索を Windows で直接 16 スレッドで 1 時間近く回しても落ちなかった。WSL の中では、同じような負荷で 70 秒〜17 分で落ちていた。Windows 版と Linux 版の点数は完全に一致した | あなた | `optimizer/scripts/win_run.sh` |

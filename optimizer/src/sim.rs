@@ -166,7 +166,12 @@ pub fn step<'a>(r: &'a Rules, ec: &mut EngineCache<'a>, acc: &mut PlayerAcc, cit
             let tiles: Vec<_> = c.worked.iter().map(|p| (p.xy(), crate::yields::to_y(&crate::yields::tile_yields(r, p, &env.techs, &env.civics, p.xy() == c.center, mods, Some(&e.plots), Some(c), None)))).collect();
             eprintln!("YIELDS {} pop {pop} {:?} tiles {:?}", c.name, y, tiles);
         }
-        log.push(Event::Yields(c.name, y));
+        // the game shows a flat bonus to the item being built (e.g. +1 toward units) as the city's production
+        let mut shown = y;
+        if let Some(item) = c.current {
+            shown[1] += item_production_flat(&e, c, item);
+        }
+        log.push(Event::Yields(c.name, shown));
         let mut y = y;
         for &k in &PCT_TOTALS {
             totals[k] += y[k];

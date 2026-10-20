@@ -2098,11 +2098,16 @@ impl<'a> Planner<'a> {
             }
         }
         // the turn itself
-        let scouts_rec = *self.sc.scouts_by_turn.get(&t_now).unwrap_or(&0);
-        let explored_now = *st.acc.units_trained.get(&s!("UNIT_SCOUT")).unwrap_or(&0) >= scouts_rec;
+        // a recorded boost of turn t comes once the plan has trained as many scouts as the record had at t (on t, or
+        // later when the plan's scouting lags)
+        let scouts = *st.acc.units_trained.get(&s!("UNIT_SCOUT")).unwrap_or(&0);
         let mut boosts = self.endogenous_boosts(st);
-        if explored_now {
-            boosts.extend(self.sc.exo_boosts.get(&t_now).cloned().unwrap_or_default());
+        let mut exo_turns: Vec<i64> = self.sc.exo_boosts.keys().copied().filter(|t| *t <= t_now).collect();
+        exo_turns.sort();
+        for t in exo_turns {
+            if scouts >= *self.sc.scouts_by_turn.get(&t).unwrap_or(&0) {
+                boosts.extend(self.sc.exo_boosts[&t].iter().copied().filter(|b| !st.player.boosted.contains(b)));
+            }
         }
         if let Some(rec) = self.rec.as_ref() {
             // replay: the boosts as recorded (on the turn the record shows them, or at once if the record had one
@@ -2159,14 +2164,20 @@ impl<'a> Planner<'a> {
             }
             events.push(Event::CompletedPurchase(name, item));
         }
-        let explored = *st.acc.units_trained.get(&s!("UNIT_SCOUT")).unwrap_or(&0) >= scouts_rec;
         if let Some(g) = self.sc.gold_out.get(&t_now) {
             st.acc.gold = (st.acc.gold - g).max(0.0);
         }
-        if explored {
-            st.acc.faith += self.sc.faith_gift.get(&t_now).copied().unwrap_or(0.0);
-            st.acc.gold += self.sc.gold_gift.get(&t_now).copied().unwrap_or(0.0);
-            for u in self.sc.unit_gifts.get(&t_now).cloned().unwrap_or_default() {
+        // the recorded gifts of turn t, as the recorded boosts: once the plan has trained as many scouts as the record
+        // had at t
+        while st.gifts_through < t_now {
+            let t = st.gifts_through + 1;
+            if *st.acc.units_trained.get(&s!("UNIT_SCOUT")).unwrap_or(&0) < *self.sc.scouts_by_turn.get(&t).unwrap_or(&0) {
+                break;
+            }
+            st.gifts_through = t;
+            st.acc.faith += self.sc.faith_gift.get(&t).copied().unwrap_or(0.0);
+            st.acc.gold += self.sc.gold_gift.get(&t).copied().unwrap_or(0.0);
+            for u in self.sc.unit_gifts.get(&t).cloned().unwrap_or_default() {
                 // the game counts them among the units trained
                 *st.acc.units_trained.entry_or(u, 0) += 1;
                 if u == s!("UNIT_BUILDER") {

@@ -40,6 +40,16 @@ fn turn_map<T>(v: &Value, f: impl Fn(&Value) -> T) -> HashMap<i64, T> {
 }
 
 impl Scenario {
+    /// Scouts the record had built (not received as gifts) by the end of turn t: the exploration a plan must match
+    /// before the recorded rewards of turn t come.
+    pub fn scouts_built_by(&self, t: i64) -> i64 {
+        let gifted = self.unit_gifts.iter().filter(|(tt, _)| **tt <= t).flat_map(|(_, us)| us.iter()).filter(|u| **u == crate::sym::sym("UNIT_SCOUT")).count() as i64;
+        self.scouts_by_turn.get(&t).copied().unwrap_or(0) - gifted
+    }
+    /// Scouts received as the record's gifts of the turns up to t.
+    pub fn scouts_gifted_through(&self, t: i64) -> i64 {
+        self.unit_gifts.iter().filter(|(tt, _)| **tt <= t).flat_map(|(_, us)| us.iter()).filter(|u| **u == crate::sym::sym("UNIT_SCOUT")).count() as i64
+    }
     pub fn load(rows: &Value, sc: &Value) -> Scenario {
         let mut out = HashMap::new();
         let mut last = 0;

@@ -1716,7 +1716,7 @@ impl<'a> Planner<'a> {
                 }
             }
         }
-        if let Some(rt) = self.rec.as_ref().and_then(|r| r.turn(t_now)) {
+        if let Some(rt) = self.rec.as_ref().or(self.tiles_rec.as_ref()).and_then(|r| r.turn(t_now)) {
             // replay: government and policies as recorded this turn (the player may swap them at any time; only the
             // slots the government has and the policies known so far)
             if let Some(g) = rt.gov {
@@ -1740,7 +1740,7 @@ impl<'a> Planner<'a> {
                 st.policy_dirty = false;
             }
         }
-        if let Some(rec) = self.rec.as_ref() {
+        if let Some(rec) = self.rec.as_ref().or(self.tiles_rec.as_ref()) {
             // replay: switch research / civic as recorded (the progress of the old one is kept)
             // (one the record has finished by now and the replay has not is kept until it is: the replay catches up)
             let rt = rec.turn(t_now);
@@ -2107,14 +2107,14 @@ impl<'a> Planner<'a> {
             }
         }
         // the turn itself
-        // a recorded boost of turn t comes once the plan has trained as many scouts as the record had at t (on t, or
-        // later when the plan's scouting lags)
-        let scouts = *st.acc.units_trained.get(&s!("UNIT_SCOUT")).unwrap_or(&0);
+        // a recorded boost of turn t comes once the plan has built as many scouts as the record had built by t (gifted
+        // scouts not counted on either side; on t, or later when the plan.s scouting lags)
+        let scouts = *st.acc.units_trained.get(&s!("UNIT_SCOUT")).unwrap_or(&0) - self.sc.scouts_gifted_through(st.gifts_through);
         let mut boosts = self.endogenous_boosts(st);
         let mut exo_turns: Vec<i64> = self.sc.exo_boosts.keys().copied().filter(|t| *t <= t_now).collect();
         exo_turns.sort();
         for t in exo_turns {
-            if scouts >= *self.sc.scouts_by_turn.get(&t).unwrap_or(&0) {
+            if scouts >= self.sc.scouts_built_by(t) {
                 boosts.extend(self.sc.exo_boosts[&t].iter().copied().filter(|b| !st.player.boosted.contains(b)));
             }
         }
@@ -2216,11 +2216,12 @@ impl<'a> Planner<'a> {
         if let Some(g) = self.sc.gold_out.get(&t_now) {
             st.acc.gold = (st.acc.gold - g).max(0.0);
         }
-        // the recorded gifts of turn t, as the recorded boosts: once the plan has trained as many scouts as the record
+        // the recorded gifts of turn t, as the recorded boosts: once the plan has built as many scouts as the record
         // had at t
         while st.gifts_through < t_now {
             let t = st.gifts_through + 1;
-            if *st.acc.units_trained.get(&s!("UNIT_SCOUT")).unwrap_or(&0) < *self.sc.scouts_by_turn.get(&t).unwrap_or(&0) {
+            let built = *st.acc.units_trained.get(&s!("UNIT_SCOUT")).unwrap_or(&0) - self.sc.scouts_gifted_through(st.gifts_through);
+            if built < self.sc.scouts_built_by(t) {
                 break;
             }
             st.gifts_through = t;

@@ -592,6 +592,7 @@ fn snapshot(st: &State) -> Value {
         ("research", Value::from(st.research.map(|x| x.as_string()))),
         ("civic", Value::from(st.civic.map(|x| x.as_string()))),
         ("civic_progress", Value::from(st.civic.and_then(|c| st.acc.civic_progress.get(&c).copied()).unwrap_or(0.0))),
+        ("research_progress", Value::from(st.research.and_then(|c| st.acc.tech_progress.get(&c).copied()).unwrap_or(0.0))),
         ("gold", Value::from(st.acc.gold)),
         ("faith", Value::from(st.acc.faith)),
         ("output", Value::from(st.last_output.to_vec())),

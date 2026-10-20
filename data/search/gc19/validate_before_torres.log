@@ -1,0 +1,30 @@
+loaded ../data/games/gran_colombia_20261019.json in 0.3s
+T2 ok
+T3 ok
+T4 ok
+T5 ok
+T6 F 6.0/8 P 8.0/6; BOGOTA food 8.0/10.0; BOGOTA UNIT_SCOUT progress 14.0/12.0
+T7 (save) TECH_WRITING 12.0/13.5
+T8 (save) BOGOTA UNIT_SETTLER progress 10.0/15.0
+T9 F 10.0/8 P 9.0/11; BOGOTA food 6.0/4.0; BOGOTA UNIT_SETTLER progress 24.0/26.0; (save) CIVIC_FOREIGN_TRADE 8.9/9.5
+T10 ok
+T11 F 8.0/10 P 11.0/9
+T12 (save) BOGOTA UNIT_SETTLER progress 9.0/13.0; (save) TECH_IRRIGATION 3.0/5.5
+T13 ok
+T14 ok
+T15 ok
+T16 BOGOTA food 10.0/8.0; (save) CIVIC_EARLY_EMPIRE 1.9/2.5; (save) boost CIVIC_CRAFTSMANSHIP recorded, not by the rules (BOOST_TRIGGER_NUM_IMPROVED_TILES); (save) boost CIVIC_MYSTICISM recorded, not by the rules (BOOST_TRIGGER_CREATE_PANTHEON)
+T17 F 12.0/10 P 11.0/16; BOGOTA pop 3/2; BOGOTA food 0.0/9.0; (save) BOGOTA UNIT_BUILDER progress 7.0/12.0; CUMANA food 2.0/3.0; (save) CUMANA BUILDING_MONUMENT progress 4.0/6.0; (save) boost CIVIC_STATE_WORKFORCE recorded, not by the rules (BOOST_TRIGGER_HAVE_X_UNIQUE_SPECIALTY_DISTRICTS)
+T18 F 12.0/13 P 12.0/14; CUMANA food 5.0/6.0; CUMANA BUILDING_MONUMENT progress 10.0/12.0
+T19 F 14.0/15 P 15.0/16; CUMANA food 1.0/2.0; CUMANA BUILDING_MONUMENT progress 16.0/18.0; (save) boost TECH_SAILING recorded, not by the rules (BOOST_TRIGGER_SETTLE_COAST); (save) boost TECH_MASONRY recorded, not by the rules (BOOST_TRIGGER_HAVE_X_IMPROVEMENTS)
+T20 F 20.0/22 P 23.0/27; (save) BOGOTA DISTRICT_CAMPUS progress 11.0/14.0; CUMANA food 3.0/5.0; CUMANA BUILDING_MONUMENT progress 25.0/29.0
+T21 F 20.0/22 P 23.0/27; CUMANA food 6.0/8.0; (save) techs 4/5 civics 2/2; (save) boost TECH_CURRENCY recorded, not by the rules (BOOST_TRIGGER_MAINTAIN_X_TRADE_ROUTES)
+T22 F 20.0/22 P 23.0/27; CUMANA food 9.0/11.0; (save) TECH_CURRENCY 37.0/38.5; (save) BOGOTA DISTRICT_CAMPUS: done by the record (bought or carried over)
+T23 F 26.0/28 P 23.0/28; (save) BOGOTA UNIT_SETTLER progress 18.0/21.0; CUMANA food 0.0/2.0; (save) CUMANA UNIT_SETTLER progress 9.0/15.0; (save) CIVIC_CRAFTSMANSHIP 13.9/16.2
+T24 F 28.0/31 P 24.0/30; CUMANA food 3.0/6.0; CUMANA UNIT_SETTLER progress 25.5/33.0
+T25 F 31.0/33 P 27.4/32.515625; CUMANA food 8.0/10.0; CUMANA UNIT_SETTLER progress 45.0/51.0; (save) QUITO DISTRICT_CAMPUS progress 7.6/11.6; (save) CIVIC_STATE_WORKFORCE 20.5/22.9
+T26 F 33.0/35 P 28.9/33.95703125; BOGOTA food 5.8/4.7; CUMANA food 12.0/14.0; CUMANA UNIT_SETTLER progress 63.0/69.0
+T27 F 33.0/35 P 28.9/32.87890625; CUMANA pop 4/3; CUMANA food 0.0/5.2
+T28 F 35.0/37 P 35.0/37.95703125; (save) BOGOTA DISTRICT_GOVERNMENT progress 14.0/24.8; CUMANA food 7.2/9.2; QUITO food 6.5/3.5; TECH_THE_WHEEL 45.3/44.2; (save) CIVIC_POLITICAL_PHILOSOPHY 38.0/40.8; (save) QUITO DISTRICT_CAMPUS: done by the record (bought or carried over)
+T29 F 35.0/37 P 35.0/39.0390625; CUMANA food 11.2/13.2; QUITO food 9.5/7.0; TECH_MASONRY 31.3/30.2
+turns without model errors 11/28; differences by kind [("boost from another source (given by the record, not in the save)", 6), ("done by the record (bought or carried over, not in the save)", 2), ("food", 20), ("pop", 2), ("progress", 8), ("progress (overflow, not in the save)", 9), ("research", 2), ("research (overflow, not in the save)", 9), ("yields", 16)]

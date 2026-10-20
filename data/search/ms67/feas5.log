@@ -1,0 +1,21 @@
+loaded ../data/games/france_20261014.json in 0.1s
+requirement GREAT_PERSON_CLASS_GENERAL: the one on offer at T44 is Some("GREAT_PERSON_INDIVIDUAL_AETHELFLAED"), 75 points
+requirement GREAT_PERSON_CLASS_GENERAL>ERA_RENAISSANCE: the one on offer at T67 is Some("GREAT_PERSON_INDIVIDUAL_GUSTAVUS_ADOLPHUS"), 155 points
+allies (record's routes): [1]
+allies (record's routes): [1]
+allies (record's routes): [1]
+allies (record's routes): [1]
+allies (record's routes): [1]
+allies (record's routes): [1]
+allies (record's routes): [1]
+allies (record's routes): [1]
+allies (record's routes): [1]
+allies (record's routes): [1]
+allies (record's routes): [1]
+allies (record's routes): [1]
+allies (record's routes): [1]
+start -7936.4, 341 decisions
+kick 1 T34 focus "balanced" -> "food": 3030.2 vs -7936.4 accepted (184s, 18900 tried)
+kick 2 T14 civic "CIVIC_EARLY_EMPIRE" -> "CIVIC_CRAFTSMANSHIP": 3482.1 vs 3030.2 accepted (300s, 25646 tried)
+{"best":3030.1687137288873,"kicks":2,"accepted":1,"tried":25646,"seconds":300.064149911}
+saved ../data/search/ms67/feas5.json

@@ -222,14 +222,14 @@ pub fn scenario(rows: &[Value], db: &Connection) -> Value {
             faith.push((turn(a).to_string(), Value::from(gift)));
         }
     }
-    // gold from tribal villages: the gold jump on a turn the hut count went up, beyond the turn's income
+    // gold from outside (tribal villages, allies, city-states): a rise of the treasury beyond the turn's income (a
+    // turn's income can differ from the rate shown at its start by a few gold, hence the margin)
     let mut gold = vec![];
     for (a, b) in &pairs {
         let (pa, pb) = (&a["player"], &b["player"]);
-        let got = pb["goodyHutsReceived"]["GOODYHUT_GOLD"].as_f64().unwrap_or(0.0) - pa["goodyHutsReceived"]["GOODYHUT_GOLD"].as_f64().unwrap_or(0.0);
-        if huts(pb) > huts(pa) && got > 0.0 {
-            let g = pb["gold"].as_f64().unwrap() - pa["gold"].as_f64().unwrap() - pa["goldPerTurn"].as_f64().unwrap_or(0.0);
-            gold.push((turn(a).to_string(), Value::from(g.max(0.0))));
+        let g = pb["gold"].as_f64().unwrap() - pa["gold"].as_f64().unwrap() - pa["goldPerTurn"].as_f64().unwrap_or(0.0);
+        if g > 5.0 {
+            gold.push((turn(a).to_string(), Value::from(g)));
         }
     }
     // recon units trained by each turn: exploration rewards go only to a plan that has scouted as much by then

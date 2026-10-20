@@ -1175,7 +1175,9 @@ impl<'a> Planner<'a> {
     }
 
     pub fn travel(&self, st: &State, a: XY, b: XY, unit: &str) -> Option<i64> {
-        let moves = self.r.lookup_f("Units", "UnitType", ss(unit), "BaseMoves");
+        let e = self.eng(st);
+        let extra: f64 = e.unit_effects(s!("EFFECT_ADJUST_UNIT_MOVEMENT"), ss(unit), None).iter().map(|x| x.args.f("Amount")).sum();
+        let moves = self.r.lookup_f("Units", "UnitType", ss(unit), "BaseMoves") + extra;
         let mut cities: HashSet<XY> = st.cities.iter().map(|c| c.center).collect();
         cities.extend(self.sc.world_cities(st.turn).iter().map(|c| (c.x, c.y)));
         travel_turns(self.r, &self.w.map, a, b, moves, self.road_type(st.turn), &cities)
@@ -1548,6 +1550,14 @@ impl<'a> Planner<'a> {
             // replay: the tiles the recorded city had on its first turn
             owned = first.iter().filter(|xy| !mine.contains(xy) && self.w.map.plots.contains_key(xy)).map(|xy| self.w.map.plots[xy].clone()).collect();
         }
+        // founding a city removes a removable feature (woods, rainforest, marsh) from its centre
+        let mut centre = self.w.map.plots[&site].clone();
+        if centre.feature.is_some_and(|f| self.r.lookup_truthy("Features", "FeatureType", f, "Removable")) {
+            centre.feature = None;
+        }
+        for p in owned.iter_mut().filter(|p| p.xy() == site) {
+            *p = centre.clone();
+        }
         let n = st.cities.len() as i64;
         let mut city = City {
             name,
@@ -1562,7 +1572,7 @@ impl<'a> Planner<'a> {
             current: None,
             buildings: vec![],
             great_works: vec![],
-            districts: vec![District { dtype: s!("DISTRICT_CITY_CENTER"), x: site.0, y: site.1, complete: true, plot: self.w.map.plots[&site].clone(), neighbours: vec![] }],
+            districts: vec![District { dtype: s!("DISTRICT_CITY_CENTER"), x: site.0, y: site.1, complete: true, plot: centre, neighbours: vec![] }],
             pop_mark: None,
         };
         self.refresh_near(&mut city);
@@ -1623,8 +1633,7 @@ impl<'a> Planner<'a> {
             // during the turn), those also worked at its start first; then the start's; the rest by the rule
             let now: Vec<XY> = rec_now.map(|r| r.worked.clone()).unwrap_or_default();
             let next: Vec<XY> = rec_next.map(|r| r.worked.clone()).unwrap_or_default();
-            let order: Vec<XY> = next.iter().filter(|x| now.contains(x)).chain(next.iter().filter(|x| !now.contains(x))).chain(now.iter().filter(|x| !next.contains(x)))
-                .copied().collect();
+            let order: Vec<XY> = now.iter().chain(next.iter().filter(|x| !now.contains(x))).copied().collect();
             let pop = c.population.max(0) as usize;
             let dtiles: Vec<XY> = c.districts.iter().map(|d| (d.x, d.y)).collect();
             let mut pick: Vec<XY> = order.into_iter()
@@ -2137,11 +2146,51 @@ impl<'a> Planner<'a> {
         for &b in &uniq {
             st.player.boosted.insert(b);
         }
+        // replay: a district's cost is fixed when it is placed; the record places some before it starts producing them
+        if let Some(rec) = self.rec.as_ref().or(self.tiles_rec.as_ref()) {
+            for ci in 0..st.cities.len() {
+                let name = st.cities[ci].name;
+                let Some(rc) = rec.turn(t_now + 1).and_then(|rt| rt.city(name)) else { continue };
+                for &(d, _, complete) in &rc.districts {
+                    let placed = st.cities[ci].districts.iter().any(|x| x.dtype == d);
+                    if complete || placed || st.acc.cities.get(&name).map(|ca| ca.locked_cost.contains(&d)).unwrap_or(true) {
+                        continue;
+                    }
+                    if let Some(cost) = crate::sim::current_cost(r, &st.acc, &st.cities, &env, name, d, self.speed) {
+                        st.cacc_mut(name).locked_cost.insert(d, cost);
+                    }
+                }
+            }
+        }
         let cities_now = st.cities.clone();
         let events = {
             let mut cache = self.cache.borrow_mut();
             let _g = crate::prof::start(5);
-            step(r, &mut cache, &mut st.acc, &cities_now, &env, &st.units, self.speed, st.research, st.civic, &uniq, &routes)
+            // replay: the tiles the recorded city works at the start of the next turn; else the citizens reassigned
+            // by the rule
+            let rec = self.rec.as_ref().or(self.tiles_rec.as_ref()).cloned();
+            let focus = st.focus.clone();
+            let after_settler = |c: &City, e: &Engine| -> City {
+                let mut out = c.clone();
+                if let Some(rc) = rec.as_ref().and_then(|r| r.turn(t_now + 1)).and_then(|rt| rt.city(c.name)) {
+                    let mut worked = vec![c.worked[0].clone()];
+                    for xy in rc.worked.iter().filter(|xy| **xy != c.center).take(c.population.max(0) as usize) {
+                        if let Some(p) = c.owned_at(*xy) {
+                            let mut p = p.clone();
+                            p.workers = 1;
+                            worked.push(p);
+                        }
+                    }
+                    if worked.len() == c.population.max(0) as usize + 1 {
+                        out.worked = worked;
+                        return out;
+                    }
+                }
+                let w = focus_weights(*focus.get(&c.name).unwrap_or(&s!("balanced")));
+                self.w.assign_citizens(&mut out, e, &w, 1.0);
+                out
+            };
+            step(r, &mut cache, &mut st.acc, &cities_now, &env, &st.units, self.speed, st.research, st.civic, &uniq, &routes, &after_settler)
         };
         let mut events = events;
         // the turn's output: the yields growth and production used (techs finished this turn count)
@@ -2228,7 +2277,7 @@ impl<'a> Planner<'a> {
                         st.settler_counter += 1;
                         // replay (validation, or the recorded player's choices replayed): the city is founded on the
                         // recorded turn (the settler's actual path is not recorded)
-                        let arrive = match self.rec.as_ref().and_then(|r| r.sites.iter().find(|x| x.2 == t)) {
+                        let arrive = match self.rec.as_ref().or(self.tiles_rec.as_ref()).and_then(|r| r.sites.iter().find(|x| x.2 == t)) {
                             Some(x) => (x.0 + 1).max(t_now + 1),
                             None => t_now + 1 + k,
                         };

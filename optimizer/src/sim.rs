@@ -67,21 +67,6 @@ fn completion_yields(r: &Rules, e: &Engine, c: &City, item: Sym, cost: f64) -> V
     out
 }
 
-fn drop_weakest_citizen(r: &Rules, c: &City, env: &Env) -> City {
-    let tiles: Vec<usize> = (0..c.worked.len()).filter(|&i| c.worked[i].xy() != c.center).collect();
-    if tiles.is_empty() {
-        return c.clone();
-    }
-    let value = |w: &Plot| {
-        let y = tile_yields(r, w, &env.techs, &env.civics, false, &[], None, None, None);
-        (get_y(&y, s!("YIELD_FOOD")), get_y(&y, s!("YIELD_PRODUCTION")))
-    };
-    let weakest = *tiles.iter().min_by(|&&a, &&b| value(&c.worked[a]).partial_cmp(&value(&c.worked[b])).unwrap()).unwrap();
-    let mut out = c.clone();
-    out.worked.remove(weakest);
-    out
-}
-
 #[derive(Clone, Debug)]
 pub enum Event {
     Completed(Sym, Sym),
@@ -128,8 +113,12 @@ pub fn current_cost(r: &Rules, acc: &PlayerAcc, cities: &[City], env: &Env, city
     item_cost(r, &env_cost, item, speed, Some(&placed), false)
 }
 
+/// `after_settler`: a city's worked tiles once a settler has taken one of its citizens (the game reassigns them all),
+/// given the city and its engine.
+#[allow(clippy::too_many_arguments)]
 pub fn step<'a>(r: &'a Rules, ec: &mut EngineCache<'a>, acc: &mut PlayerAcc, cities: &[City], env: &Env, units: &OMap<Sym, i64>, speed: Sym,
-                research: Option<Sym>, civic: Option<Sym>, boosts: &[Sym], routes: &[Route]) -> Vec<Event> {
+                research: Option<Sym>, civic: Option<Sym>, boosts: &[Sym], routes: &[Route],
+                after_settler: &dyn Fn(&City, &Engine) -> City) -> Vec<Event> {
     let mut log = vec![];
     for c in cities {
         if !acc.cities.contains(&c.name) {
@@ -287,7 +276,9 @@ pub fn step<'a>(r: &'a Rules, ec: &mut EngineCache<'a>, acc: &mut PlayerAcc, cit
             food = city_turn_yields(r, &ef, fc, pop, routes, nonfood_pct, Some(score))[0];
         }
         if settled {
-            let fewer = drop_weakest_citizen(r, c, env);
+            let mut fewer = c.clone();
+            fewer.population = pop;
+            let fewer = after_settler(&fewer, &e);
             food = city_turn_yields(r, &e, &fewer, pop, routes, 0.0, None)[0];
         }
         let fc = food_city.as_ref().unwrap_or(c);

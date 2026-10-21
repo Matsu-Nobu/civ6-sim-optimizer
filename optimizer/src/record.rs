@@ -438,7 +438,9 @@ impl Chooser for RecordedChooser<'_> {
                 return Some(x);
             }
         } else if k == s!("governor") {
-            if let Some(r) = next {
+            // the governors and titles the save of this turn shows (one given during a turn shows in the next save and
+            // takes effect from that turn: 10/19 Cumana's Researcher, T36)
+            if let Some(r) = rec.turn(t) {
                 for (g, city, promos) in &r.governors {
                     let mine = st.player.governors.iter().flatten().find(|x| x.gtype == *g);
                     match mine {

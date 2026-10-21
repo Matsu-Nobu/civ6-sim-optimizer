@@ -1796,7 +1796,17 @@ fn main() {
                         note("food", format!("{} food {:.1}/{:.1}", c.name, ca.food_store, rc.food), &mut diffs);
                     }
                     let gprog = rows.get(&(t + 1)).and_then(|x| x["cities"].as_array().and_then(|a| a.iter().find(|cc| osym(&cc["name"]) == Some(c.name)).cloned()));
-                    if let (Some(item), Some(gc)) = (rc.current, gprog) {
+                    // the save holds the overflow not yet in the item (whole units): the item's progress and the overflow
+                    // together, against the model's
+                    let held = gprog.as_ref().and_then(|x| x["production"]["heldOverflow"].as_f64());
+                    if let (Some(item), Some(gc), Some(h)) = (rc.current, gprog.as_ref(), held) {
+                        let gt = gc["production"]["progress"][item.as_string().as_str()].as_f64().unwrap_or(0.0) + h;
+                        let mt = ca.progress.get(&item).copied().unwrap_or(0.0) + ca.overflow;
+                        if mt - gt < -0.5 || mt - gt >= 1.0 {
+                            note("progress", format!("{} {} progress {:.1}/{:.1}", c.name, item, mt, gt), &mut diffs);
+                        }
+                    }
+                    if let (Some(item), Some(gc), None) = (rc.current, gprog, held) {
                         let g = gc["production"]["progress"][item.as_string().as_str()].as_f64().unwrap_or(0.0);
                         // the model holds a finished item's overflow apart until the next item; the game puts it in the next one
                         // (a city the record left without an item this turn keeps its production apart too: not in the save)

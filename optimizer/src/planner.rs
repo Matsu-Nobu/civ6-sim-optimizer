@@ -1938,15 +1938,24 @@ impl<'a> Planner<'a> {
                 }
             }
         }
-        // replay: the item each city works on as recorded (switching keeps the progress of the old one); a city the
-        // record shows working on nothing works on nothing this turn (its production waits for the next item)
+        // replay: the item each city works on as recorded (switching keeps the progress of the old one). A city the
+        // save shows working on nothing finished an item with none to follow: the game dropped that item's overflow
+        // (the saves' carried-over production is 0 then), and this turn's production goes to the item chosen during
+        // the turn (the next save's); with none chosen, the city works on nothing (its production waits)
         let mut idle: Vec<Sym> = vec![];
-        if let Some(rt) = self.rec.as_ref().or(self.tiles_rec.as_ref()).and_then(|r| r.turn(t_now)) {
+        if let Some(rec) = self.rec.as_ref().or(self.tiles_rec.as_ref()) {
+            let rt = rec.turn(t_now);
             for ci in 0..st.cities.len() {
-                let Some(rc) = rt.city(st.cities[ci].name) else { continue };
+                let name = st.cities[ci].name;
+                let Some(rc) = rt.and_then(|rt| rt.city(name)) else { continue };
                 let Some(x) = rc.current else {
                     st.cities[ci].current = None;
-                    idle.push(st.cities[ci].name);
+                    st.cacc_mut(name).overflow = 0.0;
+                    // (an item unlocked at the end of this turn is not on offer yet: the production waits for it)
+                    let next = rec.turn(t_now + 1).and_then(|r| r.city(name)).and_then(|c| c.current);
+                    if !next.map(|n| self.buildable(st, ci).contains(&Choice::S(n))).unwrap_or(false) {
+                        idle.push(name);
+                    }
                     continue;
                 };
                 if st.cities[ci].current == Some(x) {
@@ -2278,10 +2287,15 @@ impl<'a> Planner<'a> {
             for ci in 0..st.cities.len() {
                 let name = st.cities[ci].name;
                 let Some(rc) = rec.turn(t_now + 1).and_then(|rt| rt.city(name)) else { continue };
-                for &(d, _, complete) in &rc.districts {
-                    // the cost the save holds for it
-                    if let Some(&(_, cost)) = rc.district_costs.iter().find(|x| x.0 == d).filter(|_| !complete) {
+                // the cost the saves hold for a district not yet complete (this turn's save, else the next)
+                let now = rec.turn(t_now).and_then(|rt| rt.city(name));
+                for (d, cost) in now.iter().chain(std::iter::once(&rc)).flat_map(|c| c.district_costs.iter().filter(|x| !c.districts.iter().any(|y| y.0 == x.0 && y.2)).copied().collect::<Vec<_>>()) {
+                    if !st.cities[ci].districts.iter().any(|x| x.dtype == d && x.complete) {
                         st.cacc_mut(name).locked_cost.insert(d, cost);
+                    }
+                }
+                for &(d, _, complete) in &rc.districts {
+                    if rc.district_costs.iter().any(|x| x.0 == d) && !complete {
                         continue;
                     }
                     let placed = st.cities[ci].districts.iter().any(|x| x.dtype == d);

@@ -1196,7 +1196,8 @@ pub fn city_yields(r: &Rules, e: &Engine, c: &City, routes: &[Route]) -> Y {
         let is_center = w.xy() == c.center;
         let mut wp = w.clone();
         wp.district_type = if is_center { Some(s!("DISTRICT_CITY_CENTER")) } else { None };
-        if wp.district.map(|d| d != 0).unwrap_or(false) && !is_center {
+        // a district's tile (one the save marks, or one of the city's districts the model placed) is a specialist's
+        if (wp.district.map(|d| d != 0).unwrap_or(false) || c.districts.iter().any(|d| (d.x, d.y) == w.xy())) && !is_center {
             let n = if w.workers > 0 { w.workers } else { 1 };
             add_all(specialist_yields(r, c, w.xy()).into_iter().map(|(k, v)| (k, v * n as f64)).collect());
             continue;

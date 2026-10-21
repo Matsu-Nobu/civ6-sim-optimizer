@@ -269,8 +269,9 @@ pub fn step<'a>(r: &'a Rules, ec: &mut EngineCache<'a>, acc: &mut PlayerAcc, cit
                     // the overflow is what the item's progress and this turn's production without its percent bonus
                     // have beyond the cost: none when it needed the bonus to finish (Civ6 wiki, Production (Civ6),
                     // Gathering Storm), and the carried-over production put into it does not carry on (the saves:
-                    // 10/19 Cumana T22, 10/14 Paris T29, 10/18 La Rochelle T22)
-                    ca.overflow = if before + base + applied < cost { 0.0 } else { (before + own.min(base) - cost).max(0.0) };
+                    // 10/19 Cumana T22, 10/14 Paris T29, 10/18 La Rochelle T22); the flat bonus toward the item
+                    // does not carry on either (10/17 Pasargadae T19: 13 + 12 + 1 for a slinger of 17 leaves 8)
+                    ca.overflow = if before + base + applied < cost { 0.0 } else { (before + y[1].min(base) - cost).max(0.0) };
                     ca.progress.insert(item, 0.0);
                     ca.locked_cost.remove(&item);
                     log.push(Event::Completed(c.name, item));

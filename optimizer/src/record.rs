@@ -264,6 +264,13 @@ impl Record {
             let all_a: HashMap<XY, Value> = rows.iter().find(|d| d["turn"].as_i64() == Some(t))
                 .map(|d| d["cities"].as_array().unwrap().iter().flat_map(|c| c["owned"].as_array().unwrap().iter().map(|p| (xy_of(p), p.clone()))).collect())
                 .unwrap_or_default();
+            // a builder on the plot at the turn's start that has a charge less, or is gone, at the next
+            let units = |tt: i64| rows.iter().find(|d| d["turn"].as_i64() == Some(tt)).and_then(|d| d["units"].as_array().cloned()).unwrap_or_default();
+            let (ua, ub) = (units(t), units(tn));
+            let charge_spent_at = |tt: i64, xy: XY| tt == t && ua.iter().any(|u| u["type"].as_str() == Some("UNIT_BUILDER") && xy_of(u) == xy && {
+                let left = ub.iter().find(|v| v["id"] == u["id"]).map(|v| v["charges"].as_i64().unwrap_or(0));
+                left.map(|l| l < u["charges"].as_i64().unwrap_or(0)).unwrap_or(true)
+            });
             for cb in &b.cities {
                 let ca = a.city(cb.name);
                 let plots_b = rows.iter().find(|d| d["turn"].as_i64() == Some(tn)).and_then(|d| d["cities"].as_array().and_then(|cs| cs.iter().find(|c| osym(&c["name"]) == Some(cb.name)).cloned()));
@@ -291,7 +298,9 @@ impl Record {
                             }
                         }
                         let Some(q) = pa.get(&xy) else { continue };
-                        if !p["district"].is_null() || !p["wonder"].is_null() {
+                        // a district or wonder placed on the plot removes its feature, unless a builder standing on
+                        // it spent a charge first (10/21 Antium T39: woods harvested, then a bath placed there)
+                        if (!p["district"].is_null() || !p["wonder"].is_null()) && !charge_spent_at(t, xy) {
                             continue;
                         }
                         if !q["feature"].is_null() && p["feature"].is_null() {

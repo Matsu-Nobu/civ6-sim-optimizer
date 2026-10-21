@@ -446,7 +446,7 @@ pub fn adjacent_match(r: &Rules, row: &AdjRow, n: &Plot) -> bool {
         return n.district_type.is_some() && n.district_type != Some(s!("DISTRICT_WONDER")) && n.district_complete != Some(false);
     }
     if row.district.is_some() {
-        return n.district_type == row.district;
+        return n.district_type == row.district && n.district_complete != Some(false);
     }
     if row.sea_resource {
         return n.resource.is_some() && (n.terrain == s!("TERRAIN_COAST") || n.terrain == s!("TERRAIN_OCEAN"));

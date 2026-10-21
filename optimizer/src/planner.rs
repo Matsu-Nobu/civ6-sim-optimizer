@@ -1115,13 +1115,17 @@ impl<'a> Planner<'a> {
         let r = self.r;
         let mut out = vec![];
         let techs = &st.acc.techs;
+        let n_civics = st.acc.civics.len();
+        // replay: the record removed a feature during the turn its tech completed (10/19 Cumana T41, rainforest with
+        // Bronze Working); its next save has the tech
+        let next: Vec<Sym> = self.rec.as_ref().or(self.tiles_rec.as_ref()).and_then(|r| r.turn(st.turn + 1)).map(|rt| rt.techs.clone()).unwrap_or_default();
         if let Some(f) = p.feature {
             let tech_row = r.lookup("Features", "FeatureType", f, "RemoveTech");
             let rows = r.tab("Feature_Removes").find("FeatureType", f);
             if !rows.is_empty() && tech_row.is_some() {
                 let tech = tech_row.unwrap().sym().filter(|x| !x.is_empty());
-                if tech.map(|t| techs.contains(&t)).unwrap_or(true) && p.improvement.is_none() {
-                    out.push((s!("feature"), harvest_yield(r, Some(&e), true, f, techs.len(), st.acc.civics.len(), city, self.speed)));
+                if tech.map(|t| techs.contains(&t) || next.contains(&t)).unwrap_or(true) && p.improvement.is_none() {
+                    out.push((s!("feature"), harvest_yield(r, Some(&e), true, f, techs.len(), n_civics, city, self.speed)));
                 }
             }
         }
@@ -1131,7 +1135,7 @@ impl<'a> Planner<'a> {
                 let t = r.tab("Resource_Harvests");
                 let rows = t.find("ResourceType", res);
                 if !rows.is_empty() && rows.iter().all(|&i| t.v(i, "PrereqTech").sym().filter(|x| !x.is_empty()).map(|x| techs.contains(&x)).unwrap_or(true)) && p.improvement.is_none() {
-                    out.push((s!("resource"), harvest_yield(r, Some(&e), false, res, techs.len(), st.acc.civics.len(), city, self.speed)));
+                    out.push((s!("resource"), harvest_yield(r, Some(&e), false, res, techs.len(), n_civics, city, self.speed)));
                 }
             }
         }

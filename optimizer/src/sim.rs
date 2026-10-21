@@ -199,10 +199,10 @@ pub fn step<'a>(r: &'a Rules, ec: &mut EngineCache<'a>, acc: &mut PlayerAcc, cit
             let flat = item_production_flat(&e, c, item);
             // a chop finished it during the turn: the turn's production goes to the next item (CivFanatics, "Is
             // chopping overflow overcorrected?"), here a turn later
-            // the carried-over production goes into an item with no progress yet, with the item's percent bonus (10/18
-            // Nantes T29: (4.5 + 9) x 1.5); one already begun leaves it for the next (10/18 La Rochelle T22)
+            // the carried-over production goes into the item with the item's percent bonus (10/18 Nantes T29: (4.5 + 9)
+            // x 1.5; T18: 5 + 8 + 1)
             let before = ca.progress.get(&item).copied().unwrap_or(0.0);
-            let applied = if before == 0.0 { ca.overflow } else { 0.0 };
+            let applied = ca.overflow;
             let own = y[1] + flat;
             let base = if ca.chopped == Some(item) {
                 ca.raw += y[1];
@@ -248,10 +248,8 @@ pub fn step<'a>(r: &'a Rules, ec: &mut EngineCache<'a>, acc: &mut PlayerAcc, cit
                     // the overflow is what the item's progress and this turn's production without its percent bonus
                     // have beyond the cost: none when it needed the bonus to finish (Civ6 wiki, Production (Civ6),
                     // Gathering Storm), and the carried-over production put into it does not carry on (the saves:
-                    // 10/19 Cumana T22, 10/14 Paris T29). A carried-over production still waiting stays as it is.
-                    if ca.overflow == 0.0 {
-                        ca.overflow = if before + base + applied < cost { 0.0 } else { (before + own.min(base) - cost).max(0.0) };
-                    }
+                    // 10/19 Cumana T22, 10/14 Paris T29, 10/18 La Rochelle T22)
+                    ca.overflow = if before + base + applied < cost { 0.0 } else { (before + own.min(base) - cost).max(0.0) };
                     ca.progress.insert(item, 0.0);
                     ca.locked_cost.remove(&item);
                     log.push(Event::Completed(c.name, item));

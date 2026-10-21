@@ -235,7 +235,8 @@ pub fn step<'a>(r: &'a Rules, ec: &mut EngineCache<'a>, acc: &mut PlayerAcc, cit
             };
             ca.chopped = None;
             let into = base * (1.0 + pct / 100.0);
-            *ca.progress.entry_or(item, 0.0) += (base + applied) * (1.0 + pct / 100.0);
+            let applied_pct = if std::env::var("DBGK").is_ok() && item_kind(item) == Kind::District { 0.0 } else { pct };
+            *ca.progress.entry_or(item, 0.0) += base * (1.0 + pct / 100.0) + applied * (1.0 + applied_pct / 100.0);
             ca.overflow -= applied;
             if item_kind(item) == Kind::Project {
                 for (k, pc) in r.yield_rows("Project_YieldConversions", "ProjectType", item, "YieldType", "PercentOfProductionRate") {

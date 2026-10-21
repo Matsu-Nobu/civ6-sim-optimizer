@@ -3,7 +3,7 @@ use crate::model::*;
 use crate::rules::{Args, Rules};
 use crate::sym::{sym, Sym};
 use crate::yields;
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{BTreeSet, HashMap, HashSet};
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum Subj {
@@ -47,6 +47,8 @@ pub struct Engine<'a> {
     owner: Option<Subj>,
     /// skip modifiers whose effect the simulator never reads (crate::consumed); off for grants_of
     only_consumed: bool,
+    /// the attached modifiers already on each subject, by their source (one source's modifier counts once on a subject)
+    attached: HashSet<(Sym, Sym, Subj)>,
 }
 
 pub static ENGINES: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
@@ -78,6 +80,7 @@ impl<'a> Engine<'a> {
             permanent: false,
             owner: None,
             only_consumed: !crate::envcfg::all_effects(),
+            attached: HashSet::new(),
         };
         for (source, owner, mid) in e.sources() {
             e.religion = None;
@@ -98,7 +101,7 @@ impl<'a> Engine<'a> {
             }
         }
         Engine { r, env: env.clone(), cities: cities.to_vec(), plots, plot_city, effects: Effects::default(),
-                 plot_effects: HashMap::new(), religion: None, permanent: false, owner: None, only_consumed: false }
+                 plot_effects: HashMap::new(), religion: None, permanent: false, owner: None, only_consumed: false, attached: HashSet::new() }
     }
 
     pub fn city_by_name(&self, n: Sym) -> Option<&City> {
@@ -288,6 +291,13 @@ impl<'a> Engine<'a> {
                     self.apply(inner, s, source, depth + 1);
                 }
             } else if let Some(eff) = effect {
+                // a modifier one source attaches to each of the player's cities, whose subjects are all the player's
+                // districts (cities), acts once on each (10/21 Rome T57: Free Inquiry's commercial hub science,
+                // attached to 11 cities, counts each hub's adjacency once in the saves); other sources' copies stack
+                // (each scientific city-state's library science)
+                if depth > 0 && is_player_wide(m.collection) && !self.attached.insert((mid, source, s.clone())) {
+                    continue;
+                }
                 self.effects.push(eff, Eff { subj: s, args: m.args.clone(), mid, source });
             }
         }
@@ -879,4 +889,8 @@ impl Effects {
 fn engine_cache_cap() -> usize {
     thread_local!(static CAP: usize = std::env::var("CIV6OPT_ENGINE_CACHE").ok().and_then(|x| x.parse().ok()).unwrap_or(256));
     CAP.with(|c| *c)
+}
+
+fn is_player_wide(c: Option<Sym>) -> bool {
+    c.map(|c| c == s!("COLLECTION_PLAYER_DISTRICTS") || c == s!("COLLECTION_PLAYER_CITIES") || c == s!("COLLECTION_ALL_DISTRICTS") || c == s!("COLLECTION_ALL_CITIES")).unwrap_or(false)
 }

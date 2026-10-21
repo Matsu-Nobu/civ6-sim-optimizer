@@ -1808,7 +1808,7 @@ impl<'a> Planner<'a> {
                 }
             }
         }
-        if let Some(next) = self.rec.as_ref().and_then(|r| r.turn(t_now + 1)) {
+        if let Some(next) = self.rec.as_ref().or(self.tiles_rec.as_ref()).and_then(|r| r.turn(t_now + 1)) {
             // replay: tiles the player moved between its cities this turn (the next save's owner), from the start of the
             // turn, with their state (a chop on the moved tile goes to the new owner)
             for ci in 0..st.cities.len() {

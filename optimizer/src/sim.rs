@@ -364,14 +364,12 @@ fn research_step(r: &Rules, e: &Engine, acc: &mut PlayerAcc, totals: &Y, speed: 
     for is_tech in [true, false] {
         let amount = if is_tech { totals[3] } else { totals[4] };
         let cur = if is_tech { research } else { civic };
-        let mut boosted_now: Vec<(Sym, f64)> = vec![];
         {
             let (prog, done) = if is_tech { (&mut acc.tech_progress, &acc.techs) } else { (&mut acc.civic_progress, &acc.civics) };
             for &b in boosts {
                 if b.starts_with("TECH_") == is_tech && !done.contains(&b) && r.has_boost(b) {
                     let amt = boost_amount(research_cost(r, b, speed, game_era), if is_tech { extra_t } else { extra_c });
                     *prog.entry_or(b, 0.0) += amt;
-                    boosted_now.push((b, amt));
                 }
             }
         }
@@ -384,15 +382,20 @@ fn research_step(r: &Rules, e: &Engine, acc: &mut PlayerAcc, totals: &Y, speed: 
                 if is_tech { acc.tech_overflow = 0.0 } else { acc.civic_overflow = 0.0 }
             }
         }
+        // only the item researched and one boosted this turn complete: a tech whose cost fell below its progress (a new
+        // game era) waits until it is researched again (10/18 Horseback Riding, T31-T32)
         let finished: Vec<Sym> = {
             let (prog, done) = if is_tech { (&acc.tech_progress, &acc.techs) } else { (&acc.civic_progress, &acc.civics) };
-            prog.iter().filter(|(t, v)| !done.contains(t) && *v >= research_cost(r, *t, speed, game_era)).map(|(t, _)| *t).collect()
+            prog.iter().filter(|(t, v)| !done.contains(t) && (Some(*t) == cur || boosts.contains(t)) && *v >= research_cost(r, *t, speed, game_era))
+                .map(|(t, _)| *t).collect()
         };
         for t in finished {
             let prog = if is_tech { &mut acc.tech_progress } else { &mut acc.civic_progress };
+            // the overflow is at most what this turn put into it (a boost's excess does not carry on; 10/18 T17:
+            // Bronze Working 25 + 15 (boost) + 4.5 against 40 carries 4.5)
             let over = prog.remove(&t).unwrap() - research_cost(r, t, speed, game_era);
-            let b = boosted_now.iter().find(|(k, _)| *k == t).map(|x| x.1).unwrap_or(0.0);
-            let add = (over - b).max(0.0);
+            let put = if Some(t) == cur { amount + over_now } else { 0.0 };
+            let add = over.min(put).max(0.0);
             if is_tech { acc.tech_overflow += add; acc.techs.insert(t); } else { acc.civic_overflow += add; acc.civics.insert(t); }
             log.push(Event::Researched(t));
             acc.districts_snapshot = Some(completed);

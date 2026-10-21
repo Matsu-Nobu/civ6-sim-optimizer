@@ -44,8 +44,10 @@ for t in sorted(sim):
         notes.append(f"techs {s['techs']}/{len(r['player']['techs'])}")
     if s["civics"] != len(r["player"]["civics"]):
         notes.append(f"civics {s['civics']}/{len(r['player']['civics'])}")
-    if s["government"] != r["player"]["government"]:
-        notes.append(f"government {s['government']}/{r['player']['government']}")
+    # the government the record adopted at the start of turn t + 1 (after a civic of turn t): the replay's next state
+    gov = sim.get(t + 1, s)["government"]
+    if gov != r["player"]["government"]:
+        notes.append(f"government {gov}/{r['player']['government']}")
     print(f"T{t:<3} {o[0]:4.0f}/{y.get('YIELD_FOOD', 0):<4.0f} {o[1]:4.0f}/{y.get('YIELD_PRODUCTION', 0):<4.0f}"
           f" {o[3]:4.0f}/{y.get('YIELD_SCIENCE', 0):<4.0f} {o[4]:4.0f}/{y.get('YIELD_CULTURE', 0):<4.0f} | {', '.join(notes)}")
     rc = {c["name"]: rec_city(c) for c in r["cities"]}

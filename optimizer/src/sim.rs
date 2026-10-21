@@ -334,12 +334,16 @@ pub fn step<'a>(r: &'a Rules, ec: &mut EngineCache<'a>, acc: &mut PlayerAcc, cit
         let routes = &routes[..];
         let pop = acc.cities.get(&c.name).unwrap().population;
         let mut food = y[0];
+        let mut growth_pct = growth_pct;
         if let Some(fc) = &food_city {
             let now: Vec<City> = at.iter().map(|x| if x.name == fc.name { fc.clone() } else { x.clone() }).collect();
             let ef = ec.get(r, env, &now);
             food = city_turn_yields(r, &ef, fc, pop, routes, nonfood_pct, Some(score))[0];
+            // growth counts the amenities after the turn's completions too (10/14 Paris T37: the Audience Chamber's
+            // amenity made it happy, +8% growth)
+            let score_now = amenity_scores(r, &now, &ef, env.extra_luxuries).iter().find(|(n, _)| *n == c.name).map(|x| x.1).unwrap_or(0.0);
+            growth_pct = happiness(r, score_now).1;
         }
-        let mut growth_pct = growth_pct;
         if settled {
             // the city's amenities for growth count the citizens left after the settler
             let now: Vec<City> = sim_cities.iter().map(|x| { let mut x = x.clone(); if x.name == c.name { x.population = pop; } x }).collect();

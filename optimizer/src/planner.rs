@@ -1166,17 +1166,23 @@ impl<'a> Planner<'a> {
                 out.push(o.clone());
             }
         }
-        // replay: the record's improvements of a plot its city acquired the same turn (the replay acquires recorded
-        // plots after the builders; the improvement waits for the plot, State::improving)
+        // replay: the record's improvements, also those not among the best candidates, those of a plot its city
+        // acquired the same turn (the replay acquires recorded plots after the builders) and those of a city founded
+        // during the turn (the replay founds it at the next turn's start); the improvement waits for the plot
+        // (State::improving)
         if let Some(rec) = self.rec.as_ref().or(self.tiles_rec.as_ref()) {
-            let owned: HashSet<XY> = st.cities.iter().flat_map(|c| c.owned.iter().map(|p| p.xy())).collect();
             for &(t, kind, xy, what) in &rec.acts {
-                if t > t_now || kind != s!("improve") || owned.contains(&xy) || st.improving.iter().any(|i| i.1 == xy) {
+                if t > t_now || kind != s!("improve") || st.improving.iter().any(|i| i.1 == xy)
+                    || out.iter().any(|o| matches!(o, Choice::Act(k, _, x, y, w) if *k == kind && (*x, *y) == xy && *w == what)) {
                     continue;
                 }
-                let Some(city) = rec.turn(t + 1).and_then(|rt| rt.cities.iter().find(|c| c.owned.contains(&xy))).map(|c| c.name) else { continue };
+                let owner = st.cities.iter().find(|c| c.owned.iter().any(|p| p.xy() == xy));
+                if owner.map(|c| c.owned.iter().any(|p| p.xy() == xy && p.improvement.is_some())).unwrap_or(false) {
+                    continue;
+                }
+                let Some(city) = owner.map(|c| c.name).or_else(|| rec.turn(t + 1).and_then(|rt| rt.cities.iter().find(|c| c.owned.contains(&xy))).map(|c| c.name)) else { continue };
                 let o = Choice::Act(kind, city, xy.0, xy.1, what);
-                if st.cities.iter().any(|c| c.name == city) && !out.contains(&o) {
+                if !out.contains(&o) {
                     out.push(o);
                 }
             }
@@ -1896,6 +1902,14 @@ impl<'a> Planner<'a> {
                 }
             }
         }
+        // improvements built on earlier turns that waited for a plot a new city now owns (the builders of this turn
+        // act later)
+        for (cname, xy, imp) in std::mem::take(&mut st.improving) {
+            match st.cities.iter_mut().find_map(|c| c.owned.iter_mut().find(|p| p.xy() == xy)) {
+                Some(p) => p.improvement = Some(imp),
+                None => st.improving.push((cname, xy, imp)),
+            }
+        }
         self.rome_free_buildings(st);
         // replay: tiles the player swapped between their own cities belong to the city the record shows at the start
         // of the turn
@@ -2050,7 +2064,8 @@ impl<'a> Planner<'a> {
             } else {
                 // a builder that chose to wait decides again once something it could use changes
                 let mark = self.idle_mark(st);
-                if self.rec.is_none() && st.builders[bi].idle.as_ref() == Some(&mark) {
+                // (a replay follows the record's actions, whose turns do not depend on such changes)
+                if self.rec.is_none() && self.tiles_rec.is_none() && st.builders[bi].idle.as_ref() == Some(&mark) {
                     bi += 1;
                     continue;
                 }
@@ -2101,7 +2116,14 @@ impl<'a> Planner<'a> {
                 bi += 1;
                 continue;
             }
-            let Some(ci) = ci else { bi += 1; continue };
+            let Some(ci) = ci else {
+                if kind == s!("improve") && (self.rec.is_some() || self.tiles_rec.is_some()) && !st.improving.iter().any(|i| i.1 == (x, y)) {
+                    st.improving.push((cname, (x, y), what));
+                    st.builders[bi].charges -= 1;
+                }
+                bi += 1;
+                continue;
+            };
             let Some(pi) = st.cities[ci].owned.iter().position(|p| p.xy() == (x, y)) else {
                 if kind == s!("improve") && !st.improving.iter().any(|i| i.1 == (x, y)) {
                     st.improving.push((cname, (x, y), what));

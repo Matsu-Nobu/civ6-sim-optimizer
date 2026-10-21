@@ -251,6 +251,16 @@ impl Record {
                 let ca = a.city(cb.name);
                 let plots_b = rows.iter().find(|d| d["turn"].as_i64() == Some(tn)).and_then(|d| d["cities"].as_array().and_then(|cs| cs.iter().find(|c| osym(&c["name"]) == Some(cb.name)).cloned()));
                 let plots_a = rows.iter().find(|d| d["turn"].as_i64() == Some(t)).and_then(|d| d["cities"].as_array().and_then(|cs| cs.iter().find(|c| osym(&c["name"]) == Some(cb.name)).cloned()));
+                // a city founded during the turn: its plots' improvements
+                if let (None, Some(pb)) = (ca, plots_b.as_ref()) {
+                    for p in pb["owned"].as_array().unwrap() {
+                        if let Some(imp) = osym(&p["improvement"]) {
+                            if seen_imp.insert((xy_of(p), imp)) {
+                                self.acts.push((t, s!("improve"), xy_of(p), imp));
+                            }
+                        }
+                    }
+                }
                 if let (Some(ca), Some(pa), Some(pb)) = (ca, plots_a, plots_b) {
                     let new: Vec<XY> = cb.owned.iter().filter(|xy| !ca.owned.contains(xy)).copied().collect();
                     self.tiles.entry(cb.center).or_default().extend(new.into_iter().map(|xy| (t, xy)));

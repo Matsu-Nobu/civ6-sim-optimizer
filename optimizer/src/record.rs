@@ -131,7 +131,7 @@ fn total_yield(row: &Value, y: &str) -> f64 {
 
 impl Record {
     /// `gifts`: units the scenario gives on a turn (tribal villages), not bought
-    pub fn load(rows: &Value, gifts: &HashMap<i64, Vec<Sym>>) -> Record {
+    pub fn load(rows: &Value, gifts: &HashMap<i64, Vec<Sym>>, map: &Value) -> Record {
         let rows = rows.as_array().unwrap();
         let mut turns = BTreeMap::new();
         for d in rows {
@@ -196,11 +196,13 @@ impl Record {
         }
         let mut rec = Record { turns, research: HashMap::new(), civic: HashMap::new(), acts: vec![], purchases: vec![], routes: vec![], route_seen: HashMap::new(), sites: vec![],
                                tiles: HashMap::new(), first_owned: HashMap::new() };
-        rec.read_choices(rows, gifts);
+        rec.read_choices(rows, gifts, map);
         rec
     }
 
-    fn read_choices(&mut self, rows: &[Value], gifts: &HashMap<i64, Vec<Sym>>) {
+    fn read_choices(&mut self, rows: &[Value], gifts: &HashMap<i64, Vec<Sym>>, map: &Value) {
+        // the plots as the map began (a plot no city of the player owned keeps its feature and resource until one does)
+        let start: HashMap<XY, Value> = map["plots"].as_array().map(|a| a.iter().map(|p| (xy_of(p), p.clone())).collect()).unwrap_or_default();
         let keys: Vec<i64> = self.turns.keys().copied().collect();
         let mut seen_imp: HashSet<(XY, Sym)> = HashSet::new();
         let mut seen_city: HashSet<Sym> = HashSet::new();
@@ -271,6 +273,10 @@ impl Record {
                 let left = ub.iter().find(|v| v["id"] == u["id"]).map(|v| v["charges"].as_i64().unwrap_or(0));
                 left.map(|l| l < u["charges"].as_i64().unwrap_or(0)).unwrap_or(true)
             });
+            // a builder spent a charge on the plot: one there at the turn's start with a charge less or gone, or one
+            // made during the turn standing on it at the next (the founding builder)
+            let charge_spent_new = |xy: XY| charge_spent_at(t, xy) || ub.iter().any(|u| u["type"].as_str() == Some("UNIT_BUILDER") && xy_of(u) == xy
+                && !ua.iter().any(|v| v["id"] == u["id"]));
             for cb in &b.cities {
                 let ca = a.city(cb.name);
                 let plots_b = rows.iter().find(|d| d["turn"].as_i64() == Some(tn)).and_then(|d| d["cities"].as_array().and_then(|cs| cs.iter().find(|c| osym(&c["name"]) == Some(cb.name)).cloned()));
@@ -282,6 +288,20 @@ impl Record {
                             if seen_imp.insert((xy_of(p), imp)) {
                                 self.acts.push((t, s!("improve"), xy_of(p), imp));
                             }
+                        }
+                        // and its harvests (10/21 Aquileia T44: the Ancestral Hall's builder harvested wheat on the
+                        // founding turn), against the plot as the player last saw it in its own cities, else as the
+                        // map began; a removal under the city's centre or a district is the founding's or placing's
+                        let xy = xy_of(p);
+                        let Some(q) = all_a.get(&xy).or_else(|| start.get(&xy)) else { continue };
+                        if (!p["district"].is_null() || !p["wonder"].is_null() || xy == cb.center) && !charge_spent_new(xy) {
+                            continue;
+                        }
+                        if !q["feature"].is_null() && p["feature"].is_null() && charge_spent_new(xy) {
+                            self.acts.push((t, s!("harvest"), xy, s!("feature")));
+                        }
+                        if !q["resource"].is_null() && p["resource"].is_null() && charge_spent_new(xy) {
+                            self.acts.push((t, s!("harvest"), xy, s!("resource")));
                         }
                     }
                 }

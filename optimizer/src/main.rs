@@ -89,7 +89,7 @@ fn planner(p: &Problem) -> (Planner<'static>, State) {
     }
     if GOLD_OUT.get().copied().unwrap_or(false) {
         // --gold-out: the gold the recorded player gave to allies is gone from every plan too
-        let rec = civ6opt::record::Record::load(&p.v["rows"], &pl.sc.unit_gifts);
+        let rec = civ6opt::record::Record::load(&p.v["rows"], &pl.sc.unit_gifts, &p.v["map"]);
         pl.sc.gold_out = rec.gold_given(&pl.sc.gold_gift);
     }
     (pl, start)
@@ -419,7 +419,7 @@ fn record_genome_with(p: &Problem, wide: bool, tiles: bool, until: Option<i64>) 
     if tiles {
         pl.s.recorded_tiles = Some(civ6opt::scenario::recorded_tiles_from(&p.v["settings"]["recorded_tiles"]));
     }
-    let rec = std::rc::Rc::new(civ6opt::record::Record::load(&p.v["rows"], &pl.sc.unit_gifts));
+    let rec = std::rc::Rc::new(civ6opt::record::Record::load(&p.v["rows"], &pl.sc.unit_gifts, &p.v["map"]));
     pl.tiles_rec = Some(rec.clone());
     let last = p.v["rows"].as_array().unwrap().iter().filter_map(|r| r["turn"].as_i64()).max().unwrap_or(0);
     let mut g = HashMap::new();
@@ -436,7 +436,7 @@ fn user_play_setup(p: &Problem, pl: &mut Planner, which: Option<&str>) {
         if w == "record_wide" {
             pl.s.builder_candidates = None;
         }
-        pl.tiles_rec = Some(std::rc::Rc::new(civ6opt::record::Record::load(&p.v["rows"], &pl.sc.unit_gifts)));
+        pl.tiles_rec = Some(std::rc::Rc::new(civ6opt::record::Record::load(&p.v["rows"], &pl.sc.unit_gifts, &p.v["map"])));
         // the recorded cities' borders grow as recorded (which plot a city gets next is not decided by the rules)
         pl.s.recorded_tiles = Some(civ6opt::scenario::recorded_tiles_from(&p.v["settings"]["recorded_tiles"]));
     }
@@ -1368,7 +1368,7 @@ fn main() {
             // the recorded player's skeleton played turn by turn (snapshots as run prints them), then its score
             let (mut pl, st0) = planner(&p);
             pl.s.horizon = turn + ext;
-            let rec = civ6opt::record::Record::load(&p.v["rows"], &pl.sc.unit_gifts);
+            let rec = civ6opt::record::Record::load(&p.v["rows"], &pl.sc.unit_gifts, &p.v["map"]);
             let sk = civ6opt::skeleton::from_record(&rec, turn + ext);
             eprintln!("{}", civ6opt::skeleton::to_json(&sk));
             let mut ch = civ6opt::skeleton::SkeletonChooser::new(&sk);
@@ -1389,7 +1389,7 @@ fn main() {
             let out = arg(&args, "--out").unwrap_or("data/search/rust_skel.json".into());
             let (mut pl, st0) = planner(&p);
             pl.s.horizon = turn + ext;
-            let rec = civ6opt::record::Record::load(&p.v["rows"], &pl.sc.unit_gifts);
+            let rec = civ6opt::record::Record::load(&p.v["rows"], &pl.sc.unit_gifts, &p.v["map"]);
             let user = from_record(&rec, turn + ext);
             // the base policy's skeleton, and what the games offered
             struct Took { districts: Vec<Sym>, techs: Vec<Sym>, civics: Vec<Sym>, govs: Vec<GovPick>, sites: Vec<XY> }
@@ -1590,7 +1590,7 @@ fn main() {
             // the recorded game replayed (crate::record), compared with the record turn by turn
             let (mut pl, st0) = planner(&p);
             pl.s.horizon = turn + ext;
-            let rec = std::rc::Rc::new(civ6opt::record::Record::load(&p.v["rows"], &pl.sc.unit_gifts));
+            let rec = std::rc::Rc::new(civ6opt::record::Record::load(&p.v["rows"], &pl.sc.unit_gifts, &p.v["map"]));
             pl.s.recorded_tiles = Some(rec.tiles.clone());
             pl.s.builder_candidates = None;
             pl.s.fixed.clear(); // the search's fixed choices (the opening scout) are not the record's
@@ -1747,7 +1747,7 @@ fn main() {
             // save (no difference carries over to the next turn)
             let (mut pl, _) = planner(&p);
             pl.s.horizon = turn + ext;
-            let rec = std::rc::Rc::new(civ6opt::record::Record::load(&p.v["rows"], &pl.sc.unit_gifts));
+            let rec = std::rc::Rc::new(civ6opt::record::Record::load(&p.v["rows"], &pl.sc.unit_gifts, &p.v["map"]));
             pl.s.recorded_tiles = Some(rec.tiles.clone());
             pl.s.builder_candidates = None;
             pl.s.fixed.clear(); // the search's fixed choices (the opening scout) are not the record's
@@ -1933,7 +1933,7 @@ fn main() {
             // one recorded turn from its save with the recorded choices (as validate): the state after it, as JSON
             // (rules tests: tests/cases.json)
             let (mut pl, _) = planner(&p);
-            let rec = std::rc::Rc::new(civ6opt::record::Record::load(&p.v["rows"], &pl.sc.unit_gifts));
+            let rec = std::rc::Rc::new(civ6opt::record::Record::load(&p.v["rows"], &pl.sc.unit_gifts, &p.v["map"]));
             pl.s.recorded_tiles = Some(rec.tiles.clone());
             pl.s.builder_candidates = None;
             pl.s.fixed.clear();

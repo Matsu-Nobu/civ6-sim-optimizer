@@ -543,7 +543,37 @@ pub struct PlayerState {
     /// the game score at the end of the last turn played (the score shown in the game)
     pub score: Option<f64>,
     pub goody_huts: Vec<(&'static str, f64)>,
+    /// the luxuries giving amenities and the city each copy goes to: (city id, resource)
+    pub luxuries: Vec<(i64, &'static str)>,
     pub offset: i64,
+}
+
+/// The player's luxury amenities: the last table before its techs of a count (1..=256) and that many (city id,
+/// resource hash) pairs, a city id being (slot + 1) * 65536 + slot.
+fn luxury_table(p: &Bytes, d: &Dict, from: i64, to: i64) -> Vec<(i64, &'static str)> {
+    let mut best = vec![];
+    let mut q = from.max(0);
+    while q + 12 <= to {
+        let n = p.i32(q) as i64;
+        if (1..=256).contains(&n) && q + 4 + 8 * n <= p.len() {
+            let mut out = vec![];
+            for k in 0..n {
+                let cid = p.i32(q + 4 + 8 * k) as i64;
+                let res = d.of_kind(p.u32(q + 8 + 8 * k), "KIND_RESOURCE");
+                match res {
+                    Some(r) if cid > 0 && (cid >> 16) == (cid & 0xffff) + 1 => out.push((cid, r)),
+                    _ => break,
+                }
+            }
+            if out.len() as i64 == n {
+                best = out;
+                q += 4 + 8 * n;
+                continue;
+            }
+        }
+        q += 1;
+    }
+    best
 }
 
 const TECH_COUNT: i64 = 77;
@@ -703,6 +733,7 @@ fn parse_players(p: &Bytes, d: &Dict, all: &[Table]) -> Vec<PlayerState> {
             era_score: None,
             score: None,
             goody_huts: scaled(p, goody, 1.0),
+            luxuries: luxury_table(p, d, players.last().map(|x| x.offset).unwrap_or(0).max(researched.start - 40000), researched.start),
             offset: researched.start,
         });
     }

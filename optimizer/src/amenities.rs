@@ -117,6 +117,16 @@ pub fn amenity_scores(r: &Rules, cities: &[City], e: &Engine, extra: i64) -> Vec
             }
         }
     }
+    // replay: the luxury amenities as the save gives them to each city
+    if let Some(given) = &e.env.luxuries_given {
+        for (n, v) in given {
+            if let Some(x) = supply.iter_mut().find(|(a, _)| a == n) {
+                x.1 += v;
+            }
+        }
+        types.clear();
+    }
+    let extra = if e.env.luxuries_given.is_some() { 0 } else { extra };
     for _ in 0..(types.len() + extra.max(0) as usize) {
         let mut order: Vec<usize> = (0..cities.len()).collect();
         // sorted by supply - need (stable, like Python's sort)

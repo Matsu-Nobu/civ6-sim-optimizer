@@ -209,6 +209,8 @@ pub struct Env {
     pub districts_completed: Option<i64>,
     /// luxury types the player has from outside its land this turn (traded or given by allies; --team)
     pub extra_luxuries: i64,
+    /// replay: the luxury amenities each city gets, as the save holds them (they replace the model's own share)
+    pub luxuries_given: Option<Vec<(Sym, f64)>>,
     /// allied players (Scenario.allies)
     pub allies: Vec<i64>,
 }

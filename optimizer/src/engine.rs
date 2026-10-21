@@ -782,6 +782,11 @@ fn engine_key(env: &Env, cities: &[City], pops: &[i32]) -> u64 {
     env.techs.hash(&mut h);
     env.civics.hash(&mut h);
     (env.game_era, env.prophet_on_offer, env.districts_completed).hash(&mut h);
+    if let Some(g) = &env.luxuries_given {
+        for (n, v) in g {
+            (n, v.to_bits()).hash(&mut h);
+        }
+    }
     for c in cities {
         let reached = pops.iter().filter(|&&x| c.population >= x).count();
         (c.name, c.id, c.capital, c.center, reached, &c.buildings, &c.great_works).hash(&mut h);

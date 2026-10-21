@@ -62,6 +62,8 @@ pub struct RecTurn {
     pub governors: Vec<(Sym, Option<Sym>, Vec<Sym>)>,
     /// the governors established in their city at the start of the turn
     pub governors_established: Vec<Sym>,
+    /// the luxury amenities each city gets (the save's luxury table; None when the export has none)
+    pub luxuries: Option<Vec<(Sym, f64)>>,
     pub pantheon: Option<Sym>,
     pub gold: f64,
     pub faith: f64,
@@ -167,6 +169,15 @@ impl Record {
                 policies: syms(&p["policies"]),
                 governors: p["governors"].as_array().map(|a| a.iter().filter_map(|g| Some((osym(&g["type"])?,
                     g["cityId"].as_i64().and_then(|i| ids.get(&i).copied()), syms(&g["promotions"])))).collect()).unwrap_or_default(),
+                luxuries: p["luxuries"].as_array().map(|a| {
+                    let mut out: Vec<(Sym, f64)> = vec![];
+                    for x in a {
+                        if let Some(n) = x["cityId"].as_i64().and_then(|i| ids.get(&i).copied()) {
+                            match out.iter_mut().find(|e| e.0 == n) { Some(e) => e.1 += 1.0, None => out.push((n, 1.0)) }
+                        }
+                    }
+                    out
+                }),
                 governors_established: p["governors"].as_array().map(|a| a.iter().filter(|g| g["established"].as_bool().unwrap_or(false)).filter_map(|g| osym(&g["type"])).collect()).unwrap_or_default(),
                 pantheon: osym(&p["pantheon"]),
                 gold: p["gold"].as_f64().unwrap_or(0.0),

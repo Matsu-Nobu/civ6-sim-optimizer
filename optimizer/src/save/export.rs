@@ -498,6 +498,7 @@ pub fn row_json(g: &Save, d: &Dict, n: &Names, file: &str, pid: i64) -> Value {
         ("civicsInspired", list(&st.civics_inspired)), ("civicProgress", named(&st.civic_progress)), ("currentCivic", opt(st.current_civic)),
         ("government", opt(st.government)), ("policies", list(&st.policies_slotted)), ("unitsTrained", named(&st.units_trained)),
         ("goodyHutsReceived", named(&st.goody_huts)),
+        ("luxuries", Value::Arr(st.luxuries.iter().map(|(c, r)| Value::obj(vec![("cityId", Value::from(*c)), ("resource", Value::from(*r))])).collect())),
         ("faithStock", religion.as_ref().map(|r| Value::from(r.0)).or(st.faith.map(Value::from)).unwrap_or(Value::Null)),
         ("pantheon", religion.as_ref().and_then(|r| r.1.clone()).map(Value::from).or(st.pantheon.map(Value::from)).unwrap_or(Value::Null)),
         // great person points banked / per turn per class; prophet points turn into faith once no prophet is on offer

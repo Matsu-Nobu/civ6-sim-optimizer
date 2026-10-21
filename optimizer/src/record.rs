@@ -62,6 +62,8 @@ pub struct RecTurn {
     pub governors: Vec<(Sym, Option<Sym>, Vec<Sym>)>,
     /// the governors established in their city at the start of the turn
     pub governors_established: Vec<Sym>,
+    /// the tribal villages that gave a city a citizen, so far (GOODYHUT_SURVIVORS)
+    pub hut_survivors: i64,
     /// the luxury amenities each city gets (the save's luxury table; None when the export has none)
     pub luxuries: Option<Vec<(Sym, f64)>>,
     pub pantheon: Option<Sym>,
@@ -178,6 +180,7 @@ impl Record {
                     }
                     out
                 }),
+                hut_survivors: p["goodyHutsReceived"]["GOODYHUT_SURVIVORS"].as_i64().unwrap_or(0),
                 governors_established: p["governors"].as_array().map(|a| a.iter().filter(|g| g["established"].as_bool().unwrap_or(false)).filter_map(|g| osym(&g["type"])).collect()).unwrap_or_default(),
                 pantheon: osym(&p["pantheon"]),
                 gold: p["gold"].as_f64().unwrap_or(0.0),

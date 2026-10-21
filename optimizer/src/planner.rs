@@ -2458,6 +2458,20 @@ impl<'a> Planner<'a> {
             step(r, &mut cache, &mut st.acc, &cities_now, &env, &st.units, self.speed, st.research, st.civic, &uniq, &routes, &after_settler)
         };
         let mut events = events;
+        // replay: a tribal village's survivors (a citizen for a city) found during the turn, in the city whose
+        // recorded growth food does not explain: two citizens more, else one more with no less food stored; after the
+        // turn's growth, which counts the citizens before them (10/07 Aquileia T43: 14 + 3 food grew it from 3 at
+        // 16, leaving 1, and the village made it 5)
+        if let Some((a, b)) = self.rec.as_ref().or(self.tiles_rec.as_ref()).and_then(|r| Some((r.turn(t_now)?, r.turn(t_now + 1)?))) {
+            for _ in 0..(b.hut_survivors - a.hut_survivors).max(0) {
+                let gained = |c: &crate::record::RecCity| b.city(c.name).map(|n| (n.pop - c.pop, n.food >= c.food)).unwrap_or((0, false));
+                let pick = a.cities.iter().filter(|c| st.cities.iter().any(|x| x.name == c.name))
+                    .max_by_key(|c| { let (d, kept) = gained(c); (d, kept) }).filter(|c| { let (d, kept) = gained(c); d >= 2 || (d == 1 && kept) });
+                if let Some(c) = pick {
+                    st.cacc_mut(c.name).population += 1;
+                }
+            }
+        }
         // the turn's output: the yields growth and production used (techs finished this turn count)
         let used: Vec<(Sym, Y)> = events.iter().filter_map(|ev| if let Event::Yields(n, y) = ev { Some((*n, *y)) } else { None }).collect();
         if !used.is_empty() {

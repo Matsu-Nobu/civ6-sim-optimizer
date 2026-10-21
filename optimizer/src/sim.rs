@@ -418,16 +418,24 @@ pub fn step<'a>(r: &'a Rules, ec: &mut EngineCache<'a>, acc: &mut PlayerAcc, cit
         }
         let ca = acc.cities.get_mut(&c.name).unwrap();
         ca.food_store += add;
-        // as many citizens as the store pays for (a harvest's food can pay for two: 10/19 Maracaibo T47, 19.4 + 7 +
-        // two rainforests' 13 grew it from 4 to 6, leaving 9.9)
-        loop {
+        // a citizen, or one per harvest that gave food this turn (10/19 Maracaibo T47: two rainforests, 4 to 6); after
+        // the last one the store stops short of the next (10/21 Velitrae T46: wheat, 1 to 2 with 11 food, 12 being
+        // the next; 10/17 Gordian T41: 19 + 13 + 6 - 22 = 16)
+        let allowed = ca.harvests.max(1);
+        ca.harvests = 0;
+        let mut grown = 0;
+        while grown < allowed {
             let need = growth_threshold(r, ca.population, speed);
             if ca.food_store < need {
                 break;
             }
             ca.food_store -= need;
             ca.population += 1;
+            grown += 1;
             log.push(Event::Grew(c.name, ca.population));
+        }
+        if grown == allowed {
+            ca.food_store = ca.food_store.min(growth_threshold(r, ca.population, speed) - 1.0);
         }
     }
     let py = player_yields(r, &e_end, &totals);

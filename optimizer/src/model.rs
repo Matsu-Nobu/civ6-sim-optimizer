@@ -231,6 +231,8 @@ pub struct CityAcc {
     pub chopped: Option<Sym>,
     /// production waiting for the next item, which applies its own percent to it
     pub raw: f64,
+    /// harvests that gave the city food this turn
+    pub harvests: u32,
 }
 
 #[derive(Clone, Debug, Default)]

@@ -2253,6 +2253,9 @@ impl<'a> Planner<'a> {
                 self.chop_into(st, ci, get_y(&ys, s!("YIELD_PRODUCTION")), &env);
                 let ca = st.cacc_mut(cname);
                 ca.food_store += get_y(&ys, s!("YIELD_FOOD"));
+                if get_y(&ys, s!("YIELD_FOOD")) > 0.0 {
+                    ca.harvests += 1;
+                }
                 st.acc.gold += get_y(&ys, s!("YIELD_GOLD"));
             }
             st.builders[bi].charges -= 1;

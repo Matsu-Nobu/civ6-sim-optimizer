@@ -131,6 +131,7 @@ pub fn step<'a>(r: &'a Rules, ec: &mut EngineCache<'a>, acc: &mut PlayerAcc, cit
     let scores = amenity_scores(r, &sim_cities, &e_sim, env.extra_luxuries);
     // Civ6's end of turn (CivFanatics, "When does production finish?"): techs and civics complete nation-wide first
     // (from the science and culture of the turn), then each city's growth and production, which see them
+    let early_empire_before = acc.civics.contains(&s!("CIVIC_EARLY_EMPIRE"));
     let env_new;
     let env = {
         let e0 = ec.get(r, env, cities);
@@ -153,6 +154,21 @@ pub fn step<'a>(r: &'a Rules, ec: &mut EngineCache<'a>, acc: &mut PlayerAcc, cit
         x.civics = acc.civics.clone();
         env_new = x;
         &env_new
+    };
+    // Rome (BBG, Planner::rome_free_buildings): Early Empire done this turn gives each city its free building before
+    // the cities' growth and production (10/21 Rome T22: the granary's food counts in that turn's growth)
+    let granted: Vec<City>;
+    let cities: &[City] = if !early_empire_before && acc.civics.contains(&s!("CIVIC_EARLY_EMPIRE")) && env.p.civilization == Some(s!("CIVILIZATION_ROME")) {
+        granted = cities.iter().map(|c| {
+            let mut c = c.clone();
+            if let Some(b) = [s!("BUILDING_MONUMENT"), s!("BUILDING_GRANARY")].into_iter().find(|b| !c.buildings.contains(b)) {
+                c.buildings.push(b);
+            }
+            c
+        }).collect();
+        &granted
+    } else {
+        cities
     };
     let e0 = ec.get(r, env, cities);
     let mut e = e0.clone();

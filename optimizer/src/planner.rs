@@ -2347,6 +2347,9 @@ impl<'a> Planner<'a> {
             }
         }
         let cities_now = st.cities.clone();
+        if crate::envcfg::trace().is_some() {
+            eprintln!("TURN {t_now}");
+        }
         let events = {
             let mut cache = self.cache.borrow_mut();
             let _g = crate::prof::start(5);

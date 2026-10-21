@@ -500,8 +500,9 @@ fn infer_extra_luxuries(p: &Problem, pl: &Planner) -> HashMap<i64, i64> {
 /// --genome recorded | record | record_wide | base | <file.json> (a search result's "plan", or a bare plan)
 fn genome_arg(p: &Problem, which: Option<&str>) -> HashMap<Key, Choice> {
     match which {
-        Some("record") => record_genome(p, false),
-        Some("record_wide") => record_genome(p, true),
+        // (made with the recorded tiles, as the play it is replayed in: user_play_setup)
+        Some("record") => record_genome_with(p, false, true, None),
+        Some("record_wide") => record_genome_with(p, true, true, None),
         None | Some("recorded") => genome_from(&p.v["recorded_genome"]),
         Some("recorded_tiles") => genome_from(&p.v["recorded_genome_tiles"]),
         Some("base") => HashMap::new(),

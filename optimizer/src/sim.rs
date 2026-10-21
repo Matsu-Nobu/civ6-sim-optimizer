@@ -418,8 +418,13 @@ pub fn step<'a>(r: &'a Rules, ec: &mut EngineCache<'a>, acc: &mut PlayerAcc, cit
         }
         let ca = acc.cities.get_mut(&c.name).unwrap();
         ca.food_store += add;
-        let need = growth_threshold(r, ca.population, speed);
-        if ca.food_store >= need {
+        // as many citizens as the store pays for (a harvest's food can pay for two: 10/19 Maracaibo T47, 19.4 + 7 +
+        // two rainforests' 13 grew it from 4 to 6, leaving 9.9)
+        loop {
+            let need = growth_threshold(r, ca.population, speed);
+            if ca.food_store < need {
+                break;
+            }
             ca.food_store -= need;
             ca.population += 1;
             log.push(Event::Grew(c.name, ca.population));

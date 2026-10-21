@@ -1855,7 +1855,7 @@ impl<'a> Planner<'a> {
             st.policy_dirty = false;
         }
         self.governor_step(st, ch);
-        let mut env = self.player_env(st);
+        let env = self.player_env(st);
         // pantheon
         let cost = r.param("RELIGION_PANTHEON_MIN_FAITH") * r.game_speed_cost_multiplier(self.speed);
         // replay: on the turn the recorded player founded it (its faith count can differ a little)
@@ -1864,9 +1864,9 @@ impl<'a> Planner<'a> {
             let t = r.tab("Beliefs");
             let opts: Vec<Choice> = r.scan("Pantheons", "Beliefs").into_iter().filter(|&i| t.v(i, "BeliefClassType").sym() == Some(s!("BELIEF_CLASS_PANTHEON"))).map(|i| Choice::S(t.v(i, "BeliefType").sym().unwrap())).collect();
             if let Some(p) = self.decide(st, "pantheon", Ent::S(Sym(0)), opts, ch).and_then(|c| c.sym()) {
+                // its effects count from the next turn (the records: 10/19 Cumana's City Patron Goddess, T29)
                 st.player.pantheon = Some(p);
                 st.acc.faith -= cost;
-                env = self.player_env(st);
             }
         }
         // settlers arriving

@@ -125,6 +125,9 @@ pub fn amenity_scores(r: &Rules, cities: &[City], e: &Engine, extra: i64) -> Vec
             supply[i].1 += 1.0;
         }
     }
+    if crate::envcfg::trace() == Some("amen") {
+        eprintln!("AMEN lux {:?} extra {extra} {:?}", types.iter().map(|(r, n)| (r.as_string(), *n)).collect::<Vec<_>>(), cities.iter().enumerate().map(|(i, c)| (c.name.as_string(), supply[i].1, need[i])).collect::<Vec<_>>());
+    }
     cities.iter().enumerate().map(|(i, c)| (c.name, supply[i].1 - need[i])).collect()
 }
 

@@ -80,6 +80,7 @@ fn planner(p: &Problem) -> (Planner<'static>, State) {
     pl.s.no_harvest_before = NO_HARVEST_BEFORE.get().copied().unwrap_or(0);
     if TEAM_LUX.get().copied().unwrap_or(false) {
         pl.sc.extra_luxuries = infer_extra_luxuries(p, &pl);
+        if civ6opt::envcfg::trace() == Some("amen") { let mut v: Vec<_> = pl.sc.extra_luxuries.iter().collect(); v.sort(); eprintln!("EXTRA {v:?}"); }
         pl.sc.allies = infer_allies(p, start.player.player_id);
     }
     if let Some(a) = ALLIES.get().cloned().flatten() {

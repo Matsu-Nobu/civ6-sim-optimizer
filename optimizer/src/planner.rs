@@ -1708,6 +1708,18 @@ impl<'a> Planner<'a> {
         }
         let r = self.r;
         let t_now = st.turn;
+        // replay: the plots others pillaged, as the save shows them at the start of the turn
+        if let Some(rt) = self.rec.as_ref().or(self.tiles_rec.as_ref()).and_then(|r| r.turn(t_now)) {
+            let pillaged: HashSet<XY> = rt.cities.iter().flat_map(|c| c.pillaged.iter().copied()).collect();
+            for c in st.cities.iter_mut() {
+                for p in c.owned.iter_mut() {
+                    p.pillaged = pillaged.contains(&p.xy());
+                }
+                for w in c.worked.iter_mut() {
+                    w.pillaged = pillaged.contains(&w.xy());
+                }
+            }
+        }
         if let Some(rt) = self.rec.as_ref().and_then(|r| r.turn(t_now)) {
             // replay: the treasury as recorded (tile purchases and some upkeep are not reconstructed)
             st.acc.gold = rt.gold;

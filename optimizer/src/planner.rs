@@ -752,7 +752,10 @@ impl<'a> Planner<'a> {
             return idle;
         }
         // numbered per turn: a change elsewhere does not shift the later routes
-        let Some(c) = self.decide(st, "trade", Ent::I(st.turn), names, ch) else { return idle };
+        let Some(c) = self.decide(st, "trade", Ent::I(st.turn), names.clone(), ch) else { return idle };
+        if crate::envcfg::trace() == Some("route") {
+            eprintln!("ROUTE T{} {origin} -> {c:?} of {:?}", st.turn, names.iter().map(|n| format!("{n:?}")).collect::<Vec<_>>());
+        }
         let Some(o) = opts.iter().find(|o| o.1 == c) else { return idle };
         let Choice::Route(home, dn) = c else { return idle };
         let d = o.2.clone();
@@ -766,11 +769,13 @@ impl<'a> Planner<'a> {
         let start = match recorded { Some(x) => x.0 + 1, None => st.turn + k };
         let mut until = start + (self.r.param("TRADE_ROUTE_TURN_DURATION_BASE") as i64).max(2 * dist + 4);
         let mut lost = false;
-        // replay: a route the record lost before its course ran out (the trader was killed) ends after its last save
-        if let Some(seen) = recorded.and_then(|x| rec.unwrap().route_seen.get(&x)) {
+        // replay: a route ends after its last save; the trader was killed when no new recorded route starts within two
+        // turns (one that ran its course: the trader went on, 10/17 Susa's route to Hagmatana's at T37)
+        if let Some(&seen) = recorded.and_then(|x| rec.unwrap().route_seen.get(&x)) {
+            let renewed = rec.unwrap().routes.iter().any(|r| r.0 >= seen && r.0 <= seen + 2 && Some(*r) != recorded);
             if seen + 1 < until && rec.unwrap().turn(seen + 1).is_some() {
                 until = seen + 1;
-                lost = true;
+                lost = !renewed;
             }
         }
         Trader { origin: home, dest: Some(dn), info, until: Some(until), start, lost }

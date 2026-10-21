@@ -2633,7 +2633,7 @@ impl<'a> Planner<'a> {
         self.rome_free_buildings(st);
         // replay: buildings and districts the next save shows done are done (bought, rushed, or finished on a
         // carry-over the saves do not hold); noted, so validation tells them from production the model missed
-        if let Some(next) = self.rec.as_ref().and_then(|r| r.turn(t_now + 1)) {
+        if let Some(next) = self.rec.as_ref().or(self.tiles_rec.as_ref()).and_then(|r| r.turn(t_now + 1)) {
             for ci in 0..st.cities.len() {
                 let name = st.cities[ci].name;
                 let Some(rc) = next.city(name) else { continue };

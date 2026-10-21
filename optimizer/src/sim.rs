@@ -348,18 +348,40 @@ pub fn step<'a>(r: &'a Rules, ec: &mut EngineCache<'a>, acc: &mut PlayerAcc, cit
     }
     let e_end = e;
     // replay: growth counts the luxuries as the turn ends them
-    let env_g = if env.luxuries_next.is_some() && env.luxuries_next != env.luxuries_given {
-        let mut x = env.clone();
-        x.luxuries_given = env.luxuries_next.clone();
-        Some(x)
-    } else {
-        None
+    // (the city founded during the turn takes its copies from the cities with the most amenities to spare; the next
+    // save's table also has later reshuffles, 10/21 Rome T41: the capital's 4 copies went elsewhere only after a
+    // governor's amenity at T42)
+    let env_g = match (&env.luxuries_given, &env.luxuries_next) {
+        (Some(now), Some(next)) if next != now => {
+            let taken: f64 = next.iter().filter(|(n, _)| !cities.iter().any(|c| c.name == *n)).map(|x| x.1).sum();
+            let mut table = now.clone();
+            let mut x = env.clone();
+            for _ in 0..(taken.round() as i64) {
+                x.luxuries_given = Some(table.clone());
+                let ex = ec.get(r, &x, &sim_cities);
+                let sc = amenity_scores(r, &sim_cities, &ex, env.extra_luxuries);
+                let best = table.iter().enumerate().filter(|(_, (_, v))| *v > 0.0)
+                    .max_by(|(_, a), (_, b)| {
+                        let sa = sc.iter().find(|s| s.0 == a.0).map(|s| s.1).unwrap_or(f64::MIN);
+                        let sb = sc.iter().find(|s| s.0 == b.0).map(|s| s.1).unwrap_or(f64::MIN);
+                        sa.partial_cmp(&sb).unwrap()
+                    }).map(|(i, _)| i);
+                match best {
+                    Some(i) => table[i].1 -= 1.0,
+                    None => break,
+                }
+            }
+            x.luxuries_given = Some(table);
+            x.luxuries_next = x.luxuries_given.clone();
+            Some(x)
+        }
+        _ => None,
     };
     let lux_of = |l: &Option<Vec<(Sym, f64)>>, n: Sym| l.as_ref().and_then(|v| v.iter().find(|x| x.0 == n).map(|x| x.1)).unwrap_or(0.0);
     for (c, y, food_city, settled, score, nonfood_pct, growth_pct, routes, e, at) in pending {
         let routes = &routes[..];
         // (only for a city whose share changed)
-        let env_g = env_g.as_ref().filter(|_| lux_of(&env.luxuries_given, c.name) != lux_of(&env.luxuries_next, c.name));
+        let env_g = env_g.as_ref().filter(|g| lux_of(&env.luxuries_given, c.name) != lux_of(&g.luxuries_given, c.name));
         let pop = acc.cities.get(&c.name).unwrap().population;
         let mut food = y[0];
         let mut growth_pct = growth_pct;

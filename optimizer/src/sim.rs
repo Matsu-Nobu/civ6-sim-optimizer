@@ -206,11 +206,14 @@ pub fn step<'a>(r: &'a Rules, ec: &mut EngineCache<'a>, acc: &mut PlayerAcc, cit
                 x
             };
             ca.chopped = None;
-            let ov = ca.overflow;
+            // the carried-over production goes into an item with no progress yet; one already begun leaves it for the
+            // next (the saves' carried-over production, e.g. 10/18 La Rochelle T22)
+            let before = ca.progress.get(&item).copied().unwrap_or(0.0);
+            let applied = if before == 0.0 { ca.overflow } else { 0.0 };
             // the part of this turn's production that the item's percent bonus added
             let bonus = into - into / (1.0 + pct / 100.0);
-            *ca.progress.entry_or(item, 0.0) += into + ov;
-            ca.overflow = 0.0;
+            *ca.progress.entry_or(item, 0.0) += into + applied;
+            ca.overflow -= applied;
             if item_kind(item) == Kind::Project {
                 for (k, pc) in r.yield_rows("Project_YieldConversions", "ProjectType", item, "YieldType", "PercentOfProductionRate") {
                     if k == s!("YIELD_FOOD") {
@@ -240,9 +243,13 @@ pub fn step<'a>(r: &'a Rules, ec: &mut EngineCache<'a>, acc: &mut PlayerAcc, cit
             if let Some(cost) = cost {
                 let prog = *ca.progress.get(&item).unwrap();
                 if prog >= cost {
-                    // the overflow is what the production without the item's percent bonus has beyond the cost; none
-                    // when the item needed the bonus to finish (Civ6 wiki, Production (Civ6), Gathering Storm)
-                    ca.overflow = (prog - bonus - cost).max(0.0);
+                    // the overflow is what the item's progress and this turn's production without its percent bonus
+                    // have beyond the cost: none when it needed the bonus to finish (Civ6 wiki, Production (Civ6),
+                    // Gathering Storm), and the carried-over production put into it does not carry on (the saves:
+                    // 10/19 Cumana T22, 10/14 Paris T29). A carried-over production still waiting stays as it is.
+                    if ca.overflow == 0.0 {
+                        ca.overflow = if prog - bonus < cost { 0.0 } else { (before + into - bonus - cost).max(0.0) };
+                    }
                     ca.progress.insert(item, 0.0);
                     ca.locked_cost.remove(&item);
                     log.push(Event::Completed(c.name, item));

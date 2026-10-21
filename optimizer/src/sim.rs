@@ -113,12 +113,12 @@ pub fn current_cost(r: &Rules, acc: &PlayerAcc, cities: &[City], env: &Env, city
     item_cost(r, &env_cost, item, speed, Some(&placed), false)
 }
 
-/// `after_settler`: a city's worked tiles once a settler has taken one of its citizens, given the city, its engine
-/// and its yields before (with all its citizens).
+/// `after_settler`: a city's worked tiles once a settler has taken one of its citizens, given the city, its engine,
+/// its yields before (with all its citizens) and the food a set of worked tiles adds this turn.
 #[allow(clippy::too_many_arguments)]
 pub fn step<'a>(r: &'a Rules, ec: &mut EngineCache<'a>, acc: &mut PlayerAcc, cities: &[City], env: &Env, units: &OMap<Sym, i64>, speed: Sym,
                 research: Option<Sym>, civic: Option<Sym>, boosts: &[Sym], routes: &[Route],
-                after_settler: &dyn Fn(&City, &Engine, &Y) -> City) -> Vec<Event> {
+                after_settler: &dyn Fn(&City, &Engine, &Y, &dyn Fn(&City) -> f64) -> City) -> Vec<Event> {
     let mut log = vec![];
     for c in cities {
         if !acc.cities.contains(&c.name) {
@@ -331,7 +331,8 @@ pub fn step<'a>(r: &'a Rules, ec: &mut EngineCache<'a>, acc: &mut PlayerAcc, cit
             growth_pct = happiness(r, score_now).1;
             let mut fewer = c.clone();
             fewer.population = pop;
-            let fewer = after_settler(&fewer, &e, &y);
+            let adds = |cand: &City| food_added(r, cand, pop, city_turn_yields(r, &e, cand, pop, routes, 0.0, None)[0], growth_pct, Some(&e));
+            let fewer = after_settler(&fewer, &e, &y, &adds);
             food = city_turn_yields(r, &e, &fewer, pop, routes, 0.0, None)[0];
         }
         let fc = food_city.as_ref().unwrap_or(c);

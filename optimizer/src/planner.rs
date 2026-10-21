@@ -2353,22 +2353,34 @@ impl<'a> Planner<'a> {
             // replay: the tiles the recorded city works at the start of the next turn (the player reassigned them)
             let rec = self.rec.as_ref().or(self.tiles_rec.as_ref()).cloned();
             let focus = st.focus.clone();
-            let after_settler = |c: &City, e: &Engine, before: &Y| -> City {
+            let speed = self.speed;
+            let after_settler = |c: &City, e: &Engine, before: &Y, adds: &dyn Fn(&City) -> f64| -> City {
                 let mut out = c.clone();
                 let _ = (e, &focus);
                 let value = |p: &Plot| {
                     let y = crate::yields::tile_yields(r, p, &env.techs, &env.civics, false, &[], None, None, None);
                     (crate::yields::get_y(&y, s!("YIELD_FOOD")), crate::yields::get_y(&y, s!("YIELD_PRODUCTION")))
                 };
-                // replay: the citizen whose tile leaves the yields the next save shows (a save's yields are those of the
-                // end of the turn before; its worked tiles may have been reassigned since: 10/07 Rome T17)
-                let target = rec.as_ref().and_then(|r| r.turn(t_now + 1)).and_then(|rt| rt.city(c.name)).map(|rc| (rc.food_yield, rc.prod_yield));
+                // replay: the citizen whose removal gives the food the record's city stored this turn (a save's worked
+                // tiles may have been reassigned since: 10/07 Rome T17, 10/19 Cumana T27), and the production the next
+                // save shows (a save's yields are those of the end of the turn before)
+                let now = rec.as_ref().and_then(|r| r.turn(t_now)).and_then(|rt| rt.city(c.name)).cloned();
+                let next = rec.as_ref().and_then(|r| r.turn(t_now + 1)).and_then(|rt| rt.city(c.name)).cloned();
+                let stored = match (&now, &next) {
+                    (Some(a), Some(b)) if b.pop > c.population as i64 => Some(b.food - a.food + crate::growth::growth_threshold(r, c.population, speed)),
+                    (Some(a), Some(b)) => Some(b.food - a.food),
+                    _ => None,
+                };
                 let miss = |k: usize| -> (f64, f64) {
                     let (f, p) = value(&out.worked[k]);
-                    match target {
-                        Some((tf, tp)) => ((before[0] - f - tf).abs(), (before[1] - p - tp).abs()),
+                    match (&next, stored) {
+                        (Some(n), Some(want)) => {
+                            let mut cand = out.clone();
+                            cand.worked.remove(k);
+                            ((adds(&cand) - want).abs(), (before[1] - p - n.prod_yield).abs())
+                        }
                         // else the game takes the citizen off the tile with the least food (then production)
-                        None => (f, p),
+                        _ => (f, p),
                     }
                 };
                 if let Some(k) = (1..out.worked.len()).min_by(|&a, &b| miss(a).partial_cmp(&miss(b)).unwrap()) {

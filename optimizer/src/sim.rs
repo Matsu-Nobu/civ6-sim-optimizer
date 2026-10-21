@@ -190,30 +190,31 @@ pub fn step<'a>(r: &'a Rules, ec: &mut EngineCache<'a>, acc: &mut PlayerAcc, cit
         let mut settled = false;
         let mut food_city: Option<City> = None;
         let ca = acc.cities.get_mut(&c.name).unwrap();
+        // a city working on nothing keeps its production for the next item, whatever its progress (10/17 Susa T20-21)
         if item.is_none() {
-            ca.overflow += y[1];
+            ca.raw += y[1];
         }
         if let Some(item) = item {
             let pct = item_production_percent(r, &e, c, item);
             let flat = item_production_flat(&e, c, item);
             // a chop finished it during the turn: the turn's production goes to the next item (CivFanatics, "Is
             // chopping overflow overcorrected?"), here a turn later
-            let into = if ca.chopped == Some(item) {
+            // the carried-over production goes into an item with no progress yet, with the item's percent bonus (10/18
+            // Nantes T29: (4.5 + 9) x 1.5); one already begun leaves it for the next (10/18 La Rochelle T22)
+            let before = ca.progress.get(&item).copied().unwrap_or(0.0);
+            let applied = if before == 0.0 { ca.overflow } else { 0.0 };
+            let own = y[1] + flat;
+            let base = if ca.chopped == Some(item) {
                 ca.raw += y[1];
                 0.0
             } else {
-                let x = (y[1] + flat + ca.raw) * (1.0 + pct / 100.0);
+                let x = own + ca.raw;
                 ca.raw = 0.0;
                 x
             };
             ca.chopped = None;
-            // the carried-over production goes into an item with no progress yet; one already begun leaves it for the
-            // next (the saves' carried-over production, e.g. 10/18 La Rochelle T22)
-            let before = ca.progress.get(&item).copied().unwrap_or(0.0);
-            let applied = if before == 0.0 { ca.overflow } else { 0.0 };
-            // the part of this turn's production that the item's percent bonus added
-            let bonus = into - into / (1.0 + pct / 100.0);
-            *ca.progress.entry_or(item, 0.0) += into + applied;
+            let into = base * (1.0 + pct / 100.0);
+            *ca.progress.entry_or(item, 0.0) += (base + applied) * (1.0 + pct / 100.0);
             ca.overflow -= applied;
             if item_kind(item) == Kind::Project {
                 for (k, pc) in r.yield_rows("Project_YieldConversions", "ProjectType", item, "YieldType", "PercentOfProductionRate") {
@@ -249,7 +250,7 @@ pub fn step<'a>(r: &'a Rules, ec: &mut EngineCache<'a>, acc: &mut PlayerAcc, cit
                     // Gathering Storm), and the carried-over production put into it does not carry on (the saves:
                     // 10/19 Cumana T22, 10/14 Paris T29). A carried-over production still waiting stays as it is.
                     if ca.overflow == 0.0 {
-                        ca.overflow = if prog - bonus < cost { 0.0 } else { (before + into - bonus - cost).max(0.0) };
+                        ca.overflow = if before + base + applied < cost { 0.0 } else { (before + own.min(base) - cost).max(0.0) };
                     }
                     ca.progress.insert(item, 0.0);
                     ca.locked_cost.remove(&item);

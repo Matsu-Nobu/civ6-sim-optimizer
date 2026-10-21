@@ -1802,7 +1802,7 @@ fn main() {
                     let held = gprog.as_ref().and_then(|x| x["production"]["heldOverflow"].as_f64());
                     if let (Some(item), Some(gc), Some(h)) = (rc.current, gprog.as_ref(), held) {
                         let gt = gc["production"]["progress"][item.as_string().as_str()].as_f64().unwrap_or(0.0) + h;
-                        let mt = ca.progress.get(&item).copied().unwrap_or(0.0) + ca.overflow;
+                        let mt = ca.progress.get(&item).copied().unwrap_or(0.0) + ca.overflow + ca.raw;
                         if mt - gt < -0.5 || mt - gt >= 1.0 {
                             note("progress", format!("{} {} progress {:.1}/{:.1}", c.name, item, mt, gt), &mut diffs);
                         }

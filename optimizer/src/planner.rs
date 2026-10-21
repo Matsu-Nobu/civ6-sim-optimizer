@@ -455,6 +455,36 @@ impl<'a> Planner<'a> {
         self.sc.exo_boosts = exo;
     }
 
+    /// The cities the recorded player took from other players: a city in a save that the save before showed as
+    /// another player's.
+    pub fn record_captures(&mut self, rows: &crate::json::Value) {
+        let rows: Vec<&crate::json::Value> = rows.as_array().unwrap().iter().collect();
+        let mut out: HashMap<i64, Vec<(City, CityAcc)>> = HashMap::new();
+        for w in rows.windows(2) {
+            let (a, b) = (w[0], w[1]);
+            let me = b["player"]["playerId"].as_i64();
+            let had: Vec<Sym> = a["cities"].as_array().map(|x| x.iter().filter_map(|c| osym(&c["name"])).collect()).unwrap_or_default();
+            let foreign: Vec<Sym> = a["worldCities"].as_array().map(|x| x.iter().filter(|c| c["playerId"].as_i64() != me).filter_map(|c| osym(&c["name"])).collect()).unwrap_or_default();
+            for c in b["cities"].as_array().map(|x| x.as_slice()).unwrap_or(&[]) {
+                let Some(n) = osym(&c["name"]) else { continue };
+                if had.contains(&n) || !foreign.contains(&n) {
+                    continue;
+                }
+                let mut city = crate::model::city_from(c);
+                city.current = None;
+                let acc = CityAcc {
+                    population: c["population"].as_i64().unwrap_or(1) as i32,
+                    food_store: c["foodStore"].as_f64().unwrap_or(0.0),
+                    progress: crate::model::omap_f(&c["production"]["progress"]),
+                    overflow: c["production"]["heldOverflow"].as_f64().unwrap_or(0.0),
+                    ..Default::default()
+                };
+                out.entry(b["turn"].as_i64().unwrap()).or_default().push((city, acc));
+            }
+        }
+        self.sc.captured = out;
+    }
+
     /// Units granted to each city the player founds (MODIFIER_PLAYER_BUILT_CITIES_GRANT_FREE_UNIT of its buildings).
     fn founding_units(&self, st: &State) -> Vec<(Sym, i64)> {
         let r = self.r;
@@ -1917,6 +1947,23 @@ impl<'a> Planner<'a> {
                         *st.units.entry_or(u, 0) += 1;
                     }
                 }
+            }
+        }
+        // replay: the cities the record took from other players, as its save of this turn shows them
+        if self.rec.is_some() || self.tiles_rec.is_some() {
+            for (c, acc) in self.sc.captured.get(&t_now).cloned().unwrap_or_default() {
+                if st.cities.iter().any(|x| x.name == c.name) {
+                    continue;
+                }
+                let xy: Vec<XY> = c.owned.iter().map(|p| p.xy()).collect();
+                for o in st.cities.iter_mut() {
+                    o.owned.retain(|p| !xy.contains(&p.xy()));
+                    o.worked.retain(|p| !xy.contains(&p.xy()));
+                }
+                st.acc.cities.insert(c.name, acc);
+                st.border.insert(c.name, (0.0, 0));
+                st.focus.insert(c.name, s!("balanced"));
+                st.cities.push(c);
             }
         }
         // improvements built on earlier turns that waited for a plot a new city now owns (the builders of this turn

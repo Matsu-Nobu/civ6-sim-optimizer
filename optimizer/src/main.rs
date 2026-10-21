@@ -75,6 +75,7 @@ fn planner(p: &Problem) -> (Planner<'static>, State) {
     let establish: HashMap<_, _> = p.v["establish_turns"].as_object().unwrap().iter().map(|(k, v)| (sym(k), v.as_i64().unwrap())).collect();
     let mut pl = Planner::new(r, world, sc, s, speed, establish);
     pl.record_exo_boosts(&p.v["rows"]);
+    pl.record_captures(&p.v["rows"]);
     pl.milestones = MILESTONES.get().cloned().flatten();
     pl.s.allow_idle_units = ALLOW_MILITARY.get().copied().unwrap_or(false);
     pl.s.no_harvest_before = NO_HARVEST_BEFORE.get().copied().unwrap_or(0);

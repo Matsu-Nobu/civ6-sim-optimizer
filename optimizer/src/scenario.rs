@@ -18,6 +18,9 @@ pub struct Scenario {
     pub rows: HashMap<i64, TurnRow>,
     pub last_turn: i64,
     pub exo_boosts: HashMap<i64, Vec<Sym>>,
+    /// replay: the cities the recorded player took from other players, by the first turn they are its own, as the save
+    /// of that turn shows them (Planner::record_captures)
+    pub captured: HashMap<i64, Vec<(crate::model::City, crate::model::CityAcc)>>,
     pub faith_gift: HashMap<i64, f64>,
     pub gold_gift: HashMap<i64, f64>,
     /// gold the recorded player gave away (to allies) on each turn: taken from a plan's gold too (--gold-out)
@@ -82,6 +85,7 @@ impl Scenario {
             rows: out,
             last_turn: last,
             exo_boosts: turn_map(&sc["exo_boosts"], |x| x.as_array().unwrap().iter().filter_map(osym).collect()),
+            captured: HashMap::new(),
             faith_gift: turn_map(&sc["faith_gift"], |x| x.as_f64().unwrap_or(0.0)),
             gold_gift: turn_map(&sc["gold_gift"], |x| x.as_f64().unwrap_or(0.0)),
             gold_out: HashMap::new(),

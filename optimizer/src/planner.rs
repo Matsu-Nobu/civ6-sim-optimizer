@@ -1939,9 +1939,28 @@ impl<'a> Planner<'a> {
                 continue;
             }
             let name = s.name.unwrap_or_else(|| sym(&format!("CITY_{}", st.cities.len() + 1)));
-            let c = self.found_city(st, name, target, &env);
+            let mut c = self.found_city(st, name, target, &env);
+            let mut acc = CityAcc { population: 1, ..Default::default() };
+            // replay: the record founded it during the last turn and the save of this turn shows it; the founding
+            // builder's harvests of that turn are done (10/21 Aquileia T44: wheat harvested, population 2 and 11 food)
+            let mut harvested = 0;
+            if let Some(rc) = self.rec.as_ref().or(self.tiles_rec.as_ref()).and_then(|r| r.turn(t_now)).and_then(|rt| rt.city(name)) {
+                acc.population = rc.pop as i32;
+                acc.food_store = rc.food;
+                let rec = self.rec.as_ref().or(self.tiles_rec.as_ref()).unwrap();
+                for &(t, kind, xy, what) in &rec.acts {
+                    if t + 1 != t_now || kind != s!("harvest") {
+                        continue;
+                    }
+                    if let Some(p) = c.owned.iter_mut().find(|p| p.xy() == xy) {
+                        if what == s!("feature") { p.feature = None } else { p.resource = None }
+                        harvested += 1;
+                    }
+                }
+                c.population = acc.population;
+            }
             st.cities.push(c);
-            st.acc.cities.insert(name, CityAcc { population: 1, ..Default::default() });
+            st.acc.cities.insert(name, acc);
             st.border.insert(name, (0.0, 0));
             st.focus.insert(name, s!("balanced"));
             // units every new city gets (BBG Ancestral Hall: a builder, which acts on the founding turn)
@@ -1949,7 +1968,10 @@ impl<'a> Planner<'a> {
                 for _ in 0..n {
                     if u == s!("UNIT_BUILDER") {
                         let e = self.engine(&env, &st.cities);
-                        let charges = builder_charges(r, &e, u, name);
+                        let charges = builder_charges(r, &e, u, name) - std::mem::take(&mut harvested);
+                        if charges <= 0 {
+                            continue;
+                        }
                         st.builders.push(Builder { charges, at: target, ready: t_now, id: None, pending: None, idle: None });
                     } else {
                         *st.units.entry_or(u, 0) += 1;

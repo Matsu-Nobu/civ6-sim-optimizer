@@ -1256,7 +1256,14 @@ pub fn city_yields(r: &Rules, e: &Engine, c: &City, routes: &[Route]) -> Y {
             for (dd, x) in e.district_effects(s!("EFFECT_ADJUST_DISTRICT_YIELD_BASED_ON_ADJACENCY_BONUS"), c.name) {
                 if let Some(dd) = dd {
                     if (dd.x, dd.y) == (d.x, d.y) {
-                        let v = x.args.get("YieldTypeToMirror").map(|m| get_y(&adj, m)).unwrap_or(0.0);
+                        // the adjacency as the district's percent modifiers raise it (10/21 Ravenna T62: Town
+                        // Charters' +50% makes the hub's 4 gold 6, and Free Inquiry gives 6 science)
+                        let boosted = |m: Sym| {
+                            let v = get_y(&adj, m);
+                            let p = district_pct.iter().find(|(a, _)| *a == (d.x, d.y)).map(|(_, pct)| get_y(pct, m)).unwrap_or(0.0);
+                            v + (v * p / 100.0).floor()
+                        };
+                        let v = x.args.get("YieldTypeToMirror").map(boosted).unwrap_or(0.0);
                         if v != 0.0 {
                             add_all(vec![(x.args.get("YieldTypeToGrant").unwrap(), v)]);
                         }

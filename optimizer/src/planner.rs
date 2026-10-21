@@ -1475,9 +1475,11 @@ impl<'a> Planner<'a> {
         let r = self.r;
         let mut improvements: Vec<(Sym, i64)> = vec![];
         let mut improved = 0;
+        // (with those built this turn: a boost comes when the improvement is built, its yields from the next turn)
+        let building: Vec<(XY, Sym)> = st.improving.iter().map(|x| (x.1, x.2)).collect();
         for c in &st.cities {
             for p in &c.owned {
-                if let Some(i) = p.improvement {
+                if let Some(i) = p.improvement.or_else(|| building.iter().find(|b| b.0 == p.xy()).map(|b| b.1)) {
                     if let Some(x) = improvements.iter_mut().find(|(k, _)| *k == i) { x.1 += 1 } else { improvements.push((i, 1)) }
                     improved += 1;
                 }
@@ -1526,7 +1528,7 @@ impl<'a> Planner<'a> {
             } else if (cls == s!("BOOST_TRIGGER_IMPROVE_SPECIFIC_RESOURCE")) {
                 let (imp, res) = (s(i, "ImprovementType"), s(i, "ResourceType"));
                 imp.is_some() && res.is_some() && r.resource_revealed(res.unwrap(), &st.acc.techs)
-                    && st.cities.iter().any(|c| c.owned.iter().any(|p| p.improvement == imp && p.resource == res))
+                    && st.cities.iter().any(|c| c.owned.iter().any(|p| (p.improvement == imp || building.contains(&(p.xy(), imp.unwrap()))) && p.resource == res))
             } else if cls == s!("BOOST_TRIGGER_HAVE_X_BUILDINGS") {
                 let b = s(i, "BuildingType");
                 st.cities.iter().filter(|c| b.map(|b| c.buildings.contains(&b)).unwrap_or(false)).count() as i64 >= n

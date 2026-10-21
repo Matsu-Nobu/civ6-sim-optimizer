@@ -21,6 +21,7 @@ const RIVER_BIT_OF_NEIGHBOUR: [u8; 6] = [1, 4, 3, 2, 5, 0]; // neighbour index -
 
 impl Map {
     pub fn load(v: &Value) -> Map {
+        crate::geo::set_map_width(v["width"].as_i64().unwrap() as i32);
         let mut m = Map {
             width: v["width"].as_i64().unwrap() as i32,
             height: v["height"].as_i64().unwrap() as i32,

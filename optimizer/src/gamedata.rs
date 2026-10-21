@@ -157,14 +157,16 @@ fn units_trained(p: &Value, u: &str) -> f64 {
     p["unitsTrained"][u].as_f64().unwrap_or(0.0)
 }
 
-/// How many of `unit` the cities finished between saves a and b (progress reset, or switched away after it).
+/// How many of `unit` the cities finished between saves a and b (progress reset, or switched away from it leaving no
+/// progress on it: one switched away from with its progress kept was not finished, 10/21 Antium T28).
 fn produced_between(a: &Value, b: &Value, unit: &str) -> f64 {
     let after: HashMap<&str, &Value> = b["cities"].as_array().unwrap().iter().map(|c| (c["name"].as_str().unwrap(), c)).collect();
     let mut n = 0.0;
     for c in a["cities"].as_array().unwrap() {
         let Some(c2) = after.get(c["name"].as_str().unwrap()) else { continue };
         let prog = |x: &Value| x["production"]["progress"][unit].as_f64().unwrap_or(0.0);
-        if c["production"]["current"].as_str() == Some(unit) && (c2["production"]["current"].as_str() != Some(unit) || prog(c2) < prog(c)) {
+        let switched_away = c2["production"]["current"].as_str() != Some(unit) && prog(c2) == 0.0;
+        if c["production"]["current"].as_str() == Some(unit) && (switched_away || prog(c2) < prog(c)) {
             n += 1.0;
         }
     }

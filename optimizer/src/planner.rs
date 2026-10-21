@@ -2463,7 +2463,9 @@ impl<'a> Planner<'a> {
         // turn's growth, which counts the citizens before them (10/07 Aquileia T43: 14 + 3 food grew it from 3 at
         // 16, leaving 1, and the village made it 5)
         if let Some((a, b)) = self.rec.as_ref().or(self.tiles_rec.as_ref()).and_then(|r| Some((r.turn(t_now)?, r.turn(t_now + 1)?))) {
-            for _ in 0..(b.hut_survivors - a.hut_survivors).max(0) {
+            // (a village's survivors can be a builder, trader or settler instead: those come as unit gifts)
+            let units_given = self.sc.unit_gifts.get(&t_now).map(|g| g.iter().filter(|u| [s!("UNIT_BUILDER"), s!("UNIT_TRADER"), s!("UNIT_SETTLER")].contains(u)).count() as i64).unwrap_or(0);
+            for _ in 0..(b.hut_survivors - a.hut_survivors - units_given).max(0) {
                 let gained = |c: &crate::record::RecCity| b.city(c.name).map(|n| (n.pop - c.pop, n.food >= c.food)).unwrap_or((0, false));
                 let pick = a.cities.iter().filter(|c| st.cities.iter().any(|x| x.name == c.name))
                     .max_by_key(|c| { let (d, kept) = gained(c); (d, kept) }).filter(|c| { let (d, kept) = gained(c); d >= 2 || (d == 1 && kept) });

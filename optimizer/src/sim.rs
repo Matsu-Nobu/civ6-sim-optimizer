@@ -154,15 +154,24 @@ pub fn step<'a>(r: &'a Rules, ec: &mut EngineCache<'a>, acc: &mut PlayerAcc, cit
         env_new = x;
         &env_new
     };
-    let e = ec.get(r, env, cities);
+    let e0 = ec.get(r, env, cities);
+    let mut e = e0.clone();
     let mut totals: Y = [0.0; 6];
+    // the cities as processing goes: a building or a district finished in a city processed earlier this turn counts
+    // for those after it (10/19: the Audience Chamber finished in Bogota at T35 gives Cumana its food that turn)
+    let mut cities_cur: Vec<City> = cities.to_vec();
+    let mut dirty = false;
     // the cities are processed in order (the capital first): a trade route's yields count the districts its
     // destination finished earlier in this turn's processing (10/14 La Rochelle's route to Paris, campus at T24;
     // 10/17 Susa's route to Pasargadae, government plaza at T27)
     let mut routes_now: Vec<Route> = routes.to_vec();
-    let mut pending: Vec<(&City, Y, Option<City>, bool, f64, f64, f64, Vec<Route>)> = vec![];
+    let mut pending: Vec<(&City, Y, Option<City>, bool, f64, f64, f64, Vec<Route>, std::rc::Rc<Engine>, Vec<City>)> = vec![];
     let routes_shown = routes;
-    for c in cities {
+    for (ci, c) in cities.iter().enumerate() {
+        if dirty {
+            e = ec.get(r, env, &cities_cur);
+            dirty = false;
+        }
         let routes = &routes_now.clone()[..];
         let log_from = log.len();
         let score = scores.iter().find(|(n, _)| *n == c.name).map(|x| x.1).unwrap_or(0.0);
@@ -301,6 +310,10 @@ pub fn step<'a>(r: &'a Rules, ec: &mut EngineCache<'a>, acc: &mut PlayerAcc, cit
                 }
             }
         }
+        if let Some(fc) = &food_city {
+            cities_cur[ci] = fc.clone();
+            dirty = true;
+        }
         for ev in &log[log_from..] {
             if let Event::Completed(n, item) = ev {
                 if item_kind(*item) == Kind::District {
@@ -312,14 +325,16 @@ pub fn step<'a>(r: &'a Rules, ec: &mut EngineCache<'a>, acc: &mut PlayerAcc, cit
                 }
             }
         }
-        pending.push((c, y, food_city, settled, score, nonfood_pct, growth_pct, routes.to_vec()));
+        let at = if food_city.is_some() { cities_cur.clone() } else { vec![] };
+        pending.push((c, y, food_city, settled, score, nonfood_pct, growth_pct, routes.to_vec(), e.clone(), at));
     }
-    for (c, y, food_city, settled, score, nonfood_pct, growth_pct, routes) in pending {
+    let e_end = e;
+    for (c, y, food_city, settled, score, nonfood_pct, growth_pct, routes, e, at) in pending {
         let routes = &routes[..];
         let pop = acc.cities.get(&c.name).unwrap().population;
         let mut food = y[0];
         if let Some(fc) = &food_city {
-            let now: Vec<City> = cities.iter().map(|x| if x.name == fc.name { fc.clone() } else { x.clone() }).collect();
+            let now: Vec<City> = at.iter().map(|x| if x.name == fc.name { fc.clone() } else { x.clone() }).collect();
             let ef = ec.get(r, env, &now);
             food = city_turn_yields(r, &ef, fc, pop, routes, nonfood_pct, Some(score))[0];
         }
@@ -349,11 +364,11 @@ pub fn step<'a>(r: &'a Rules, ec: &mut EngineCache<'a>, acc: &mut PlayerAcc, cit
             log.push(Event::Grew(c.name, ca.population));
         }
     }
-    let py = player_yields(r, &e, &totals);
+    let py = player_yields(r, &e_end, &totals);
     for &k in &PCT_TOTALS {
         totals[k] += py[k];
     }
-    totals[2] -= maintenance(r, &e, cities, units);
+    totals[2] -= maintenance(r, &e0, cities, units);
     acc.gold += totals[2];
     acc.faith += totals[5];
     if acc.districts_snapshot.is_none() {

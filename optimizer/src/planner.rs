@@ -2353,30 +2353,25 @@ impl<'a> Planner<'a> {
             // replay: the tiles the recorded city works at the start of the next turn (the player reassigned them)
             let rec = self.rec.as_ref().or(self.tiles_rec.as_ref()).cloned();
             let focus = st.focus.clone();
-            let after_settler = |c: &City, e: &Engine| -> City {
+            let after_settler = |c: &City, e: &Engine, before: &Y| -> City {
                 let mut out = c.clone();
-                // (only when the next save's city has the population left after the settler: no growth in between)
-                if let Some(rc) = rec.as_ref().and_then(|r| r.turn(t_now + 1)).and_then(|rt| rt.city(c.name)).filter(|rc| rc.pop == c.population as i64) {
-                    let mut worked = vec![c.worked[0].clone()];
-                    for xy in rc.worked.iter().filter(|xy| **xy != c.center).take(c.population.max(0) as usize) {
-                        if let Some(p) = c.owned_at(*xy) {
-                            let mut p = p.clone();
-                            p.workers = 1;
-                            worked.push(p);
-                        }
-                    }
-                    if worked.len() == c.population.max(0) as usize + 1 {
-                        out.worked = worked;
-                        return out;
-                    }
-                }
-                // else the game takes the citizen off the tile with the least food (then production); the others stay
                 let _ = (e, &focus);
                 let value = |p: &Plot| {
                     let y = crate::yields::tile_yields(r, p, &env.techs, &env.civics, false, &[], None, None, None);
                     (crate::yields::get_y(&y, s!("YIELD_FOOD")), crate::yields::get_y(&y, s!("YIELD_PRODUCTION")))
                 };
-                if let Some(k) = (1..out.worked.len()).min_by(|&a, &b| value(&out.worked[a]).partial_cmp(&value(&out.worked[b])).unwrap()) {
+                // replay: the citizen whose tile leaves the yields the next save shows (a save's yields are those of the
+                // end of the turn before; its worked tiles may have been reassigned since: 10/07 Rome T17)
+                let target = rec.as_ref().and_then(|r| r.turn(t_now + 1)).and_then(|rt| rt.city(c.name)).map(|rc| (rc.food_yield, rc.prod_yield));
+                let miss = |k: usize| -> (f64, f64) {
+                    let (f, p) = value(&out.worked[k]);
+                    match target {
+                        Some((tf, tp)) => ((before[0] - f - tf).abs(), (before[1] - p - tp).abs()),
+                        // else the game takes the citizen off the tile with the least food (then production)
+                        None => (f, p),
+                    }
+                };
+                if let Some(k) = (1..out.worked.len()).min_by(|&a, &b| miss(a).partial_cmp(&miss(b)).unwrap()) {
                     out.worked.remove(k);
                 }
                 out

@@ -113,12 +113,12 @@ pub fn current_cost(r: &Rules, acc: &PlayerAcc, cities: &[City], env: &Env, city
     item_cost(r, &env_cost, item, speed, Some(&placed), false)
 }
 
-/// `after_settler`: a city's worked tiles once a settler has taken one of its citizens (the game reassigns them all),
-/// given the city and its engine.
+/// `after_settler`: a city's worked tiles once a settler has taken one of its citizens, given the city, its engine
+/// and its yields before (with all its citizens).
 #[allow(clippy::too_many_arguments)]
 pub fn step<'a>(r: &'a Rules, ec: &mut EngineCache<'a>, acc: &mut PlayerAcc, cities: &[City], env: &Env, units: &OMap<Sym, i64>, speed: Sym,
                 research: Option<Sym>, civic: Option<Sym>, boosts: &[Sym], routes: &[Route],
-                after_settler: &dyn Fn(&City, &Engine) -> City) -> Vec<Event> {
+                after_settler: &dyn Fn(&City, &Engine, &Y) -> City) -> Vec<Event> {
     let mut log = vec![];
     for c in cities {
         if !acc.cities.contains(&c.name) {
@@ -331,7 +331,7 @@ pub fn step<'a>(r: &'a Rules, ec: &mut EngineCache<'a>, acc: &mut PlayerAcc, cit
             growth_pct = happiness(r, score_now).1;
             let mut fewer = c.clone();
             fewer.population = pop;
-            let fewer = after_settler(&fewer, &e);
+            let fewer = after_settler(&fewer, &e, &y);
             food = city_turn_yields(r, &e, &fewer, pop, routes, 0.0, None)[0];
         }
         let fc = food_city.as_ref().unwrap_or(c);

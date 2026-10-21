@@ -1733,8 +1733,9 @@ impl<'a> Planner<'a> {
             let order: Vec<XY> = now.iter().chain(next.iter().filter(|x| !now.contains(x))).copied().collect();
             let pop = c.population.max(0) as usize;
             let dtiles: Vec<XY> = c.districts.iter().map(|d| (d.x, d.y)).collect();
+            // (a district's tile is a specialist's, as the record has them)
             let mut pick: Vec<XY> = order.into_iter()
-                .filter(|xy| *xy != c.center && !dtiles.contains(xy) && c.owned_at(*xy).is_some() && self.w.workable(*xy, c.center, &e)).take(pop).collect();
+                .filter(|xy| *xy != c.center && c.owned_at(*xy).is_some() && (dtiles.contains(xy) || self.w.workable(*xy, c.center, &e))).take(pop).collect();
             for p in c.worked.iter().skip(1) {
                 if pick.len() >= pop {
                     break;

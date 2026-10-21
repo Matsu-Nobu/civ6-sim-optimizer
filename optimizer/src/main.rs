@@ -428,10 +428,35 @@ fn record_genome_with(p: &Problem, wide: bool, tiles: bool, until: Option<i64>) 
     g
 }
 
+/// The recorded play as a plan for the searches (--init record_search): the replay's choices (record_genome_with),
+/// played under the model's rules (as a search plays plans) with the record's choices where the replay set them
+/// without a decision (research and civics in the record's order, policies, governments), every choice kept.
+fn record_genome_search(p: &Problem) -> HashMap<Key, Choice> {
+    struct Layered<'a, 'r> {
+        first: &'a HashMap<Key, Choice>,
+        rec: civ6opt::record::RecordedChooser<'r>,
+        g: HashMap<Key, Choice>,
+    }
+    impl civ6opt::planner::Chooser for Layered<'_, '_> {
+        fn choose(&mut self, p: &Planner, st: &State, key: &Key, options: &[Choice]) -> Option<Choice> {
+            let c = self.first.get(key).filter(|c| options.contains(c)).cloned().or_else(|| self.rec.choose(p, st, key, options))?;
+            self.g.insert(key.clone(), c.clone());
+            Some(c)
+        }
+    }
+    let first = record_genome_with(p, false, true, None);
+    let (pl, st0) = planner(p);
+    let rec = civ6opt::record::Record::load(&p.v["rows"], &pl.sc.unit_gifts, &p.v["map"]);
+    let last = p.v["rows"].as_array().unwrap().iter().filter_map(|r| r["turn"].as_i64()).max().unwrap_or(0);
+    let mut ch = Layered { first: &first, rec: civ6opt::record::RecordedChooser::new(&rec), g: HashMap::new() };
+    opt::play(&pl, &st0, &mut ch, opt::Horizon::plain(last));
+    ch.g
+}
+
 /// The recorded player's own play (--genome record | record_wide) keeps the recorded citizens' tiles and the
 /// settings it was read with.
 fn user_play_setup(p: &Problem, pl: &mut Planner, which: Option<&str>) {
-    if let Some(w) = which.filter(|w| w.starts_with("record") && *w != "recorded" && *w != "recorded_tiles") {
+    if let Some(w) = which.filter(|w| w.starts_with("record") && *w != "recorded" && *w != "recorded_tiles" && *w != "record_search") {
         pl.s.fixed.clear();
         if w == "record_wide" {
             pl.s.builder_candidates = None;
@@ -504,6 +529,7 @@ fn genome_arg(p: &Problem, which: Option<&str>) -> HashMap<Key, Choice> {
         // (made with the recorded tiles, as the play it is replayed in: user_play_setup)
         Some("record") => record_genome_with(p, false, true, None),
         Some("record_wide") => record_genome_with(p, true, true, None),
+        Some("record_search") => record_genome_search(p),
         None | Some("recorded") => genome_from(&p.v["recorded_genome"]),
         Some("recorded_tiles") => genome_from(&p.v["recorded_genome_tiles"]),
         Some("base") => HashMap::new(),

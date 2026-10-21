@@ -1806,8 +1806,16 @@ fn main() {
                     if let (Some(item), Some(gc), Some(h)) = (rc.current, gprog.as_ref(), held) {
                         let gt = gc["production"]["progress"][item.as_string().as_str()].as_f64().unwrap_or(0.0) + h;
                         let mt = ca.progress.get(&item).copied().unwrap_or(0.0) + ca.overflow + ca.raw;
+                        // the overflow the turn began with is held in whole units, so the model's start lacks its fraction
+                        // (under 1, then times the item's percent bonus; 10/18 Nantes T29: 4.5 held as 4)
+                        let start_held = d["cities"].as_array().and_then(|a| a.iter().find(|cc| osym(&cc["name"]) == Some(c.name)))
+                            .and_then(|cc| cc["production"]["heldOverflow"].as_f64()).unwrap_or(0.0);
                         if mt - gt < -0.5 || mt - gt >= 1.0 {
-                            note("progress", format!("{} {} progress {:.1}/{:.1}", c.name, item, mt, gt), &mut diffs);
+                            if start_held > 0.0 && gt > mt && gt - mt < 2.0 {
+                                note("progress (overflow fraction, not in the save)", format!("{} {} progress {:.1}/{:.1}", c.name, item, mt, gt), &mut diffs);
+                            } else {
+                                note("progress", format!("{} {} progress {:.1}/{:.1}", c.name, item, mt, gt), &mut diffs);
+                            }
                         }
                     }
                     if let (Some(item), Some(gc), None) = (rc.current, gprog, held) {

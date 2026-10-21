@@ -330,8 +330,19 @@ pub fn step<'a>(r: &'a Rules, ec: &mut EngineCache<'a>, acc: &mut PlayerAcc, cit
         pending.push((c, y, food_city, settled, score, nonfood_pct, growth_pct, routes.to_vec(), e.clone(), at));
     }
     let e_end = e;
+    // replay: growth counts the luxuries as the turn ends them
+    let env_g = if env.luxuries_next.is_some() && env.luxuries_next != env.luxuries_given {
+        let mut x = env.clone();
+        x.luxuries_given = env.luxuries_next.clone();
+        Some(x)
+    } else {
+        None
+    };
+    let lux_of = |l: &Option<Vec<(Sym, f64)>>, n: Sym| l.as_ref().and_then(|v| v.iter().find(|x| x.0 == n).map(|x| x.1)).unwrap_or(0.0);
     for (c, y, food_city, settled, score, nonfood_pct, growth_pct, routes, e, at) in pending {
         let routes = &routes[..];
+        // (only for a city whose share changed)
+        let env_g = env_g.as_ref().filter(|_| lux_of(&env.luxuries_given, c.name) != lux_of(&env.luxuries_next, c.name));
         let pop = acc.cities.get(&c.name).unwrap().population;
         let mut food = y[0];
         let mut growth_pct = growth_pct;
@@ -341,13 +352,19 @@ pub fn step<'a>(r: &'a Rules, ec: &mut EngineCache<'a>, acc: &mut PlayerAcc, cit
             food = city_turn_yields(r, &ef, fc, pop, routes, nonfood_pct, Some(score))[0];
             // growth counts the amenities after the turn's completions too (10/14 Paris T37: the Audience Chamber's
             // amenity made it happy, +8% growth)
-            let score_now = amenity_scores(r, &now, &ef, env.extra_luxuries).iter().find(|(n, _)| *n == c.name).map(|x| x.1).unwrap_or(0.0);
+            let eg = env_g.map(|x| ec.get(r, x, &now)).unwrap_or(ef);
+            let score_now = amenity_scores(r, &now, &eg, env.extra_luxuries).iter().find(|(n, _)| *n == c.name).map(|x| x.1).unwrap_or(0.0);
+            growth_pct = happiness(r, score_now).1;
+        } else if let Some(x) = env_g {
+            let eg = ec.get(r, x, &at);
+            let score_now = amenity_scores(r, &at, &eg, env.extra_luxuries).iter().find(|(n, _)| *n == c.name).map(|x| x.1).unwrap_or(0.0);
             growth_pct = happiness(r, score_now).1;
         }
         if settled {
             // the city's amenities for growth count the citizens left after the settler
             let now: Vec<City> = sim_cities.iter().map(|x| { let mut x = x.clone(); if x.name == c.name { x.population = pop; } x }).collect();
-            let score_now = amenity_scores(r, &now, &e_sim, env.extra_luxuries).iter().find(|(n, _)| *n == c.name).map(|x| x.1).unwrap_or(0.0);
+            let eg = env_g.map(|x| ec.get(r, x, &sim_cities)).unwrap_or_else(|| e_sim.clone());
+            let score_now = amenity_scores(r, &now, &eg, env.extra_luxuries).iter().find(|(n, _)| *n == c.name).map(|x| x.1).unwrap_or(0.0);
             growth_pct = happiness(r, score_now).1;
             let mut fewer = c.clone();
             fewer.population = pop;

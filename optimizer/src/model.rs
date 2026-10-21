@@ -213,6 +213,9 @@ pub struct Env {
     pub extra_luxuries: i64,
     /// replay: the luxury amenities each city gets, as the save holds them (they replace the model's own share)
     pub luxuries_given: Option<Vec<(Sym, f64)>>,
+    /// replay, on a turn the record founded a city: the same at the turn's end (the next save's table), which the
+    /// growth counts (the new city takes copies from the others; 10/19 Maracaibo T43)
+    pub luxuries_next: Option<Vec<(Sym, f64)>>,
     /// allied players (Scenario.allies)
     pub allies: Vec<i64>,
 }

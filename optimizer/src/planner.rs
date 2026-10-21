@@ -79,6 +79,9 @@ impl<'a> Planner<'a> {
             districts_completed: None,
             extra_luxuries: self.sc.extra_luxuries.get(&st.turn).copied().unwrap_or(0),
             luxuries_given: self.rec.as_ref().or(self.tiles_rec.as_ref()).and_then(|r| r.turn(st.turn)).and_then(|rt| rt.luxuries.clone()),
+            luxuries_next: self.rec.as_ref().or(self.tiles_rec.as_ref())
+                .filter(|r| r.turn(st.turn + 1).map(|b| b.cities.len()).unwrap_or(0) > r.turn(st.turn).map(|a| a.cities.len()).unwrap_or(usize::MAX))
+                .and_then(|r| r.turn(st.turn + 1)).and_then(|rt| rt.luxuries.clone()),
             allies: self.sc.allies.clone(),
         }
     }

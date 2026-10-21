@@ -285,7 +285,9 @@ impl Record {
             ut.sort_by_key(|x| x.0.as_string());
             for (u, n) in ut {
                 let before = a.units_trained.get(u).copied().unwrap_or(0);
-                let finished = a.cities.iter().filter(|ca| ca.current == Some(*u) && b.city(ca.name).map(|cb| cb.current != Some(*u)).unwrap_or(false)).count() as i64;
+                // finished: switched away after it, or its progress fell (finished and begun again)
+                let finished = a.cities.iter().filter(|ca| ca.current == Some(*u)
+                    && b.city(ca.name).map(|cb| cb.current != Some(*u) || cb.progress < ca.progress).unwrap_or(false)).count() as i64;
                 let given = gifts.get(&t).map(|g| g.iter().filter(|x| *x == u).count() as i64).unwrap_or(0);
                 for _ in 0..(n - before - finished - given).max(0) {
                     let city = a.cities.first().map(|c| c.name).unwrap_or(Sym(0));

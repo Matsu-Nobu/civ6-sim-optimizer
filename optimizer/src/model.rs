@@ -612,7 +612,8 @@ pub fn state_from_row(d: &Value) -> State {
             population: c["population"].as_i64().unwrap_or(1) as i32,
             food_store: c["foodStore"].as_f64().unwrap_or(0.0),
             progress: omap_f(&c["production"]["progress"]),
-            overflow: 0.0,
+            // production carried over from a finished item (whole units in the save; absent in older exports)
+            overflow: c["production"]["heldOverflow"].as_f64().unwrap_or(0.0),
             locked_cost: OMap::new(),
             ..Default::default()
         })).collect()),

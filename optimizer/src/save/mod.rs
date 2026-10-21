@@ -1174,6 +1174,8 @@ pub struct City {
     pub worked: Vec<(i64, i64, i64)>,
     pub current: Option<&'static str>,
     pub progress: Vec<(&'static str, f64)>,
+    /// production carried over from a finished item, not yet put into the next (whole units)
+    pub held_overflow: Option<f64>,
     pub buildings: Vec<&'static str>,
     pub great_work_slots: Vec<(&'static str, Option<i64>)>,
     owner_index: i64,
@@ -1268,7 +1270,7 @@ fn parse_cities(p: &Bytes, d: &Dict, map: &Map, players: &[PlayerState], ids: &[
     let owned: HashMap<i64, (i64, i64)> = map.plots.iter().filter_map(|t| t.owner.as_ref().map(|o| (t.y * map.width + t.x, (o.player_id, o.city_slot)))).collect();
     let mut cities: Vec<City> = city_groups(map).into_iter().map(|(owner, slot, c)| City {
         id: (slot + 1) * 0x10000 + slot, slot, name: String::new(), player_id: owner, center: c, capital: false, population: 0,
-        worked: vec![], current: None, progress: vec![], buildings: vec![], great_work_slots: vec![], owner_index: slot, has_id: false,
+        worked: vec![], current: None, progress: vec![], held_overflow: None, buildings: vec![], great_work_slots: vec![], owner_index: slot, has_id: false,
     }).collect();
     let prefix = b"LOC_CITY_NAME_";
     let mut per_owner: HashMap<i64, i64> = HashMap::new();
@@ -1328,6 +1330,15 @@ fn parse_cities(p: &Bytes, d: &Dict, map: &Map, players: &[PlayerState], ids: &[
                 }
             }
         }
+        // the carried-over production: an int32 15 bytes before the last UNIT_SETTLER hash of the city object (after
+        // the natural wonder table)
+        let settler = civ6_hash("UNIT_SETTLER").to_le_bytes();
+        let mut held_overflow = None;
+        let mut q = p.index_of(&settler, at);
+        while q >= 0 && q < end {
+            held_overflow = Some(p.i32(q - 15) as f64);
+            q = p.index_of(&settler, q + 1);
+        }
         let plot_tables: Vec<&Table> = tables.iter().filter(|t| t.kind == "KIND_BUILDING" && t.stride == 6).collect();
         let header = city_header(p, name_offset, owner, idx);
         let slot = header.map(|h| (p.i32(h) & 0xffff) as i64).unwrap_or(idx);
@@ -1358,6 +1369,7 @@ fn parse_cities(p: &Bytes, d: &Dict, map: &Map, players: &[PlayerState], ids: &[
         c.name = name;
         c.current = current;
         c.progress = progress;
+        c.held_overflow = held_overflow;
         c.capital = buildings.contains(&"BUILDING_PALACE");
         c.buildings = buildings;
         c.population = header.map(|h| p.i32(h + 32) as i64).unwrap_or(0);

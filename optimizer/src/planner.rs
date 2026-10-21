@@ -231,8 +231,10 @@ impl<'a> Planner<'a> {
             st.player.governors = Some(vec![]);
         }
         let turn = st.turn;
-        // replay: established as the save shows (a governor read from a save has no establishment turn)
-        let rec_est = self.rec.as_ref().or(self.tiles_rec.as_ref()).and_then(|r| r.turn(turn)).map(|rt| rt.governors_established.clone());
+        // replay: established as the next save shows (a governor establishes at the end of a turn, and counts for that
+        // turn's yields: 10/17 Ray's food from the Audience Chamber at T39; a governor read from a save has no
+        // establishment turn)
+        let rec_est = self.rec.as_ref().or(self.tiles_rec.as_ref()).and_then(|r| r.turn(turn + 1)).map(|rt| rt.governors_established.clone());
         for g in st.player.governors.as_mut().unwrap().iter_mut() {
             if let Some(est) = &rec_est {
                 if est.contains(&g.gtype) {
@@ -1878,8 +1880,9 @@ impl<'a> Planner<'a> {
         // pantheon
         let cost = r.param("RELIGION_PANTHEON_MIN_FAITH") * r.game_speed_cost_multiplier(self.speed);
         // replay: on the turn the recorded player founded it (its faith count can differ a little)
-        let rec_pantheon = self.rec.as_ref().or(self.tiles_rec.as_ref()).and_then(|r| r.turn(t_now + 1)).map(|r| r.pantheon.is_some()).unwrap_or(false);
-        if st.player.pantheon.is_none() && (st.acc.faith >= cost || rec_pantheon) {
+        let replay = self.rec.as_ref().or(self.tiles_rec.as_ref());
+        let rec_pantheon = replay.and_then(|r| r.turn(t_now + 1)).map(|r| r.pantheon.is_some()).unwrap_or(false);
+        if st.player.pantheon.is_none() && ((replay.is_none() && st.acc.faith >= cost) || rec_pantheon) {
             let t = r.tab("Beliefs");
             let opts: Vec<Choice> = r.scan("Pantheons", "Beliefs").into_iter().filter(|&i| t.v(i, "BeliefClassType").sym() == Some(s!("BELIEF_CLASS_PANTHEON"))).map(|i| Choice::S(t.v(i, "BeliefType").sym().unwrap())).collect();
             if let Some(p) = self.decide(st, "pantheon", Ent::S(Sym(0)), opts, ch).and_then(|c| c.sym()) {

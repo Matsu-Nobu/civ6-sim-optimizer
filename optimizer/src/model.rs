@@ -146,6 +146,8 @@ pub struct Envoy {
     pub leader: Sym,
     pub count: i64,
     pub suzerain: bool,
+    /// the player is at war with the city-state (its envoys give no bonus)
+    pub at_war: bool,
     pub resources: Vec<Sym>,
 }
 
@@ -475,6 +477,7 @@ pub fn envoy_from(v: &Value) -> Envoy {
         leader: osym(&v["leader"]).unwrap_or(Sym(0)),
         count: oi64(&v["count"]).unwrap_or(0),
         suzerain: obool(&v["suzerain"]),
+        at_war: obool(&v["atWar"]),
         resources: v["resources"].as_array().map(|a| a.iter().filter_map(osym).collect()).unwrap_or_default(),
     }
 }

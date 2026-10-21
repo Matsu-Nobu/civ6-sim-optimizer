@@ -778,15 +778,18 @@ fn visibility_ids(p: &Bytes, plot_count: i64, before: i64) -> Vec<i64> {
 
 /// Envoys per slot of each player object: 1583 bytes ahead of its first current diplomatic state name, framed by
 /// `0x40000000, 0` and `0x05000000` around 63 counts.
-fn envoys(p: &Bytes, players: &[PlayerState]) -> Vec<Vec<(i64, i64)>> {
+/// Also returns, per player, the players it is at war with (its current state with them is a DIPLO_STATE_WAR*).
+fn envoys(p: &Bytes, players: &[PlayerState]) -> (Vec<Vec<(i64, i64)>>, Vec<Vec<i64>>) {
     let prefix = b"DIPLO_STATE_";
     let mut out = vec![];
+    let mut wars = vec![];
     for i in 0..players.len() {
         let from = players[i].offset;
         let to = players.get(i + 1).map(|x| x.offset).unwrap_or(p.len());
         let mut expected = 0;
         let mut at = p.index_of(prefix, from);
         let mut first = -1;
+        let mut war = vec![];
         while at >= 0 && at < to && expected < 64 {
             let len = p.u32(at - 4) as i64;
             let name = p.sub(at, at + len);
@@ -797,13 +800,17 @@ fn envoys(p: &Bytes, players: &[PlayerState]) -> Vec<Vec<(i64, i64)>> {
                 if first < 0 {
                     first = at;
                 }
+                if name.starts_with(b"DIPLO_STATE_WAR") {
+                    war.push(expected);
+                }
                 expected += 1;
             }
             at = p.index_of(prefix, at + 1);
         }
         out.push(if first >= 0 { envoy_counts(p, first) } else { vec![] });
+        wars.push(war);
     }
-    out
+    (out, wars)
 }
 
 fn envoy_counts(p: &Bytes, first: i64) -> Vec<(i64, i64)> {
@@ -1428,6 +1435,8 @@ pub struct Player {
     pub dedications: Option<Vec<&'static str>>,
     pub great_person_points: Vec<(&'static str, f64, f64)>,
     pub envoys: Vec<(i64, i64)>,
+    /// the players this player is at war with
+    pub at_war: Vec<i64>,
     pub governors: Vec<Governor>,
 }
 
@@ -1463,7 +1472,7 @@ pub fn parse(file: &[u8], d: &Dict) -> Save {
     for (s, id) in states.iter_mut().zip(ids.iter()) {
         s.player_id = *id;
     }
-    let env = envoys(&p, &states);
+    let (env, wars) = envoys(&p, &states);
     let points = great_person_points(&p, &states, &tables, &units);
     let govs = governors(&p, d, &states, &tables);
     let moments = moments(&p, d);
@@ -1496,6 +1505,7 @@ pub fn parse(file: &[u8], d: &Dict) -> Save {
             dedications: ded.iter().find(|x| x.0 == st.player_id).map(|x| x.1.clone()),
             great_person_points: points[index].clone(),
             envoys: env[index].clone(),
+            at_war: wars[index].clone(),
             governors: govs_by.remove(&(index as i64)).unwrap_or_default(),
             state: st,
         }

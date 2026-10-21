@@ -478,6 +478,9 @@ impl<'a> Engine<'a> {
         } else if (rt == s!("REQUIREMENT_PLAYER_CIVILIZATION_TYPE_MATCHES")) || (rt == s!("REQUIREMENT_PLAYER_TYPE_MATCHES")) {
             let c = if let Subj::Cs(i) = s { Some(pl.envoys[*i].civilization) } else { pl.civilization };
             Some(c == a.get("CivilizationType"))
+        } else if rt == s!("REQUIREMENT_PLAYER_IS_AT_PEACE") && (matches!(s, Subj::Cs(_)) || matches!(&self.owner, Some(Subj::Cs(_)))) {
+            let cs = if let Subj::Cs(i) = s { *i } else if let Some(Subj::Cs(i)) = &self.owner { *i } else { unreachable!() };
+            Some(!pl.envoys[cs].at_war)
         } else if (rt == s!("REQUIREMENT_PLAYER_IS_AT_PEACE")) || (rt == s!("REQUIREMENT_PLAYER_IS_SUZERAIN_BONUS_ENABLED"))
             || (rt == s!("REQUIREMENT_CITY_IS_ORIGINAL_OWNER")) || (rt == s!("REQUIREMENT_MAP_HAS_FEATURE")) || (rt == s!("REQUIREMENT_CITY_HAS_FULL_LOYALTY"))
             || (rt == s!("REQUIREMENT_PLAYER_ALWAYS_ALLOWED_COMMEMORATION_QUEST")) || (rt == s!("REQUIREMENT_PLAYER_CAN_EVER_EARN_GREAT_PERSON_CLASS"))
@@ -773,7 +776,7 @@ fn engine_key(env: &Env, cities: &[City], pops: &[i32]) -> u64 {
         }
     }
     for e in &p.envoys {
-        (e.player_id, e.civilization, e.leader, e.count, e.suzerain, &e.resources).hash(&mut h);
+        (e.player_id, e.civilization, e.leader, e.count, e.suzerain, e.at_war, &e.resources).hash(&mut h);
     }
     for g in &p.great_people_used {
         (g.individual, g.cls, g.turn, g.city).hash(&mut h);

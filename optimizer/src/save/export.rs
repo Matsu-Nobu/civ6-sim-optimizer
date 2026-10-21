@@ -471,7 +471,7 @@ pub fn row_json(g: &Save, d: &Dict, n: &Names, file: &str, pid: i64) -> Value {
                 o.push(("civilization", s(&cs.civilization)));
                 o.push(("leader", s(&cs.leader)));
             }
-            o.extend([("count", Value::from(count)), ("suzerain", Value::from(suzerain)), ("resources", Value::Arr(lux))]);
+            o.extend([("count", Value::from(count)), ("suzerain", Value::from(suzerain)), ("atWar", Value::from(me.at_war.contains(&id))), ("resources", Value::Arr(lux))]);
             Value::obj(o)
         }).collect()
     };

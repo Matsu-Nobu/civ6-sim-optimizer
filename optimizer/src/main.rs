@@ -1785,7 +1785,9 @@ fn main() {
                 let gy = &rows.get(&(t + 1)).map(|x| &x["player"]["yields"]);
                 let (gf, gp) = gy.map(|y| (y["YIELD_FOOD"].as_f64().unwrap_or(0.0), y["YIELD_PRODUCTION"].as_f64().unwrap_or(0.0))).unwrap_or((0.0, 0.0));
                 if (st.last_output[0] - gf).abs() > 0.05 || (st.last_output[1] - gp).abs() > 0.05 {
-                    note("yields", format!("F {:.1}/{gf} P {:.1}/{gp}", st.last_output[0], st.last_output[1]), &mut diffs);
+                    // (the saves show the yields as of the next turn's start, with the item's percent bonus: changes made
+                    // there, such as a new government, show in them; the cities' food and progress are checked below)
+                    note("yields (shown at the next turn's start, not in the save)", format!("F {:.1}/{gf} P {:.1}/{gp}", st.last_output[0], st.last_output[1]), &mut diffs);
                 }
                 for c in &st.cities {
                     let Some(rc) = r.city(c.name) else { continue };

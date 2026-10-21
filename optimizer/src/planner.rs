@@ -231,8 +231,14 @@ impl<'a> Planner<'a> {
             st.player.governors = Some(vec![]);
         }
         let turn = st.turn;
+        // replay: established as the save shows (a governor read from a save has no establishment turn)
+        let rec_est = self.rec.as_ref().or(self.tiles_rec.as_ref()).and_then(|r| r.turn(turn)).map(|rt| rt.governors_established.clone());
         for g in st.player.governors.as_mut().unwrap().iter_mut() {
-            if !g.established && turn >= g.ready {
+            if let Some(est) = &rec_est {
+                if est.contains(&g.gtype) {
+                    g.established = true;
+                }
+            } else if !g.established && turn >= g.ready {
                 g.established = true;
             }
         }

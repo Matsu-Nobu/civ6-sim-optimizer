@@ -60,6 +60,8 @@ pub struct RecTurn {
     pub policies: Vec<Sym>,
     /// (governor, city name, promotions)
     pub governors: Vec<(Sym, Option<Sym>, Vec<Sym>)>,
+    /// the governors established in their city at the start of the turn
+    pub governors_established: Vec<Sym>,
     pub pantheon: Option<Sym>,
     pub gold: f64,
     pub faith: f64,
@@ -165,6 +167,7 @@ impl Record {
                 policies: syms(&p["policies"]),
                 governors: p["governors"].as_array().map(|a| a.iter().filter_map(|g| Some((osym(&g["type"])?,
                     g["cityId"].as_i64().and_then(|i| ids.get(&i).copied()), syms(&g["promotions"])))).collect()).unwrap_or_default(),
+                governors_established: p["governors"].as_array().map(|a| a.iter().filter(|g| g["established"].as_bool().unwrap_or(false)).filter_map(|g| osym(&g["type"])).collect()).unwrap_or_default(),
                 pantheon: osym(&p["pantheon"]),
                 gold: p["gold"].as_f64().unwrap_or(0.0),
                 gold_income: p["goldPerTurn"].as_f64().unwrap_or_else(|| total_yield(d, "YIELD_GOLD")),

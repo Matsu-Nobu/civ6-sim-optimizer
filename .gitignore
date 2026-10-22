@@ -13,3 +13,4 @@ data/exports/*_map_T*.json
 # ビルドの出力
 optimizer/target/
 __pycache__/
+.venv/

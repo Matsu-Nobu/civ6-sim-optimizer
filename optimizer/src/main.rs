@@ -97,8 +97,89 @@ fn planner(p: &Problem) -> (Planner<'static>, State) {
 
 /// A rollout trial: (job id, start state, objective before it, plan) -> (job id, score).
 type RoJob = (usize, State, f64, HashMap<Key, Choice>);
-/// A plan's decisions (turn, key, choice, options).
-type RoLog = Vec<(i64, Key, Choice, Vec<Choice>)>;
+/// A plan's decisions (turn, key, choice, options, and when the search learns: the features of crate::learn of the
+/// decision and of each option).
+type RoLog = Vec<(i64, Key, Choice, Vec<Choice>, Option<std::rc::Rc<DecFeats>>)>;
+type DecFeats = (Vec<f64>, Vec<[f64; 2]>);
+
+/// The plan's choices, recording its decisions (with their features of crate::learn when `feats`).
+struct RoRecorder<'g> {
+    genome: &'g HashMap<Key, Choice>,
+    feats: bool,
+    log: RoLog,
+}
+
+impl civ6opt::planner::Chooser for RoRecorder<'_> {
+    fn choose(&mut self, p: &Planner, st: &State, key: &Key, options: &[Choice]) -> Option<Choice> {
+        let c = GenomeChooser { genome: self.genome }.choose(p, st, key, options)?;
+        let f = (self.feats && options.len() > 1).then(|| {
+            let base = p.base(st, key, options);
+            let of = options.iter().map(|o| civ6opt::learn::option_features(p, base.as_ref(), o)).collect();
+            std::rc::Rc::new((civ6opt::learn::decision_features(p, st, key, options), of))
+        });
+        self.log.push((st.turn, key.clone(), c.clone(), options.to_vec(), f));
+        Some(c)
+    }
+}
+
+/// What the rollout learns from and with: the option model that picks the options worth trying, and the file the
+/// trials are written to as rows of crate::learn.
+#[derive(Default)]
+struct Learning {
+    model: Option<civ6opt::learn::Trees>,
+    /// only the options the model predicts best are tried, this many per decision
+    top: usize,
+    rows: Option<std::io::BufWriter<std::fs::File>>,
+    /// the number of the next decision written to `rows`
+    decisions: usize,
+}
+
+impl Learning {
+    fn from_args(args: &[String]) -> Learning {
+        let rows = arg(args, "--rows").map(|path| {
+            use std::io::Write as _;
+            let mut w = std::io::BufWriter::new(std::fs::File::create(&path).unwrap());
+            writeln!(w, "plan\tdecision\tkind\tname\t{}\tchosen\tdelta", civ6opt::learn::NUMERIC.join("\t")).unwrap();
+            w
+        });
+        Learning {
+            model: arg(args, "--model").map(|path| civ6opt::learn::Trees::load(&path)),
+            top: arg(args, "--top").map(|x| x.parse().unwrap()).unwrap_or(3),
+            rows,
+            decisions: 0,
+        }
+    }
+
+    fn on(&self) -> bool {
+        self.model.is_some() || self.rows.is_some()
+    }
+
+    /// The options of decision `d` other than its choice, the model's best first; all of them without a model.
+    fn alternatives(&self, d: &(i64, Key, Choice, Vec<Choice>, Option<std::rc::Rc<DecFeats>>)) -> Vec<Choice> {
+        let alts: Vec<usize> = (0..d.3.len()).filter(|&j| d.3[j] != d.2).collect();
+        let (Some(m), Some(f)) = (&self.model, &d.4) else { return alts.into_iter().map(|j| d.3[j].clone()).collect() };
+        let mut scored: Vec<(f64, usize)> = alts.into_iter().map(|j| (m.predict(&f.0, d.1.kind, &d.3[j], f.1[j]), j)).collect();
+        scored.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap());
+        scored.into_iter().take(self.top).map(|(_, j)| d.3[j].clone()).collect()
+    }
+
+    /// Writes the trials of decision `d` (the scores of `alts`, the plan scoring `best`) as rows.
+    fn write(&mut self, d: &(i64, Key, Choice, Vec<Choice>, Option<std::rc::Rc<DecFeats>>), alts: &[Choice], scores: &[f64], best: f64) {
+        let (Some(w), Some(f)) = (&mut self.rows, &d.4) else { return };
+        use std::io::Write as _;
+        let n = self.decisions;
+        self.decisions += 1;
+        let mut row = |c: &Choice, delta: f64| {
+            let j = d.3.iter().position(|o| o == c).unwrap();
+            let nums: Vec<String> = f.0.iter().chain(f.1[j].iter()).map(|x| format!("{x}")).collect();
+            writeln!(w, "0\t{n}\t{}\t{}\t{}\t{}\t{delta}", d.1.kind.as_string(), civ6opt::learn::option_name(c), nums.join("\t"), (*c == d.2) as i64).unwrap();
+        };
+        row(&d.2, 0.0);
+        for (a, s) in alts.iter().zip(scores) {
+            row(a, s - best);
+        }
+    }
+}
 
 /// `threads` workers, each with its own planner, playing rollout trials to the end of the evaluation.
 fn rollout_workers<'s, 'e>(sc: &'s std::thread::Scope<'s, 'e>, p: &'e Problem, threads: usize, turn: i64, ext: i64, horizon: opt::Horizon)
@@ -138,12 +219,13 @@ struct Rollout<'a> {
     job_tx: std::sync::mpsc::Sender<RoJob>,
     res_rx: std::sync::mpsc::Receiver<(usize, f64)>,
     tried: usize,
+    learning: Learning,
 }
 
 impl Rollout<'_> {
     /// The plan's score, decisions and the state (with the objective so far) at the start of every turn.
     fn describe(&self, g: &HashMap<Key, Choice>) -> (f64, RoLog, Vec<(State, f64)>) {
-        let mut rec = Recorder { genome: g, log: vec![] };
+        let mut rec = RoRecorder { genome: g, feats: self.learning.on(), log: vec![] };
         let mut st = self.st0.clone();
         let mut total = 0.0;
         let mut snaps = vec![];
@@ -185,14 +267,16 @@ impl Rollout<'_> {
                 if Instant::now() > deadline {
                     break 'passes;
                 }
-                let (t, key, ch, opts) = log[i].clone();
-                let alts: Vec<Choice> = opts.iter().filter(|o| **o != ch).cloned().collect();
-                if alts.is_empty() || t < span.0 || t > span.1 || frozen.contains(&key) || kept(&ch) {
+                let d = log[i].clone();
+                let (t, key, ch) = (d.0, d.1.clone(), d.2.clone());
+                if d.3.len() < 2 || t < span.0 || t > span.1 || frozen.contains(&key) || kept(&ch) {
                     i += 1;
                     continue;
                 }
+                let alts = self.learning.alternatives(&d);
                 let snap = snaps[(t - first) as usize].clone();
                 let scores = self.trials(g, &snap, &key, &alts);
+                self.learning.write(&d, &alts, &scores, best);
                 let (jb, sb) = scores.iter().enumerate().fold((0, f64::MIN), |b, (j, s)| if *s > b.1 { (j, *s) } else { b });
                 if sb > best + 1e-9 {
                     g.insert(key.clone(), alts[jb].clone());
@@ -750,6 +834,85 @@ fn main() {
         let _ = civ6opt::value::LOOKAHEAD.set(civ6opt::value::Lookahead { model, turns: look });
     }
     match cmd {
+        "collect" => {
+            // rows for crate::learn: each --plans plan (comma separated) is played once to record its decisions; then
+            // --plays times a random decision of it (turn <= --turn, more than one option) is given up to --alts other
+            // options, each played to the end with the plan's choices elsewhere. A row is one option: the decision's and
+            // the option's features, and the score minus the plan's (0 for the plan's own choice). Tab separated to --out.
+            let plans = arg(&args, "--plans").expect("--plans a.json,b.json");
+            let plays: usize = arg(&args, "--plays").map(|x| x.parse().unwrap()).unwrap_or(2000);
+            let alts: usize = arg(&args, "--alts").map(|x| x.parse().unwrap()).unwrap_or(3);
+            let threads: usize = arg(&args, "--threads").map(|x| x.parse().unwrap()).unwrap_or(8);
+            let out = arg(&args, "--out").expect("--out rows.tsv");
+            use civ6opt::learn;
+            struct Feats<'g> {
+                genome: &'g HashMap<Key, Choice>,
+                log: Vec<(i64, Key, Choice, Vec<Choice>, Vec<f64>, Vec<[f64; 2]>)>,
+            }
+            impl civ6opt::planner::Chooser for Feats<'_> {
+                fn choose(&mut self, p: &Planner, st: &State, key: &Key, options: &[Choice]) -> Option<Choice> {
+                    let c = GenomeChooser { genome: self.genome }.choose(p, st, key, options)?;
+                    if options.len() > 1 {
+                        let base = p.base(st, key, options);
+                        let of = options.iter().map(|o| learn::option_features(p, base.as_ref(), o)).collect();
+                        self.log.push((st.turn, key.clone(), c.clone(), options.to_vec(), learn::decision_features(p, st, key, options), of));
+                    }
+                    Some(c)
+                }
+            }
+            let mut w = std::io::BufWriter::new(std::fs::File::create(&out).unwrap());
+            use std::io::Write as _;
+            writeln!(w, "plan\tdecision\tkind\tname\t{}\tchosen\tdelta", learn::NUMERIC.join("\t")).unwrap();
+            let t0 = Instant::now();
+            for (pi, path) in plans.split(',').enumerate() {
+                let g = genome_arg(&p, Some(path));
+                let (mut pl, st0) = planner(&p);
+                pl.s.horizon = turn + ext;
+                let mut rec = Feats { genome: &g, log: vec![] };
+                let base_score = opt::play(&pl, &st0, &mut rec, horizon).0;
+                let log: Vec<_> = rec.log.into_iter().filter(|d| d.0 <= turn).collect();
+                eprintln!("{path}: {base_score:.1}, {} decisions with options", log.len());
+                let rows = std::sync::Mutex::new(Vec::<String>::new());
+                std::thread::scope(|sc| {
+                    for wi in 0..threads {
+                        let (p, log, g, rows) = (&p, &log, &g, &rows);
+                        sc.spawn(move || {
+                            let (mut wpl, wst0) = planner(p);
+                            wpl.s.horizon = turn + ext;
+                            let mut rng = opt::Rng::new(5000 + 97 * pi as u64 + wi as u64 + seed);
+                            let mut i = wi;
+                            while i < plays {
+                                let di = (rng.next_u64() % log.len() as u64) as usize;
+                                let (_, key, ch, opts, df, of) = &log[di];
+                                let mut idx: Vec<usize> = (0..opts.len()).filter(|&j| opts[j] != *ch).collect();
+                                for j in 0..idx.len() {
+                                    let k = j + (rng.next_u64() % (idx.len() - j) as u64) as usize;
+                                    idx.swap(j, k);
+                                }
+                                idx.truncate(alts);
+                                let row = |j: usize, delta: f64| {
+                                    let nums: Vec<String> = df.iter().chain(of[j].iter()).map(|x| format!("{x}")).collect();
+                                    format!("{pi}\t{di}\t{}\t{}\t{}\t{}\t{delta}", key.kind.as_string(), learn::option_name(&opts[j]), nums.join("\t"), (opts[j] == *ch) as i64)
+                                };
+                                let mut mine = vec![row(opts.iter().position(|o| o == ch).unwrap(), 0.0)];
+                                for j in idx {
+                                    let mut k = g.clone();
+                                    k.insert(key.clone(), opts[j].clone());
+                                    let s = opt::play(&wpl, &wst0, &mut GenomeChooser { genome: &k }, horizon).0;
+                                    mine.push(row(j, s - base_score));
+                                }
+                                rows.lock().unwrap().extend(mine);
+                                i += threads;
+                            }
+                        });
+                    }
+                });
+                for r in rows.into_inner().unwrap() {
+                    writeln!(w, "{r}").unwrap();
+                }
+                eprintln!("{path}: {plays} decisions sampled ({:.0}s)", t0.elapsed().as_secs_f64());
+            }
+        }
         "learn" => {
             // fits the value model (crate::value) to plays around the --init plan: each play but the first changes one
             // of its decisions (turn T) to another option at random and plays to the end, the plan's choices elsewhere;
@@ -1290,7 +1453,7 @@ fn main() {
             let t0 = Instant::now();
             std::thread::scope(|sc| {
                 let (job_tx, res_rx) = rollout_workers(sc, &p, threads, turn, ext, horizon);
-                let mut ro = Rollout { pl: &pl, st0: &st0, turn, horizon, job_tx, res_rx, tried: 0 };
+                let mut ro = Rollout { pl: &pl, st0: &st0, turn, horizon, job_tx, res_rx, tried: 0, learning: Learning::from_args(&args) };
                 let mut hist: Vec<Value> = vec![];
                 eprintln!("start {:.1}", ro.describe(&g).0);
                 let deadline = t0 + std::time::Duration::from_secs_f64(minutes * 60.0);
@@ -1327,7 +1490,7 @@ fn main() {
             let mut rng = opt::Rng::new(91 + seed);
             std::thread::scope(|sc| {
                 let (job_tx, res_rx) = rollout_workers(sc, &p, threads, turn, ext, horizon);
-                let mut ro = Rollout { pl: &pl, st0: &st0, turn, horizon, job_tx, res_rx, tried: 0 };
+                let mut ro = Rollout { pl: &pl, st0: &st0, turn, horizon, job_tx, res_rx, tried: 0, learning: Learning::from_args(&args) };
                 let (mut best, mut log, _) = ro.describe(&g);
                 eprintln!("start {best:.1}, {} decisions", log.len());
                 let mut hist: Vec<Value> = vec![];
@@ -1337,8 +1500,14 @@ fn main() {
                     if cands.is_empty() {
                         break;
                     }
-                    let (t, key, ch, opts) = log[cands[(rng.next_u64() % cands.len() as u64) as usize]].clone();
-                    let alts: Vec<&Choice> = opts.iter().filter(|o| **o != ch).collect();
+                    let d = log[cands[(rng.next_u64() % cands.len() as u64) as usize]].clone();
+                    let (t, key, ch) = (d.0, d.1.clone(), d.2.clone());
+                    // with a model, half the kicks take its best option (Learning::alternatives orders them), half any
+                    let alts: Vec<Choice> = if ro.learning.model.is_some() && rng.next_u64() % 2 == 0 {
+                        ro.learning.alternatives(&d).into_iter().take(1).collect()
+                    } else {
+                        d.3.iter().filter(|o| **o != ch).cloned().collect()
+                    };
                     let a = alts[(rng.next_u64() % alts.len() as u64) as usize].clone();
                     let mut cand = g.clone();
                     cand.insert(key.clone(), a.clone());

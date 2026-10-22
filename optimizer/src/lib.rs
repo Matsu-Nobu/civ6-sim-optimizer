@@ -9,6 +9,7 @@ pub mod geo;
 pub mod gp;
 pub mod growth;
 pub mod json;
+pub mod learn;
 pub mod model;
 pub mod opt;
 pub mod placement;

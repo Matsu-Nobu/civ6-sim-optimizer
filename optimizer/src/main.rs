@@ -901,20 +901,21 @@ fn main() {
             }
             let mut w = std::io::BufWriter::new(std::fs::File::create(&out).unwrap());
             use std::io::Write as _;
-            writeln!(w, "plan\tdecision\tkind\tname\t{}\tchosen\tdelta", learn::NUMERIC.join("\t")).unwrap();
+            writeln!(w, "plan\tdecision\tkind\tname\t{}\tchosen\tdelta\tdelta_objective\tdelta_research", learn::NUMERIC.join("\t")).unwrap();
             let t0 = Instant::now();
             for (pi, path) in plans.split(',').enumerate() {
                 let g = genome_arg(&p, Some(path));
                 let (mut pl, st0) = planner(&p);
                 pl.s.horizon = turn + ext;
                 let mut rec = Feats { genome: &g, log: vec![] };
-                let base_score = opt::play(&pl, &st0, &mut rec, horizon).0;
+                let (base_score, _, base_end) = opt::play(&pl, &st0, &mut rec, horizon);
+                let base_parts = learn::score_parts(&pl, base_score, &base_end);
                 let log: Vec<_> = rec.log.into_iter().filter(|d| d.0 <= turn).collect();
                 eprintln!("{path}: {base_score:.1}, {} decisions with options", log.len());
                 let rows = std::sync::Mutex::new(Vec::<String>::new());
                 std::thread::scope(|sc| {
                     for wi in 0..threads {
-                        let (p, log, g, rows) = (&p, &log, &g, &rows);
+                        let (p, log, g, rows, base_parts) = (&p, &log, &g, &rows, &base_parts);
                         sc.spawn(move || {
                             let (mut wpl, wst0) = planner(p);
                             wpl.s.horizon = turn + ext;
@@ -929,16 +930,17 @@ fn main() {
                                     idx.swap(j, k);
                                 }
                                 idx.truncate(alts);
-                                let row = |j: usize, delta: f64| {
+                                let row = |j: usize, delta: f64, parts: (f64, f64)| {
                                     let nums: Vec<String> = df.iter().chain(of[j].iter()).map(|x| format!("{x}")).collect();
-                                    format!("{pi}\t{di}\t{}\t{}\t{}\t{}\t{delta}", key.kind.as_string(), learn::option_name(&opts[j]), nums.join("\t"), (opts[j] == *ch) as i64)
+                                    format!("{pi}\t{di}\t{}\t{}\t{}\t{}\t{delta}\t{}\t{}", key.kind.as_string(), learn::option_name(&opts[j]), nums.join("\t"),
+                                            (opts[j] == *ch) as i64, parts.0 - base_parts.0, parts.1 - base_parts.1)
                                 };
-                                let mut mine = vec![row(opts.iter().position(|o| o == ch).unwrap(), 0.0)];
+                                let mut mine = vec![row(opts.iter().position(|o| o == ch).unwrap(), 0.0, *base_parts)];
                                 for j in idx {
                                     let mut k = g.clone();
                                     k.insert(key.clone(), opts[j].clone());
-                                    let s = opt::play(&wpl, &wst0, &mut GenomeChooser { genome: &k }, horizon).0;
-                                    mine.push(row(j, s - base_score));
+                                    let (s, _, end) = opt::play(&wpl, &wst0, &mut GenomeChooser { genome: &k }, horizon);
+                                    mine.push(row(j, s - base_score, learn::score_parts(&wpl, s, &end)));
                                 }
                                 rows.lock().unwrap().extend(mine);
                                 i += threads;
@@ -1579,12 +1581,15 @@ fn main() {
             let model = civ6opt::learn::Trees::load(&arg(&args, "--model").expect("--model trees.json"));
             // --span N: the model plays N turns from each start, the plan the rest (default: to the end)
             let span: i64 = arg(&args, "--span").map(|x| x.parse().unwrap()).unwrap_or(i64::MAX / 2);
+            // --research trees.json [--slack N]: options the research model predicts to lose more than N research are left out
+            let research = arg(&args, "--research").map(|x| civ6opt::learn::Trees::load(&x));
+            let slack: f64 = arg(&args, "--slack").map(|x| x.parse().unwrap()).unwrap_or(0.0);
             let g = genome_arg(&p, arg(&args, "--init").as_deref());
             let (mut pl, st0) = planner(&p);
             pl.s.horizon = turn + ext;
             println!("plan {:.1}", opt::play(&pl, &st0, &mut GenomeChooser { genome: &g }, horizon).0);
             for from in arg(&args, "--from").expect("--from 0,20,40").split(',').map(|x| x.parse::<i64>().unwrap()) {
-                let mut ch = civ6opt::learn::PolicyChooser { genome: &g, model: &model, from, to: from + span, taken: HashMap::new() };
+                let mut ch = civ6opt::learn::PolicyChooser { genome: &g, model: &model, research: research.as_ref(), slack, from, to: from + span, taken: HashMap::new() };
                 let s = opt::play(&pl, &st0, &mut ch, horizon).0;
                 println!("model from T{} {s:.1}", from + 1);
                 // --out dir: each game's choices as a plan, for a look at what the model chose
@@ -1663,6 +1668,9 @@ fn main() {
             let model = civ6opt::learn::Trees::load(&arg(&args, "--model").expect("--model trees.json"));
             // --span N: the model plays the N turns after the changed decision's, the plan the rest (default: to the end)
             let span: i64 = arg(&args, "--span").map(|x| x.parse().unwrap()).unwrap_or(i64::MAX / 2);
+            // --research trees.json [--slack N]: options the research model predicts to lose more than N research are left out
+            let research = arg(&args, "--research").map(|x| civ6opt::learn::Trees::load(&x));
+            let slack: f64 = arg(&args, "--slack").map(|x| x.parse().unwrap()).unwrap_or(0.0);
             let mut g = genome_arg(&p, arg(&args, "--init").as_deref());
             let (mut pl, st0) = planner(&p);
             pl.s.horizon = turn + ext;
@@ -1684,14 +1692,14 @@ fn main() {
             let (res_tx, res_rx) = std::sync::mpsc::channel::<(usize, f64, HashMap<Key, Choice>)>();
             std::thread::scope(|sc| {
                 for _ in 0..threads {
-                    let (job_rx, res_tx, p, model) = (job_rx.clone(), res_tx.clone(), &p, &model);
+                    let (job_rx, res_tx, p, model, research) = (job_rx.clone(), res_tx.clone(), &p, &model, &research);
                     sc.spawn(move || {
                         let (mut wpl, wst0) = planner(p);
                         wpl.s.horizon = turn + ext;
                         loop {
                             let job = { job_rx.lock().unwrap().recv() };
                             let Ok((id, from, cand)) = job else { break };
-                            let mut ch = civ6opt::learn::PolicyChooser { genome: &cand, model, from, to: from + span, taken: HashMap::new() };
+                            let mut ch = civ6opt::learn::PolicyChooser { genome: &cand, model, research: research.as_ref(), slack, from, to: from + span, taken: HashMap::new() };
                             let s = opt::play(&wpl, &wst0, &mut ch, horizon).0;
                             if res_tx.send((id, s, ch.taken)).is_err() {
                                 break;

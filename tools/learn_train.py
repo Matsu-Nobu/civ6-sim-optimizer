@@ -33,7 +33,7 @@ def load(paths):
     return cols, rows
 
 
-def test_picks(m, path, cols, matrix):
+def test_picks(m, path, cols, matrix, target):
     tcols, rows = load([path])
     assert tcols == cols, f"{path}: other columns"
     pred = m.predict(matrix(rows))
@@ -42,7 +42,7 @@ def test_picks(m, path, cols, matrix):
         by_decision.setdefault(r[1], []).append((r, p))
     stats = {}
     for options in by_decision.values():
-        alts = [(float(r[-1]), p) for r, p in options if r[-2] == "0"]
+        alts = [(float(r[target]), p) for r, p in options if r[cols.index("chosen")] == "0"]
         if len(alts) < 2 or max(a[0] for a in alts) <= 0:
             continue
         best = max(range(len(alts)), key=lambda i: alts[i][0])
@@ -66,21 +66,32 @@ def main():
     ap.add_argument("--test")
     ap.add_argument("--threads", type=int, default=4)
     ap.add_argument("--objective", choices=["regression", "rank"], default="regression")
+    # delta: the score's change; delta_objective: without what missed requirements cost; delta_research: the research
+    # done by the end (civ6opt collect writes the last two)
+    ap.add_argument("--target", default="delta")
+    # with --target delta_objective: adds this many points per point of the research change (delta_research), a price
+    # that weighs science against the rest instead of the requirement's cliff
+    ap.add_argument("--research-price", type=float, default=0.0)
     args = ap.parse_args()
     cols, rows = load(args.rows)
-    numeric = cols[4:-2]
+    chosen_col, target = cols.index("chosen"), cols.index(args.target)
+    numeric = cols[4:chosen_col]
     kinds = sorted({r[2] for r in rows})
     names = sorted({r[3] for r in rows})
     ki, ni = {k: i for i, k in enumerate(kinds)}, {k: i for i, k in enumerate(names)}
     def matrix(rows):
         # a name the training did not see gets a code of no category, as on the Rust side
-        x = np.array([[ki.get(r[2], len(ki)), ni.get(r[3], len(ni))] + [float(v) for v in r[4:-2]] for r in rows])
+        x = np.array([[ki.get(r[2], len(ki)), ni.get(r[3], len(ni))] + [float(v) for v in r[4:chosen_col]] for r in rows])
         x[np.isnan(x)] = MISSING
         return x
 
     x = matrix(rows)
-    y = np.clip(np.array([float(r[-1]) for r in rows]), -CLIP, CLIP)
-    chosen = np.array([r[-2] == "1" for r in rows])
+    y = np.array([float(r[target]) for r in rows])
+    if args.research_price:
+        y = y + args.research_price * np.array([float(r[cols.index("delta_research")]) for r in rows])
+    if args.target == "delta":
+        y = np.clip(y, -CLIP, CLIP)
+    chosen = np.array([r[chosen_col] == "1" for r in rows])
     group = np.array([f"{r[0]}:{r[1]}" for r in rows])
     plan = np.array([r[0] for r in rows])
     params = dict(objective="huber", alpha=200.0, learning_rate=0.05, num_leaves=63, min_data_in_leaf=20,
@@ -140,7 +151,7 @@ def main():
         print(f"{hp:8} | {n:9} | {kept_best / n:12.2f} | {model_best / n:20.2f} | {pairs_model / max(pairs, 1):18.2f}, {pairs_base / max(pairs, 1):.2f} | {gain_model / n:7.1f} | {gain_best / n:5.1f} | {gain_base / n:6.1f}")
     m = fit(np.ones(len(rows), bool))
     if args.test:
-        test_picks(m, args.test, cols, matrix)
+        test_picks(m, args.test, cols, matrix, target)
     imp = sorted(zip(m.feature_importance("gain"), feats), reverse=True)[:12]
     print("gain by feature:", ", ".join(f"{f} {v:.0f}" for v, f in imp))
     trees = []

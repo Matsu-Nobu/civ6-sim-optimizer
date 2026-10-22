@@ -62,6 +62,13 @@ impl Milestones {
         floors + req - reward
     }
 
+    /// The part of `penalty` the requirements and floors make (without the rewards): what a plan pays for missing them.
+    pub fn require_penalty(&self, st: &State) -> f64 {
+        let floors: f64 = self.list.iter().map(|m| { let (need, have) = m.balance(st); self.weight * (need - have).max(0.0) }).sum();
+        let at = |k: u32| st.req_at.iter().find(|x| x.0 == k).map(|x| x.1);
+        floors + (0..self.require.len()).map(|i| at(i as u32).unwrap_or_else(|| self.req_term(i, st))).sum::<f64>()
+    }
+
     /// The items due at the end of the turn just played (st.turn - 1): their terms kept in the state.
     pub fn record(&self, st: &mut State) {
         let done = st.turn - 1;

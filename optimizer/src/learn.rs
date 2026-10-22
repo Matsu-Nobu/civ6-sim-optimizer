@@ -140,6 +140,20 @@ pub fn option_features(p: &Planner, st: &State, key: &Key, base: Option<&Choice>
     [cost, (base == Some(c)) as i64 as f64, turns, city[0], city[1], city[2], city[3], tile[0], tile[1], tile[2], tile[3], tile[4], on_path, reward]
 }
 
+/// The two parts of a play's score the model learns apart (`score` and `st` as opt::play returns them): the score
+/// without what missed requirements cost (the objective and the rewards), and the research done by the end (the costs
+/// of the techs and civics done, at the end's game era, and the progress on the others). A plan that keeps its
+/// requirement by a narrow margin loses the whole requirement weight for one point of science short; apart, both
+/// parts change smoothly with a decision.
+pub fn score_parts(p: &Planner, score: f64, st: &State) -> (f64, f64) {
+    let missed = p.milestones.as_ref().map(|m| m.require_penalty(st)).unwrap_or(0.0);
+    let era = p.sc.game_era(st.turn);
+    let cost = |x: &Sym| crate::sim::research_cost(p.r, *x, p.speed, era);
+    let research: f64 = st.acc.techs.iter().chain(st.acc.civics.iter()).map(cost).sum::<f64>()
+        + st.acc.tech_progress.0.iter().chain(st.acc.civic_progress.0.iter()).filter(|(x, _)| !st.acc.techs.contains(x) && !st.acc.civics.contains(x)).map(|x| x.1).sum::<f64>();
+    (score + missed, research)
+}
+
 /// Gradient boosted regression trees, as tools/learn_train.py writes them.
 pub struct Trees {
     kinds: Vec<String>,
@@ -220,25 +234,40 @@ impl Tree {
     }
 }
 
-/// Plays the plan's choices up to turn `from` and the model's from the next turn on: at each decision with options,
-/// the option the trees rank first. Keeps every choice it makes in `taken`, which plays the same game as a plan.
+/// Plays the plan's choices up to turn `from`, the model's in the turns after it up to `to`, and the plan's again
+/// after `to`. At each decision with options the model takes the option `model` ranks first; with `research` (trees
+/// of the change of the research done, tools/learn_train.py --target delta_research), only among the options it
+/// predicts to lose at most `slack` research, else the one it predicts to lose least. Keeps every choice it makes in
+/// `taken`, which plays the same game as a plan.
 pub struct PolicyChooser<'g> {
     pub genome: &'g std::collections::HashMap<Key, Choice>,
     pub model: &'g Trees,
+    pub research: Option<&'g Trees>,
+    pub slack: f64,
     pub from: i64,
+    pub to: i64,
     pub taken: std::collections::HashMap<Key, Choice>,
 }
 
 impl Chooser for PolicyChooser<'_> {
     fn choose(&mut self, p: &Planner, st: &State, key: &Key, options: &[Choice]) -> Option<Choice> {
-        let c = if st.turn <= self.from || options.len() < 2 {
+        let c = if st.turn <= self.from || st.turn > self.to || options.len() < 2 {
             crate::opt::GenomeChooser { genome: self.genome }.choose(p, st, key, options)?
         } else {
             let eng = p.engine(&p.player_env(st), &st.cities);
             let base = p.base(st, key, options);
             let d = decision_features(p, st, key, options, &eng);
-            let scores: Vec<f64> = options.iter().map(|o| self.model.predict(&d, key.kind, o, &option_features(p, st, key, base.as_ref(), o, &eng))).collect();
-            let best = (0..options.len()).fold(0, |b, j| if scores[j] > scores[b] { j } else { b });
+            let of: Vec<_> = options.iter().map(|o| option_features(p, st, key, base.as_ref(), o, &eng)).collect();
+            let scores: Vec<f64> = options.iter().zip(&of).map(|(o, f)| self.model.predict(&d, key.kind, o, f)).collect();
+            let kept: Vec<usize> = match self.research {
+                Some(r) => {
+                    let lost: Vec<f64> = options.iter().zip(&of).map(|(o, f)| -r.predict(&d, key.kind, o, f)).collect();
+                    let ok: Vec<usize> = (0..options.len()).filter(|&j| lost[j] <= self.slack).collect();
+                    if ok.is_empty() { vec![(0..options.len()).fold(0, |b, j| if lost[j] < lost[b] { j } else { b })] } else { ok }
+                }
+                None => (0..options.len()).collect(),
+            };
+            let best = kept.iter().copied().fold(kept[0], |b, j| if scores[j] > scores[b] { j } else { b });
             options[best].clone()
         };
         self.taken.insert(key.clone(), c.clone());

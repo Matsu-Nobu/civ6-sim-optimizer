@@ -1605,6 +1605,111 @@ fn main() {
                 }
             }
         }
+        "online" => {
+            // decides the game as it is played, with no plan: at each decision with options, each of the --top options
+            // the model (--fallback-model, crate::learn) ranks first is tried by playing the game to the end with it
+            // (the choices so far, that option, the model's choices after), and the best is taken. Every try
+            // starts from the game's start and replays the choices made so far (the simulator is deterministic).
+            // Saves the game's choices to --out as a plan. Rollout of the model's policy (Bertsekas): it plays at
+            // least as well as the model.
+            let top: usize = arg(&args, "--top").map(|x| x.parse().unwrap()).unwrap_or(4);
+            let threads: usize = arg(&args, "--threads").map(|x| x.parse().unwrap()).unwrap_or(8);
+            let out = arg(&args, "--out").expect("--out plan.json");
+            let model = civ6opt::learn::FALLBACK.get().expect("--fallback-model trees.json");
+            let rows = arg(&args, "--rows").map(|path| {
+                use std::io::Write as _;
+                let mut w = std::io::BufWriter::new(std::fs::File::create(&path).unwrap());
+                writeln!(w, "plan\tdecision\tkind\tname\t{}\tchosen\tdelta\tdelta_objective\tdelta_research", civ6opt::learn::NUMERIC.join("\t")).unwrap();
+                w
+            });
+            let (mut pl, st0) = planner(&p);
+            pl.s.horizon = turn + ext;
+            let t0 = Instant::now();
+            struct Online<'a> {
+                model: &'a civ6opt::learn::Trees,
+                top: usize,
+                st0: &'a State,
+                taken: HashMap<Key, Choice>,
+                job_tx: std::sync::mpsc::Sender<RoJob>,
+                res_rx: std::sync::mpsc::Receiver<(usize, f64)>,
+                tried: usize,
+                t0: Instant,
+                turn: i64,
+                /// the best try's score at the last decision tried, and the decisions where it fell: the try the last
+                /// decision chose continues with the model's first option, which every later decision tries, so a
+                /// correct run never falls
+                last: f64,
+                falls: Vec<(i64, f64, f64)>,
+                /// --rows: every try as a row of crate::learn (as collect writes them, the change against the decision's
+                /// best try)
+                rows: Option<std::io::BufWriter<std::fs::File>>,
+                decisions: usize,
+            }
+            impl civ6opt::planner::Chooser for Online<'_> {
+                fn choose(&mut self, p: &Planner, st: &State, key: &Key, options: &[Choice]) -> Option<Choice> {
+                    let c = if options.len() < 2 {
+                        options.first().cloned()?
+                    } else {
+                        let eng = p.engine(&p.player_env(st), &st.cities);
+                        let base = p.base(st, key, options);
+                        let d = civ6opt::learn::decision_features(p, st, key, options, &eng);
+                        let mut ranked: Vec<(f64, &Choice)> = options.iter()
+                            .map(|o| (self.model.predict(&d, key.kind, o, &civ6opt::learn::option_features(p, st, key, base.as_ref(), o, &eng)), o)).collect();
+                        ranked.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap());
+                        let cands: Vec<&Choice> = ranked.iter().take(self.top).map(|x| x.1).collect();
+                        for (j, o) in cands.iter().enumerate() {
+                            let mut g = self.taken.clone();
+                            g.insert(key.clone(), (*o).clone());
+                            self.job_tx.send((j, self.st0.clone(), 0.0, g)).unwrap();
+                        }
+                        let mut scores = vec![f64::MIN; cands.len()];
+                        for _ in 0..cands.len() {
+                            let (j, sc) = self.res_rx.recv().unwrap();
+                            scores[j] = sc;
+                        }
+                        self.tried += cands.len();
+                        let jb = (0..cands.len()).fold(0, |b, j| if scores[j] > scores[b] { j } else { b });
+                        if scores[jb] < self.last - 1e-6 {
+                            self.falls.push((st.turn, self.last, scores[jb]));
+                        }
+                        self.last = scores[jb];
+                        if let Some(w) = self.rows.as_mut() {
+                            use std::io::Write as _;
+                            let n = self.decisions;
+                            self.decisions += 1;
+                            for (j, o) in cands.iter().enumerate() {
+                                let of = civ6opt::learn::option_features(p, st, key, base.as_ref(), o, &eng);
+                                let nums: Vec<String> = d.iter().chain(of.iter()).map(|x| format!("{x}")).collect();
+                                // the score parts of collect are not known here: the trial's state is not kept
+                                writeln!(w, "0\t{n}\t{}\t{}\t{}\t{}\t{}\tnan\tnan", key.kind.as_string(), civ6opt::learn::option_name(o), nums.join("\t"),
+                                         (j == jb) as i64, scores[j] - scores[jb]).unwrap();
+                            }
+                        }
+                        if st.turn != self.turn {
+                            self.turn = st.turn;
+                            eprintln!("T{} best try {:.1} ({} tried, {:.0}s)", st.turn, scores[jb], self.tried, self.t0.elapsed().as_secs_f64());
+                        }
+                        cands[jb].clone()
+                    };
+                    self.taken.insert(key.clone(), c.clone());
+                    Some(c)
+                }
+            }
+            std::thread::scope(|sc| {
+                let (job_tx, res_rx) = rollout_workers(sc, &p, threads, turn, ext, horizon);
+                let mut on = Online { model, top, st0: &st0, taken: HashMap::new(), job_tx, res_rx, tried: 0, t0, turn: -1, last: f64::MIN, falls: vec![], rows, decisions: 0 };
+                let mut st = st0.clone();
+                while st.turn <= turn {
+                    pl.advance(&mut st, &mut on);
+                }
+                let score = opt::play(&pl, &st0, &mut GenomeChooser { genome: &on.taken }, horizon).0;
+                eprintln!("check: the game scores {score:.3}, its last best try {:.3}; the best try fell at {} decisions{}", on.last, on.falls.len(),
+                          on.falls.iter().take(5).map(|f| format!(", T{} {:.1} -> {:.1}", f.0, f.1, f.2)).collect::<String>());
+                save_plan(&out, turn, score, &on.taken, vec![]);
+                println!("{}", Value::obj(vec![("best", Value::from(score)), ("tried", Value::from(on.tried as i64)), ("seconds", Value::from(t0.elapsed().as_secs_f64()))]));
+                drop(on);
+            });
+        }
         "diffplay" => {
             // where the loss of a single change comes from: --samples random changes of decisions of --kind (default
             // prod) in the plan --init, each played beside the plan: the score and the objective change, the decisions

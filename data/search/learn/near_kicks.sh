@@ -5,10 +5,12 @@
 # again from it. Run from the repository root: data/search/learn/near_kicks.sh <best game plan> <model> <rounds>
 B=optimizer/target/release/civ6opt
 G=data/games/rome_20261021.json
-C="--turn 65 --ext 0 --allow-military --team --require TECH_BALLISTICS:1@65 --require-weight 20000 --reward UNIT_KNIGHT:100@65"
+# EXTRA: more options for every game (e.g. --ally-supply)
+C="--turn 65 --ext 0 --allow-military --team --require TECH_BALLISTICS:1@65 --require-weight 20000 --reward UNIT_KNIGHT:100@65 ${EXTRA:-}"
 D=data/search/learn
 best=$1; model=$2
-score() { python3 -c "import json,sys; print(json.load(open(sys.argv[1]))['best'])" "$1"; }
+# a game's score under the current rules and options (a plan file's own "best" may come from older rules)
+score() { $B run $G $C --genome "$1" 2>/dev/null | tail -1 | python3 -c "import json,sys; print(json.load(sys.stdin)['score'])"; }
 k=0
 for round in $(seq 1 $3); do
   $B online $G $C --fallback-model $model --guide $best --top 6 --threads 16 --near 150 --out $D/near_base$round.json > /dev/null 2> $D/near_base$round.err

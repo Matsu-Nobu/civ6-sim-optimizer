@@ -81,6 +81,15 @@ impl Chooser for ExtChooser {
 /// costs more than the 100 points a knight is worth in the plans' rewards.
 pub const DEBT_PENALTY: f64 = 20.0;
 
+/// Set by `--ally-supply`: team mates give the gold and strategic resources a plan lacks, so a treasury below zero
+/// costs nothing (State::debt still counts it) and units need no stockpile (crate::strategic).
+pub static ALLY_SUPPLY: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// The penalty of a game's gold debt (none when allies supply the gold).
+pub fn debt_penalty(debt: f64) -> f64 {
+    if ALLY_SUPPLY.load(std::sync::atomic::Ordering::Relaxed) { 0.0 } else { DEBT_PENALTY * debt }
+}
+
 pub fn play(p: &Planner, st0: &State, ch: &mut dyn Chooser, h: Horizon) -> (f64, f64, State) {
     let mut st = st0.clone();
     let mut total = 0.0;
@@ -98,7 +107,7 @@ pub fn play(p: &Planner, st0: &State, ch: &mut dyn Chooser, h: Horizon) -> (f64,
             ext += objective(&xs.last_output);
         }
     }
-    let penalty = IDLE_UNIT_PENALTY * idle_units(st0, &xs) + DEBT_PENALTY * st.debt;
+    let penalty = IDLE_UNIT_PENALTY * idle_units(st0, &xs) + debt_penalty(st.debt);
     (total + h.w * ext - penalty - floor, total, st)
 }
 
@@ -122,7 +131,7 @@ pub fn play_from(p: &Planner, st0: &State, start: &State, prefix: f64, ch: &mut 
             ext += objective(&st.last_output);
         }
     }
-    total + h.w * ext - IDLE_UNIT_PENALTY * idle_units(st0, &st) - DEBT_PENALTY * debt - floor
+    total + h.w * ext - IDLE_UNIT_PENALTY * idle_units(st0, &st) - debt_penalty(debt) - floor
 }
 
 /// Follow a genome; elsewhere the lookahead with the learned value (crate::value) when one is set, else the base

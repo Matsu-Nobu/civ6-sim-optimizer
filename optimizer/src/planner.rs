@@ -597,7 +597,7 @@ impl<'a> Planner<'a> {
             }
             // a plan cannot start (or buy) a unit the stockpile cannot pay for; the replay takes what the record
             // built (crate::strategic then shows how far the model of the stockpile falls short of the record)
-            if self.rec.is_none() && self.tiles_rec.is_none() {
+            if self.rec.is_none() && self.tiles_rec.is_none() && !crate::opt::ALLY_SUPPLY.load(std::sync::atomic::Ordering::Relaxed) {
                 if let Some((res, cost)) = crate::strategic::unit_cost(r, u) {
                     if crate::strategic::available(r, st, res, Some(city.name)) < cost {
                         continue;

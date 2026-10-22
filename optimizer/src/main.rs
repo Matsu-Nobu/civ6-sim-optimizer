@@ -446,6 +446,13 @@ fn setup_milestones(p: &Problem, args: &[String], turn: i64) {
     let require: Vec<(String, i64)> = req3.iter().map(|(a, n, _)| (a.clone(), n.parse().unwrap())).collect();
     let require_at: Vec<Option<i64>> = req3.iter().map(|x| x.2).collect();
     let require_weight: f64 = arg(args, "--require-weight").map(|x| x.parse().unwrap()).unwrap_or(500.0);
+    // --require-smooth: a missed tech or civic costs only the share of its path still to research (Milestones::smooth)
+    let smooth = args.iter().any(|a| a == "--require-smooth");
+    // --fallback-model trees.json: a decision whose planned choice cannot be taken takes the model's first option
+    // (crate::learn::FALLBACK) instead of the base policy's, in every command
+    if let Some(path) = arg(args, "--fallback-model") {
+        let _ = civ6opt::learn::FALLBACK.set(civ6opt::learn::Trees::load(&path));
+    }
     // --reward 'UNIT_HORSEMAN:200': points per one the plan has at the evaluation turn (as in --require; '@T' too)
     let rew3: Vec<(String, String, Option<i64>)> = arg(args, "--reward").map(|x| x.split(',').map(|y| split(y)).collect()).unwrap_or_default();
     let reward: Vec<(String, f64)> = rew3.iter().map(|(a, n, _)| (a.clone(), n.parse().unwrap())).collect();
@@ -479,7 +486,7 @@ fn setup_milestones(p: &Problem, args: &[String], turn: i64) {
         (w.clone(), members, need.max(1.0))
     }).collect();
     let Some(spec) = arg(args, "--milestones") else {
-        let m = if require.is_empty() && reward.is_empty() { None } else { Some(std::sync::Arc::new(civ6opt::milestones::Milestones { list: vec![], weight: 0.0, require, require_weight, paths, reward, gp, require_at, reward_at })) };
+        let m = if require.is_empty() && reward.is_empty() { None } else { Some(std::sync::Arc::new(civ6opt::milestones::Milestones { list: vec![], weight: 0.0, require, require_weight, smooth, paths, reward, gp, require_at, reward_at })) };
         let _ = MILESTONES.set(m);
         return;
     };
@@ -493,7 +500,7 @@ fn setup_milestones(p: &Problem, args: &[String], turn: i64) {
                   m.costs.iter().map(|x| x.1).sum::<f64>(), m.growth, m.bonus);
         list.push(m);
     }
-    let _ = MILESTONES.set(Some(std::sync::Arc::new(civ6opt::milestones::Milestones { list, weight, require, require_weight, paths, reward, gp, require_at, reward_at })));
+    let _ = MILESTONES.set(Some(std::sync::Arc::new(civ6opt::milestones::Milestones { list, weight, require, require_weight, smooth, paths, reward, gp, require_at, reward_at })));
 }
 
 fn genome_from(v: &Value) -> HashMap<Key, Choice> {
@@ -1595,6 +1602,69 @@ fn main() {
                 // --out dir: each game's choices as a plan, for a look at what the model chose
                 if let Some(dir) = arg(&args, "--out") {
                     save_plan(&format!("{dir}/from_T{}.json", from + 1), turn, s, &ch.taken, vec![]);
+                }
+            }
+        }
+        "diffplay" => {
+            // where the loss of a single change comes from: --samples random changes of decisions of --kind (default
+            // prod) in the plan --init, each played beside the plan: the score and the objective change, the decisions
+            // the plan's choice could not be taken in (not among the options: the base policy chose), and the cities
+            // whose summed food and production changed most
+            let samples: usize = arg(&args, "--samples").map(|x| x.parse().unwrap()).unwrap_or(10);
+            // --kind all: any kind of decision
+            let kind = arg(&args, "--kind").unwrap_or("prod".into());
+            let g = genome_arg(&p, arg(&args, "--init").as_deref());
+            let (mut pl, st0) = planner(&p);
+            pl.s.horizon = turn + ext;
+            struct Watch<'a> { g: &'a HashMap<Key, Choice>, missed: Vec<(i64, Key, Choice, Choice)> }
+            impl civ6opt::planner::Chooser for Watch<'_> {
+                fn choose(&mut self, p: &Planner, st: &State, key: &Key, options: &[Choice]) -> Option<Choice> {
+                    let c = GenomeChooser { genome: self.g }.choose(p, st, key, options)?;
+                    if let Some(want) = self.g.get(key) {
+                        if *want != c {
+                            self.missed.push((st.turn, key.clone(), want.clone(), c.clone()));
+                        }
+                    }
+                    Some(c)
+                }
+            }
+            let city_fp = |gen: &HashMap<Key, Choice>, w: &mut Watch| -> (f64, f64, HashMap<Sym, f64>) {
+                let mut st = st0.clone();
+                let mut by_city: HashMap<Sym, f64> = HashMap::new();
+                while st.turn <= turn {
+                    pl.advance(&mut st, w);
+                    for (c, y) in &st.city_output {
+                        *by_city.entry(*c).or_default() += y[0] + y[1];
+                    }
+                }
+                let (s, total, _) = opt::play(&pl, &st0, &mut GenomeChooser { genome: gen }, horizon);
+                (s, total, by_city)
+            };
+            let mut w0 = Watch { g: &g, missed: vec![] };
+            let (s0, t0, c0) = city_fp(&g, &mut w0);
+            println!("plan {s0:.1}, objective {t0:.1}, plan choices not taken {}", w0.missed.len());
+            let mut rec = Recorder { genome: &g, log: vec![] };
+            opt::play(&pl, &st0, &mut rec, horizon);
+            let cands: Vec<_> = rec.log.iter().filter(|d| d.0 <= turn && d.3.len() > 1 && (kind == "all" || d.1.kind.as_string() == kind)).collect();
+            let mut rng = opt::Rng::new(11 + seed);
+            for _ in 0..samples {
+                let (t, key, ch, opts) = cands[(rng.next_u64() % cands.len() as u64) as usize];
+                let alts: Vec<&Choice> = opts.iter().filter(|o| *o != ch).collect();
+                let a = alts[(rng.next_u64() % alts.len() as u64) as usize];
+                let mut k = g.clone();
+                k.insert(key.clone(), a.clone());
+                let mut w = Watch { g: &k, missed: vec![] };
+                let (s, total, c) = city_fp(&k, &mut w);
+                let mut cities: Vec<(Sym, f64)> = c0.keys().chain(c.keys()).collect::<std::collections::BTreeSet<_>>().into_iter()
+                    .map(|n| (*n, c.get(n).copied().unwrap_or(0.0) - c0.get(n).copied().unwrap_or(0.0))).collect();
+                cities.sort_by(|x, y| x.1.abs().partial_cmp(&y.1.abs()).unwrap().reverse());
+                let first: Vec<String> = w.missed.iter().filter(|m| m.1 != *key).take(4)
+                    .map(|m| format!("T{} {}:{} {} -> {}", m.0, m.1.kind.as_string(), key_json(&m.1), choice_json(&m.2), choice_json(&m.3))).collect();
+                println!("T{t} {} {} -> {}: score {:+.0}, objective {:+.0}, not taken {} (plan {}); cities {}",
+                         key_json(key), choice_json(ch), choice_json(a), s - s0, total - t0, w.missed.len(), w0.missed.len(),
+                         cities.iter().take(3).map(|(n, d)| format!("{} {d:+.0}", n.as_string())).collect::<Vec<_>>().join(", "));
+                for f in first {
+                    println!("    {f}");
                 }
             }
         }

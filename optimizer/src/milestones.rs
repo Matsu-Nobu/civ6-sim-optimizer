@@ -29,6 +29,11 @@ pub struct Milestones {
     /// do nothing for the objective, count); each one missing costs `require_weight`
     pub require: Vec<(String, i64)>,
     pub require_weight: f64,
+    /// a required tech or civic not done costs `require_weight` times the share of its path still to research, without
+    /// the whole weight on top: the score has no cliff at the requirement, so a plan can trade a little of the
+    /// research for other things (searching first with it, then with the cliff, keeps the plan from sitting at the
+    /// cliff's edge where any change that costs a point of science is lost)
+    pub smooth: bool,
     /// a required tech or civic ("TECH_X" / "CIVIC_X" in `require`): it and its prerequisites with their costs; one
     /// not done costs `require_weight` times the share of that path's cost still to research (a slope to climb)
     pub paths: Vec<(String, Vec<(Sym, f64)>)>,
@@ -110,7 +115,7 @@ impl Milestones {
             let (done, prog) = if civic { (&st.acc.civics, &st.acc.civic_progress) } else { (&st.acc.techs, &st.acc.tech_progress) };
             let total: f64 = path.iter().map(|x| x.1).sum::<f64>().max(1.0);
             let left: f64 = path.iter().filter(|x| !done.contains(&x.0)).map(|x| (x.1 - prog.get(&x.0).copied().unwrap_or(0.0)).max(0.0)).sum();
-            return self.require_weight * (1.0 + left / total);
+            return self.require_weight * (if self.smooth { 0.0 } else { 1.0 } + left / total);
         }
         self.require_weight * (n - have(st, what)).max(0) as f64
     }

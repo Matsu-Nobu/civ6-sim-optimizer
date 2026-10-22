@@ -131,6 +131,9 @@ impl Chooser for GenomeChooser<'_> {
                 return Some(c.clone());
             }
         }
+        if let Some(m) = crate::learn::FALLBACK.get() {
+            return crate::learn::model_pick(m, p, st, key, options);
+        }
         crate::value::choose(p, st, key, options, self.genome).or_else(|| p.base(st, key, options))
     }
 }

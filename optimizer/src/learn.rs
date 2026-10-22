@@ -274,3 +274,19 @@ impl Chooser for PolicyChooser<'_> {
         Some(c)
     }
 }
+
+/// The option `model` ranks first at a decision.
+pub fn model_pick(model: &Trees, p: &Planner, st: &State, key: &Key, options: &[Choice]) -> Option<Choice> {
+    if options.len() < 2 {
+        return options.first().cloned();
+    }
+    let eng = p.engine(&p.player_env(st), &st.cities);
+    let base = p.base(st, key, options);
+    let d = decision_features(p, st, key, options, &eng);
+    options.iter().map(|o| (model.predict(&d, key.kind, o, &option_features(p, st, key, base.as_ref(), o, &eng)), o))
+        .fold(None, |b: Option<(f64, &Choice)>, x| if b.map(|b| x.0 > b.0).unwrap_or(true) { Some(x) } else { b }).map(|x| x.1.clone())
+}
+
+/// The model that takes a decision whose planned choice cannot be taken (opt::GenomeChooser), set once from
+/// `--fallback-model`; without it the base policy takes it.
+pub static FALLBACK: std::sync::OnceLock<Trees> = std::sync::OnceLock::new();

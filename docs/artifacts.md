@@ -14,7 +14,7 @@
 
 # シミュレータと探索プログラム
 
-`optimizer/` は、BBG のルールで 1 ターンずつ状態を進めるシミュレータと、それを使う探索を 1 つにまとめた Rust のプログラムである。使う Rust の版は `optimizer/rust-toolchain.toml` に記載してあり、rustup がその版を自動で入れる。ビルドは次のコマンドで行い、実行ファイルは `optimizer/target/x86_64-unknown-linux-gnu/release/civ6opt` にできる。
+`optimizer/` は、BBG のルールで 1 ターンずつ状態を進めるシミュレータと、それを使う探索を 1 つにまとめた Rust のプログラムである。使う Rust の版は `optimizer/rust-toolchain.toml` に記載してあり、rustup がその版を自動で入れる。ビルドは次のコマンドで行い、実行ファイルは OS に関係なく `optimizer/target/release/civ6opt`（Windows では `civ6opt.exe`）にできる。
 
 ```
 cd optimizer && cargo build --release
@@ -61,11 +61,11 @@ cd optimizer && cargo build --release
 
 | スクリプト | すること |
 |---|---|
-| `save_export/mod_versions.sh` | 対局で使った mod とその版を、セーブから読み出す |
+| `save_export/mod_versions.py` | 対局で使った mod とその版を、セーブから読み出す |
 
 # 対局データ
 
-対局データは、1 つの対局について、書き出した記録・地図・ルールのデータベースの全部の表を 1 つにまとめた JSON で、`data/games` に置く。`civ6opt build` が作る。`save_export/build_games.sh` を実行すると、下の表の全部の対局データを作る。
+対局データは、1 つの対局について、書き出した記録・地図・ルールのデータベースの全部の表を 1 つにまとめた JSON で、`data/games` に置く。`civ6opt build` が作る。`save_export/build_games.py` を実行すると、下の表の全部の対局データを作る。対局データの名前を続けて指定すると、その対局だけを作る。
 
 | ファイル | 対局 |
 |---|---|
@@ -102,6 +102,14 @@ cd optimizer && cargo build --release
 | 場所 | すること |
 |---|---|
 | `tools/ja_names.py` | ゲームの種類（`DISTRICT_ENCAMPMENT` など）と、ゲームの日本語版での名前の一覧を、`data/rules/names_ja.tsv` に出力する |
+| `tools/civ6opt.py` | ほかのスクリプトが読み込む部品。OS に合わせて `civ6opt` の実行ファイルを探し、優先度を下げて動かす |
+| `tools/job.py` | `civ6opt` を端末から切り離して動かし、`data/jobs/<名前>` に状態と出力を残す |
+| `tools/replay.py` | 記録したプレイを再現し、記録とターンごとに比べる（`check`）。再現の精度を対局ごとにまとめる（`summary`） |
+| `tools/replay_check.py` | `civ6opt run --genome record` の出力と記録を、ターンごとに比べる |
+| `tools/learn_train.py` | `civ6opt collect` と `irollout --rows` が書き出した選択肢の記録から、選択肢の点数への影響を学習する |
+| `tools/compare_methods.py` | 探索の手法を、同じ条件・同じ時間で比べる |
+| `tools/long_ma.py` | 落ちても保存した最良の計画から再開する、長い探索 |
+| `optimizer/scripts/win_run.sh` | WSL から、Windows で直接 `civ6opt` を動かす。WSL を使うときだけ要る |
 
 # ゲームの mod
 

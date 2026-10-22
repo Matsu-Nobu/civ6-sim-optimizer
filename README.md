@@ -37,18 +37,23 @@ BBG は更新のたびに強い進め方が変わるので、勘や定石に頼�
 
 ## 必要なもの
 
+Windows・macOS・Linux のどれでも同じ手順で動く。
+
 - Civilization VI（Steam 版）
 - Steam ワークショップの mod の [Better Balanced Game 7.5.1](https://steamcommunity.com/sharedfiles/filedetails/?id=2865001760)、[BBG Expanded 2.1](https://steamcommunity.com/sharedfiles/filedetails/?id=3533091092)、[Better Balanced Map 1.39.5](https://steamcommunity.com/sharedfiles/filedetails/?id=3179425402)、[Multiplayer Helper 1.8.0](https://steamcommunity.com/sharedfiles/filedetails/?id=3307282026)
-- Homebrew で入れる `rustup`、`zstd`、`python`
+- `rustup`。Windows では、加えて C のコンパイラ（Visual Studio の Build Tools か MinGW）が要る。Windows でだけ使うメモリ確保のライブラリ（mimalloc）をビルドするためである。
+- Python 3.14 以降。zstd の展開に、3.14 で入った標準ライブラリの `compression.zstd` を使う。
 
 ## 手順
 
 1. 上の 4 つの mod を入れて、記録した対局と同じ勝利条件でゲームを始める。
 2. ゲームを始めると書き出される `Cache/DebugGameplay.sqlite` を、`data/rules/france_20261014.sqlite` のように対局データの名前でコピーする。
-3. `cd optimizer && cargo build --release` を実行する。
-4. `optimizer/target/x86_64-unknown-linux-gnu/release/civ6opt text data/rules/text_en.sqlite` を実行する。
-5. `save_export/build_games.sh` を実行する。
-6. `data/search/<実験>/run.sh` を実行する。
+3. `optimizer/` で `cargo build --release` を実行する。実行ファイルは `optimizer/target/release/civ6opt`（Windows では `civ6opt.exe`）にできる。
+4. `optimizer/target/release/civ6opt text data/rules/text_en.sqlite` を実行する。Steam を既定の場所に入れていない場合は、`--game` と `--workshop` でゲームとワークショップのフォルダを指定する。
+5. `python save_export/build_games.py` を実行する。
+6. `data/search/<実験>/run.sh` に記録した `civ6opt` のコマンドを実行する。長い探索は `python tools/job.py start <名前> <コマンド>` で、端末から切り離して動かす。
+
+学習のスクリプト（`tools/learn_train.py`）を使うときは、仮想環境を作って `pip install -r requirements.txt` を実行する。
 
 # 文書の案内
 

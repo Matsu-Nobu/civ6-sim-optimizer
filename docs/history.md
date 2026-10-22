@@ -276,6 +276,20 @@ git のリポジトリにして、非公開の GitHub のリポジトリ（https
 
 1 ターンずつの確認で記録と完全に一致するターンは、5 局（各 28 ターン）で 16/18/11/15/17 から 24/23/25/22/25 になった。通しで流して最初に食い違うターンは T5〜T11 から T20〜T34 になった。残り: 開拓者を作ったターンの食料（どの市民が外れるか）、セーブ解析が開拓者を読み落とす件、T50 で 1〜3 割ずれる対局がある。
 
+## 選択肢の学習
+
+10/22 に、探索と学習を交互に回す方針（[design/learning.md](design/learning.md)）の最初の段階を作った。`civ6opt collect` は、計画の決定の選択肢を変えて最後まで計算し、局面と選択肢の特徴と点数の差を書き出す。`tools/learn_train.py` は LightGBM で学習する。`irollout` は、`--model` で予測の高い選択肢だけを試し、`--rows` で試した結果を学習のデータとして書き出す。ローマ戦の 5 つの計画の 72,764 行で学習すると、学習に使っていない計画で、2 つの選択肢のどちらが良いかを当てた割合は 56〜74% だった（でたらめに選ぶと 50%）。
+
+## WSL での探索による PC の停止
+
+10/22 10:45 に、WSL で 8 スレッドの探索を 2 本、Windows で 1 本を同時に始めて 3 分後に、Windows ごと落ちた。10/20 に決めた「WSL では探索を動かさない」を破ったのが原因である。WSL のカーネルが落ちる件は、WSL のカーネル 6.18 系で、メモリを多く使う処理の最中に落ちる未解決の不具合（[microsoft/WSL#41195](https://github.com/microsoft/WSL/issues/41195)）とよく似ている。6.6 系のカーネルに差し替えて試す準備をした（`C:\Users\nobus\.wslconfig`）。
+
+## OS に依存しない作り
+
+WSL をやめる可能性に備え、Windows・macOS・Linux のどれでも同じ手順で動くようにした。ビルドの対象を Linux に固定する設定（`optimizer/.cargo/config.toml`）を消し、実行ファイルは OS に関係なく `optimizer/target/release/` にできる。bash のスクリプトは Python に移した（`tools/replay.py`、`tools/compare_methods.py`、`tools/long_ma.py`、`save_export/build_games.py`、`save_export/mod_versions.py`）。実行ファイルの場所と優先度の下げ方は `tools/civ6opt.py` にまとめた。長い探索を端末から切り離して動かす `tools/job.py` を足した。`civ6opt text` のゲームのフォルダの既定値は、OS ごとの Steam の既定の場所にした。
+
+移したスクリプトは、Linux で元のスクリプトと同じ結果になることを確かめた。mod の一覧は 23 の対局で同じ、対局データは `civ6opt build` を直接実行したものと同じバイト列、再現の確認は同じ出力だった。Windows と macOS では、まだ動かしていない。
+
 # 途中になっている作業
 
 WSL の中で落ちる原因は、まだ確かめていない。同じ探索を WSL で 60 分回して落ちるかの確認、BIOS の `Memory Context Restore` と `Power Down Enable` の確認、メモリを 1 枚ずつにした試験、DDU でのグラフィックドライバーの入れ直しが候補に残っている。

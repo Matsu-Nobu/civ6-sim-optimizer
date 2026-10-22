@@ -739,6 +739,17 @@ fn snapshot(st: &State) -> Value {
     ])
 }
 
+/// Steam's folder where it is installed by default: on Windows, on macOS, and on Windows seen from WSL (Linux).
+fn steam_dir() -> String {
+    if cfg!(windows) {
+        r"C:\Program Files (x86)\Steam".into()
+    } else if cfg!(target_os = "macos") {
+        format!("{}/Library/Application Support/Steam", std::env::var("HOME").expect("HOME"))
+    } else {
+        "/mnt/c/Program Files (x86)/Steam".into()
+    }
+}
+
 /// Diagnostics for aborts (glibc heap checks): on SIGABRT, the raw call stack goes to stderr without allocating
 /// (glibc backtrace), with main's address to undo the load offset (resolve with addr2line).
 #[cfg(all(target_os = "linux", target_env = "gnu"))]
@@ -805,8 +816,9 @@ fn main() {
     }
     // civ6opt text <out.sqlite> [--game <the game's folder>] [--workshop <the workshop content folder 289070>]
     if cmd == "text" {
-        let game = arg(&args, "--game").unwrap_or("/mnt/c/Program Files (x86)/Steam/steamapps/common/Sid Meier's Civilization VI".into());
-        let workshop = arg(&args, "--workshop").unwrap_or("/mnt/c/Program Files (x86)/Steam/steamapps/workshop/content/289070".into());
+        let steam = steam_dir();
+        let game = arg(&args, "--game").unwrap_or_else(|| format!("{steam}/steamapps/common/Sid Meier's Civilization VI"));
+        let workshop = arg(&args, "--workshop").unwrap_or_else(|| format!("{steam}/steamapps/workshop/content/289070"));
         civ6opt::gamedata::build_text_db(&args[2], &game, &workshop);
         return;
     }

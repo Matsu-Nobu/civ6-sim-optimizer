@@ -14,3 +14,4 @@ data/exports/*_map_T*.json
 optimizer/target/
 __pycache__/
 .venv/
+data/jobs/

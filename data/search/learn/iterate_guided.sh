@@ -12,7 +12,8 @@ C="--turn 65 --ext 0 --allow-military --team --require TECH_BALLISTICS:1@65 --re
 D=data/search/learn
 best=$3
 TAG=${TAG:-guide}
-score() { python3 -c "import json,sys; print(json.load(open(sys.argv[1]))['best'])" "$1"; }
+# a game's score under the current rules and options (a plan file's own "best" may come from older rules)
+score() { $B run $G $C --genome "$1" 2>/dev/null | tail -1 | python3 -c "import json,sys; print(json.load(sys.stdin)['score'])"; }
 stale=0
 for i in $(seq $1 $2); do
   rows="$D/rome21_collect3.tsv $(ls $D/rome21_online*.tsv $D/rome21_g*.tsv | tr '\n' ' ')"

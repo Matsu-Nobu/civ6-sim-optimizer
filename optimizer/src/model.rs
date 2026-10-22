@@ -367,6 +367,8 @@ pub struct State {
     pub gp_pending: Vec<GpUse>,
     /// requirement / reward terms recorded at their own turns (crate::milestones::Milestones::record)
     pub req_at: Vec<(u32, f64)>,
+    /// the gold missing at the ends of the turns so far, summed (a treasury below zero: the game disbands units)
+    pub debt: f64,
 }
 
 impl State {
@@ -595,6 +597,7 @@ pub fn state_from(v: &Value) -> State {
         gp_pending: vec![],
         improving: vec![],
         req_at: vec![],
+        debt: 0.0,
     }
 }
 
@@ -698,5 +701,6 @@ pub fn state_from_row(d: &Value) -> State {
         gp_pending: vec![],
         improving: vec![],
         req_at: vec![],
+        debt: 0.0,
     }
 }

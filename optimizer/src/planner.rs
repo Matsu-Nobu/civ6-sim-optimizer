@@ -1757,6 +1757,11 @@ impl<'a> Planner<'a> {
 
     // ---------------------------------------------------------------- the turn
     pub fn advance(&self, st: &mut State, ch: &mut dyn Chooser) {
+        self.advance_turn(st, ch);
+        st.debt += (-st.acc.gold).max(0.0);
+    }
+
+    fn advance_turn(&self, st: &mut State, ch: &mut dyn Chooser) {
         crate::value::turn_start(st);
         // (on a plot no city owns yet, the improvement waits for the plot: the record acquires a plot and improves it
         // in one turn, and the replay acquires recorded plots after the builders)

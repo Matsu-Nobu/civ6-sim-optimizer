@@ -76,6 +76,11 @@ impl Chooser for ExtChooser {
 }
 
 /// Play to the end of `h.turn` (then the extension); returns (score, objective up to h.turn, final state at h.turn).
+/// Points a plan loses per gold missing at the end of a turn (State::debt). The game disbands units while the treasury
+/// is below zero, which the simulator does not model; a knight's upkeep is 2 or 3 gold a turn, so keeping one unpaid
+/// costs more than the 100 points a knight is worth in the plans' rewards.
+pub const DEBT_PENALTY: f64 = 20.0;
+
 pub fn play(p: &Planner, st0: &State, ch: &mut dyn Chooser, h: Horizon) -> (f64, f64, State) {
     let mut st = st0.clone();
     let mut total = 0.0;
@@ -93,7 +98,7 @@ pub fn play(p: &Planner, st0: &State, ch: &mut dyn Chooser, h: Horizon) -> (f64,
             ext += objective(&xs.last_output);
         }
     }
-    let penalty = IDLE_UNIT_PENALTY * idle_units(st0, &xs);
+    let penalty = IDLE_UNIT_PENALTY * idle_units(st0, &xs) + DEBT_PENALTY * st.debt;
     (total + h.w * ext - penalty - floor, total, st)
 }
 
@@ -107,6 +112,8 @@ pub fn play_from(p: &Planner, st0: &State, start: &State, prefix: f64, ch: &mut 
         total += objective(&st.last_output);
     }
     let floor = p.milestones.as_ref().map(|m| m.penalty(&st)).unwrap_or(0.0);
+    // the debt to the evaluation turn, as play counts it (not the extension's)
+    let debt = st.debt;
     let mut ext = 0.0;
     if h.ext > 0 {
         let mut xc = ExtChooser;
@@ -115,7 +122,7 @@ pub fn play_from(p: &Planner, st0: &State, start: &State, prefix: f64, ch: &mut 
             ext += objective(&st.last_output);
         }
     }
-    total + h.w * ext - IDLE_UNIT_PENALTY * idle_units(st0, &st) - floor
+    total + h.w * ext - IDLE_UNIT_PENALTY * idle_units(st0, &st) - DEBT_PENALTY * debt - floor
 }
 
 /// Follow a genome; elsewhere the lookahead with the learned value (crate::value) when one is set, else the base

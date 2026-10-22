@@ -1067,6 +1067,10 @@ fn main() {
                 }
             }
             let floor = pl.milestones.as_ref().map(|m| m.penalty(&st)).unwrap_or(0.0);
+            let debt = st.debt;
+            if debt > 0.0 {
+                eprintln!("gold below zero: {debt:.0} gold-turns missing, penalty {:.0}", opt::DEBT_PENALTY * debt);
+            }
             if let Some(m) = pl.milestones.as_ref() {
                 for line in m.report(&st) {
                     eprintln!("{line}");
@@ -1090,7 +1094,8 @@ fn main() {
             let idle = opt::idle_units(&st0, &st);
             println!("{}", Value::obj(vec![("total", Value::from(total)), ("ext", Value::from(ext_total)), ("idle_units", Value::from(idle)),
                 ("floor_penalty", Value::from(floor)),
-                ("score", Value::from(total + ext_w * ext_total - opt::IDLE_UNIT_PENALTY * idle - floor)), ("seconds", Value::from(t.elapsed().as_secs_f64())),
+                ("debt", Value::from(debt)),
+                ("score", Value::from(total + ext_w * ext_total - opt::IDLE_UNIT_PENALTY * idle - opt::DEBT_PENALTY * debt - floor)), ("seconds", Value::from(t.elapsed().as_secs_f64())),
                 ("engines", Value::from(civ6opt::engine::ENGINES.load(std::sync::atomic::Ordering::Relaxed)))]));
         }
         "search" => {

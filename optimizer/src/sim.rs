@@ -316,6 +316,7 @@ pub fn step<'a>(r: &'a Rules, ec: &mut EngineCache<'a>, acc: &mut PlayerAcc, cit
                     }
                     if item_kind(item) == Kind::Unit {
                         *acc.units_trained.entry_or(item, 0) += 1;
+                        crate::strategic::pay(r, acc, item);
                         let mut pop_cost = r.lookup_f("Units", "UnitType", item, "PopulationCost") as i32;
                         if e.city_effects(s!("EFFECT_ADJUST_CITY_SETTLER_CONSUME_POP"), c.name).iter().any(|x| x.args.is("Enabled", &["0", "false"])) {
                             pop_cost = 0;

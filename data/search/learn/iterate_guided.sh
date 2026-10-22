@@ -7,7 +7,8 @@
 set -e
 B=optimizer/target/release/civ6opt
 G=data/games/rome_20261021.json
-C="--turn 65 --ext 0 --allow-military --team --require TECH_BALLISTICS:1@65 --require-weight 20000 --reward UNIT_KNIGHT:100@65"
+# EXTRA: more options for every game (e.g. --strategic-gift RESOURCE_IRON:10@41)
+C="--turn 65 --ext 0 --allow-military --team --require TECH_BALLISTICS:1@65 --require-weight 20000 --reward UNIT_KNIGHT:100@65 ${EXTRA:-}"
 D=data/search/learn
 best=$3
 TAG=${TAG:-guide}

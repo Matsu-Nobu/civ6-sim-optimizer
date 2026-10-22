@@ -248,6 +248,8 @@ pub struct PlayerAcc {
     pub civic_overflow: f64,
     pub cities: OMap<Sym, CityAcc>,
     pub districts_snapshot: Option<i64>,
+    /// strategic resources in the stockpile (crate::strategic)
+    pub strategic: OMap<Sym, f64>,
 }
 
 // ---------------------------------------------------------------- decisions
@@ -540,6 +542,7 @@ pub fn state_from(v: &Value) -> State {
             ..Default::default()
         })).collect()),
         districts_snapshot: oi64(&a["districts_snapshot"]),
+        strategic: OMap::default(),
     };
     let p = &v["player"];
     let player = Player {
@@ -631,6 +634,7 @@ pub fn state_from_row(d: &Value) -> State {
             ..Default::default()
         })).collect()),
         districts_snapshot: None,
+        strategic: OMap::default(),
     };
     let player = Player {
         civilization: osym(&p["civilization"]),

@@ -595,6 +595,15 @@ impl<'a> Planner<'a> {
             if r.unit_replaced(u, civ, leader) {
                 continue;
             }
+            // a plan cannot start (or buy) a unit the stockpile cannot pay for; the replay takes what the record
+            // built (crate::strategic then shows how far the model of the stockpile falls short of the record)
+            if self.rec.is_none() && self.tiles_rec.is_none() {
+                if let Some((res, cost)) = crate::strategic::unit_cost(r, u) {
+                    if crate::strategic::available(r, st, res, Some(city.name)) < cost {
+                        continue;
+                    }
+                }
+            }
             // units that do nothing for the objective (military, spies) are not offered to a plan; the recorded
             // player's play (replay, record genome) keeps them
             if self.rec.is_none() && self.tiles_rec.is_none() && !self.s.allow_idle_units && crate::opt::idle_unit(u) {
@@ -1759,6 +1768,8 @@ impl<'a> Planner<'a> {
     pub fn advance(&self, st: &mut State, ch: &mut dyn Chooser) {
         self.advance_turn(st, ch);
         st.debt += (-st.acc.gold).max(0.0);
+        let e = self.eng(st);
+        crate::strategic::accumulate(self.r, st, &e);
     }
 
     fn advance_turn(&self, st: &mut State, ch: &mut dyn Chooser) {
@@ -2519,6 +2530,7 @@ impl<'a> Planner<'a> {
         for (name, item) in std::mem::take(&mut st.bought) {
             if item_kind(item) == Kind::Unit {
                 *st.acc.units_trained.entry_or(item, 0) += 1;
+                crate::strategic::pay(self.r, &mut st.acc, item);
             } else {
                 st.acc.units_trained.entry_or(item, 0);
             }

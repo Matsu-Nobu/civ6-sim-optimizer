@@ -450,6 +450,15 @@ fn setup_milestones(p: &Problem, args: &[String], turn: i64) {
     let smooth = args.iter().any(|a| a == "--require-smooth");
     // --fallback-model trees.json: a decision whose planned choice cannot be taken takes the model's first option
     // (crate::learn::FALLBACK) instead of the base policy's, in every command
+    // --strategic-gift RESOURCE_IRON:6@41[,..]: resources from outside the empire (crate::strategic::GIFTS)
+    if let Some(spec) = arg(args, "--strategic-gift") {
+        let gifts = spec.split(',').map(|g| {
+            let (res, rest) = g.split_once(':').expect("RES:N@T");
+            let (n, t) = rest.split_once('@').expect("RES:N@T");
+            (sym(res), n.parse::<f64>().unwrap(), t.parse::<i64>().unwrap())
+        }).collect();
+        let _ = civ6opt::strategic::GIFTS.set(gifts);
+    }
     if let Some(path) = arg(args, "--fallback-model") {
         let _ = civ6opt::learn::FALLBACK.set(civ6opt::learn::Trees::load(&path));
     }
@@ -742,6 +751,7 @@ fn snapshot(st: &State) -> Value {
         ("civic_progress", Value::from(st.civic.and_then(|c| st.acc.civic_progress.get(&c).copied()).unwrap_or(0.0))),
         ("research_progress", Value::from(st.research.and_then(|c| st.acc.tech_progress.get(&c).copied()).unwrap_or(0.0))),
         ("gold", Value::from(st.acc.gold)),
+        ("strategic", Value::Obj(st.acc.strategic.0.iter().map(|(k, v)| (k.as_string(), Value::from(*v))).collect())),
         ("faith", Value::from(st.acc.faith)),
         ("output", Value::from(st.last_output.to_vec())),
         ("cities", Value::Arr(st.cities.iter().map(|c| Value::obj(vec![

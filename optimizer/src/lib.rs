@@ -20,6 +20,7 @@ pub mod rules;
 pub mod save;
 pub mod scenario;
 pub mod sim;
+pub mod strategic;
 pub mod skeleton;
 pub mod milestones;
 pub mod value;

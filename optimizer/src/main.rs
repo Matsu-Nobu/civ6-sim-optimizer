@@ -100,7 +100,7 @@ type RoJob = (usize, State, f64, HashMap<Key, Choice>);
 /// A plan's decisions (turn, key, choice, options, and when the search learns: the features of crate::learn of the
 /// decision and of each option).
 type RoLog = Vec<(i64, Key, Choice, Vec<Choice>, Option<std::rc::Rc<DecFeats>>)>;
-type DecFeats = (Vec<f64>, Vec<[f64; 2]>);
+type DecFeats = (Vec<f64>, Vec<[f64; civ6opt::learn::N_OPTION]>);
 
 /// The plan's choices, recording its decisions (with their features of crate::learn when `feats`).
 struct RoRecorder<'g> {
@@ -114,8 +114,9 @@ impl civ6opt::planner::Chooser for RoRecorder<'_> {
         let c = GenomeChooser { genome: self.genome }.choose(p, st, key, options)?;
         let f = (self.feats && options.len() > 1).then(|| {
             let base = p.base(st, key, options);
-            let of = options.iter().map(|o| civ6opt::learn::option_features(p, base.as_ref(), o)).collect();
-            std::rc::Rc::new((civ6opt::learn::decision_features(p, st, key, options), of))
+            let eng = p.engine(&p.player_env(st), &st.cities);
+            let of = options.iter().map(|o| civ6opt::learn::option_features(p, st, key, base.as_ref(), o, &eng)).collect();
+            std::rc::Rc::new((civ6opt::learn::decision_features(p, st, key, options, &eng), of))
         });
         self.log.push((st.turn, key.clone(), c.clone(), options.to_vec(), f));
         Some(c)
@@ -158,7 +159,7 @@ impl Learning {
     fn alternatives(&self, d: &(i64, Key, Choice, Vec<Choice>, Option<std::rc::Rc<DecFeats>>)) -> Vec<Choice> {
         let alts: Vec<usize> = (0..d.3.len()).filter(|&j| d.3[j] != d.2).collect();
         let (Some(m), Some(f)) = (&self.model, &d.4) else { return alts.into_iter().map(|j| d.3[j].clone()).collect() };
-        let mut scored: Vec<(f64, usize)> = alts.into_iter().map(|j| (m.predict(&f.0, d.1.kind, &d.3[j], f.1[j]), j)).collect();
+        let mut scored: Vec<(f64, usize)> = alts.into_iter().map(|j| (m.predict(&f.0, d.1.kind, &d.3[j], &f.1[j]), j)).collect();
         scored.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap());
         scored.into_iter().take(self.top).map(|(_, j)| d.3[j].clone()).collect()
     }
@@ -859,15 +860,16 @@ fn main() {
             use civ6opt::learn;
             struct Feats<'g> {
                 genome: &'g HashMap<Key, Choice>,
-                log: Vec<(i64, Key, Choice, Vec<Choice>, Vec<f64>, Vec<[f64; 2]>)>,
+                log: Vec<(i64, Key, Choice, Vec<Choice>, Vec<f64>, Vec<[f64; learn::N_OPTION]>)>,
             }
             impl civ6opt::planner::Chooser for Feats<'_> {
                 fn choose(&mut self, p: &Planner, st: &State, key: &Key, options: &[Choice]) -> Option<Choice> {
                     let c = GenomeChooser { genome: self.genome }.choose(p, st, key, options)?;
                     if options.len() > 1 {
                         let base = p.base(st, key, options);
-                        let of = options.iter().map(|o| learn::option_features(p, base.as_ref(), o)).collect();
-                        self.log.push((st.turn, key.clone(), c.clone(), options.to_vec(), learn::decision_features(p, st, key, options), of));
+                        let eng = p.engine(&p.player_env(st), &st.cities);
+                        let of = options.iter().map(|o| learn::option_features(p, st, key, base.as_ref(), o, &eng)).collect();
+                        self.log.push((st.turn, key.clone(), c.clone(), options.to_vec(), learn::decision_features(p, st, key, options, &eng), of));
                     }
                     Some(c)
                 }

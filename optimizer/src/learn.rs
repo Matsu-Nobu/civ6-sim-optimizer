@@ -14,12 +14,17 @@ use crate::sym::Sym;
 /// the trees need no rule for missing values.
 pub const MISSING: f64 = -999.0;
 
-pub const NUMERIC: [&str; 34] = [
+pub const NUMERIC: [&str; 32 + N_OPTION] = [
     "turn", "n", "n_options", "food", "production", "gold", "science", "culture", "faith", "pop", "cities", "districts",
     "buildings", "improvements", "invested", "food_store", "charges", "settlers", "traders", "builders", "techs", "civics",
     "gold_stock", "military", "city_pop", "city_food_store", "city_housing_left", "city_districts", "city_buildings",
-    "city_food", "city_production", "city_progress", "option_cost", "option_is_base",
+    "city_food", "city_production", "city_progress", "option_cost", "option_is_base", "option_turns", "target_pop",
+    "target_housing_left", "target_food", "target_production", "tile_food", "tile_production", "tile_worked",
+    "tile_resource", "tile_improved",
 ];
+
+/// The number of an option's own features (option_features).
+pub const N_OPTION: usize = 12;
 
 /// A name for the option the trees split on: the item, the builder's action and its improvement, ...
 pub fn option_name(c: &Choice) -> String {
@@ -44,36 +49,71 @@ fn option_cost(p: &Planner, c: &Choice) -> f64 {
     }
 }
 
-/// The numbers of the state at a decision that are the same for all its options.
-pub fn decision_features(p: &Planner, st: &State, key: &Key, options: &[Choice]) -> Vec<f64> {
+/// The city a decision belongs to (production, citizen focus, ...), if it belongs to one.
+fn decision_city<'s>(st: &'s State, key: &Key) -> Option<&'s City> {
+    match &key.ent {
+        Ent::S(n) => st.cities.iter().find(|c| c.name == *n),
+        Ent::I(_) => None,
+    }
+}
+
+/// A city's population, housing left, food and production per turn.
+fn city_numbers(p: &Planner, st: &State, eng: &crate::engine::Engine, c: &City) -> [f64; 4] {
+    let pop = st.cacc(c.name).population as f64;
+    let out = st.city_output.iter().find(|x| x.0 == c.name).map(|x| x.1).unwrap_or([MISSING; 6]);
+    [pop, crate::growth::housing(p.r, c, Some(eng)) - pop, out[0], out[1]]
+}
+
+/// The numbers of the state at a decision that are the same for all its options; `eng` is the engine of the state
+/// (Planner::engine).
+pub fn decision_features(p: &Planner, st: &State, key: &Key, options: &[Choice], eng: &crate::engine::Engine) -> Vec<f64> {
     let v = crate::value::features(p, st);
     let mut f = vec![st.turn as f64, key.n as f64, options.len() as f64];
     // the value's features without its constant, in NUMERIC's order
     f.extend_from_slice(&v[1..15]);
     f.extend_from_slice(&[v[15], v[16], st.builders.len() as f64, v[17], v[18], v[19], v[20]]);
-    let city = match &key.ent {
-        Ent::S(n) => st.cities.iter().find(|c| c.name == *n),
-        Ent::I(_) => None,
-    };
-    match city {
+    match decision_city(st, key) {
         Some(c) => {
             let acc = st.cacc(c.name);
-            let eng = p.engine(&p.player_env(st), &st.cities);
-            let housing = crate::growth::housing(p.r, c, Some(&eng));
-            let out = st.city_output.iter().find(|x| x.0 == c.name).map(|x| x.1).unwrap_or([MISSING; 6]);
+            let [pop, housing_left, food, production] = city_numbers(p, st, eng, c);
             let progress = c.current.and_then(|i| acc.progress.get(&i).copied()).unwrap_or(0.0);
-            f.extend_from_slice(&[acc.population as f64, acc.food_store, housing - acc.population as f64,
-                c.districts.iter().filter(|d| d.complete).count() as f64, c.buildings.len() as f64, out[0], out[1], progress]);
+            f.extend_from_slice(&[pop, acc.food_store, housing_left, c.districts.iter().filter(|d| d.complete).count() as f64,
+                c.buildings.len() as f64, food, production, progress]);
         }
         None => f.extend_from_slice(&[MISSING; 8]),
     }
     f
 }
 
-/// The numbers of one option (appended to the decision's).
-/// `base` is the base policy's choice of the decision (Planner::base).
-pub fn option_features(p: &Planner, base: Option<&Choice>, c: &Choice) -> [f64; 2] {
-    [option_cost(p, c), (base == Some(c)) as i64 as f64]
+/// The numbers of one option (appended to the decision's): its cost and whether the base policy (`base`,
+/// Planner::base) picks it; the turns it takes the city to make it; the city it acts on (a builder's, a purchase's,
+/// a governor's, a route's destination; else the decision's city); the tile it acts on (a builder's, a bought one, a
+/// new city's site): its yields before the action, whether a citizen works it, has a resource, an improvement.
+pub fn option_features(p: &Planner, st: &State, key: &Key, base: Option<&Choice>, c: &Choice, eng: &crate::engine::Engine) -> [f64; N_OPTION] {
+    let cost = option_cost(p, c);
+    let target = match c {
+        Choice::Act(_, city, ..) | Choice::BuyItem(city, ..) | Choice::BuyTile(city, ..) | Choice::Appoint(_, city) | Choice::Route(_, city) =>
+            st.cities.iter().find(|x| x.name == *city),
+        _ => decision_city(st, key),
+    };
+    let city = target.map(|t| city_numbers(p, st, eng, t)).unwrap_or([MISSING; 4]);
+    let turns = if cost > 0.0 && city[3] > 0.0 { cost / city[3] } else { MISSING };
+    let xy = match c {
+        Choice::Act(_, _, x, y, _) | Choice::BuyTile(_, _, x, y) | Choice::Xy(x, y) => Some((*x, *y)),
+        _ => None,
+    };
+    let plot = xy.and_then(|xy| st.cities.iter().flat_map(|c| c.owned.iter().chain(c.near.iter())).find(|q| q.xy() == xy)
+        .or_else(|| p.w.map.plots.get(&xy)));
+    let tile = match plot {
+        Some(q) => {
+            let y = crate::yields::tile_yields(p.r, q, &st.acc.techs, &st.acc.civics, false, &[], None, None, None);
+            let of = |name: &str| y.iter().filter(|(k, _)| k.as_string() == name).map(|(_, v)| *v).sum::<f64>();
+            let worked = st.cities.iter().any(|c| c.worked.iter().any(|w| w.xy() == q.xy()));
+            [of("YIELD_FOOD"), of("YIELD_PRODUCTION"), worked as i64 as f64, q.resource.is_some() as i64 as f64, q.improvement.is_some() as i64 as f64]
+        }
+        None => [MISSING; 5],
+    };
+    [cost, (base == Some(c)) as i64 as f64, turns, city[0], city[1], city[2], city[3], tile[0], tile[1], tile[2], tile[3], tile[4]]
 }
 
 /// Gradient boosted regression trees, as tools/learn_train.py writes them.
@@ -125,12 +165,12 @@ impl Trees {
     }
 
     /// The predicted change of the final score when the option is chosen instead of the plan's choice.
-    pub fn predict(&self, decision: &[f64], kind: Sym, option: &Choice, opt: [f64; 2]) -> f64 {
+    pub fn predict(&self, decision: &[f64], kind: Sym, option: &Choice, opt: &[f64; N_OPTION]) -> f64 {
         // a name the training did not see gets a code of no category, which every categorical split sends right
         let code = |vocab: &[String], s: &str| vocab.iter().position(|x| x == s).unwrap_or(vocab.len()) as f64;
         let mut x = vec![code(&self.kinds, &kind.as_string()), code(&self.names, &option_name(option))];
         x.extend_from_slice(decision);
-        x.extend_from_slice(&opt);
+        x.extend_from_slice(opt);
         self.eval(&x)
     }
 }

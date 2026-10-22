@@ -1,7 +1,11 @@
 """Trains the option model of optimizer/src/learn.rs on the rows `civ6opt collect` writes, reports how well it picks
 options on plans it did not see, and writes the trees for the Rust side.
 
-usage: .venv/bin/python tools/learn_train.py rows.tsv [rows2.tsv ...] --out model.json
+usage: python tools/learn_train.py rows.tsv [rows2.tsv ...] --out model.json [--test search_rows.tsv] [--threads 4]
+
+--test: rows of a search that tried every option of its decisions (civ6opt irollout --rows without --model), not
+trained on. For the decisions where some option beats the plan's choice, it reports how often the best one is the
+model's first pick and among its first three, by kind of decision: the search tries the model's first options.
 """
 import argparse
 import json
@@ -29,25 +33,57 @@ def load(paths):
     return cols, rows
 
 
+def test_picks(m, path, cols, matrix):
+    tcols, rows = load([path])
+    assert tcols == cols, f"{path}: other columns"
+    pred = m.predict(matrix(rows))
+    by_decision = {}
+    for r, p in zip(rows, pred):
+        by_decision.setdefault(r[1], []).append((r, p))
+    stats = {}
+    for options in by_decision.values():
+        alts = [(float(r[-1]), p) for r, p in options if r[-2] == "0"]
+        if len(alts) < 2 or max(a[0] for a in alts) <= 0:
+            continue
+        best = max(range(len(alts)), key=lambda i: alts[i][0])
+        order = sorted(range(len(alts)), key=lambda i: -alts[i][1])
+        s = stats.setdefault(options[0][0][2], [0, 0, 0, 0.0])
+        s[0] += 1
+        s[1] += order[0] == best
+        s[2] += best in order[:3]
+        s[3] += min(3, len(alts)) / len(alts)
+    print(f"{path}: decisions with a better option | best is the model's first | among its first three | three at random")
+    total = [sum(s[i] for s in stats.values()) for i in range(4)]
+    for k, s in sorted(stats.items()) + [("all", total)]:
+        print(f"  {k:9} {s[0]:5} | {s[1] / s[0]:.2f} | {s[2] / s[0]:.2f} | {s[3] / s[0]:.2f}")
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("rows", nargs="+")
     ap.add_argument("--out", required=True)
     ap.add_argument("--rounds", type=int, default=400)
+    ap.add_argument("--test")
+    ap.add_argument("--threads", type=int, default=4)
     args = ap.parse_args()
     cols, rows = load(args.rows)
     numeric = cols[4:-2]
     kinds = sorted({r[2] for r in rows})
     names = sorted({r[3] for r in rows})
     ki, ni = {k: i for i, k in enumerate(kinds)}, {k: i for i, k in enumerate(names)}
-    x = np.array([[ki[r[2]], ni[r[3]]] + [float(v) for v in r[4:-2]] for r in rows])
-    x[np.isnan(x)] = MISSING
+    def matrix(rows):
+        # a name the training did not see gets a code of no category, as on the Rust side
+        x = np.array([[ki.get(r[2], len(ki)), ni.get(r[3], len(ni))] + [float(v) for v in r[4:-2]] for r in rows])
+        x[np.isnan(x)] = MISSING
+        return x
+
+    x = matrix(rows)
     y = np.clip(np.array([float(r[-1]) for r in rows]), -CLIP, CLIP)
     chosen = np.array([r[-2] == "1" for r in rows])
     group = np.array([f"{r[0]}:{r[1]}" for r in rows])
     plan = np.array([r[0] for r in rows])
     params = dict(objective="huber", alpha=200.0, learning_rate=0.05, num_leaves=63, min_data_in_leaf=20,
-                  feature_fraction=0.9, bagging_fraction=0.8, bagging_freq=1, cat_smooth=10, verbose=-1)
+                  feature_fraction=0.9, bagging_fraction=0.8, bagging_freq=1, cat_smooth=10, num_threads=args.threads, verbose=-1)
     feats = ["kind", "name"] + numeric
 
     def fit(mask):
@@ -84,6 +120,8 @@ def main():
             gain_base += yt[b[0]] if len(b) else 0.0
         print(f"{hp:8} | {n:9} | {kept_best / n:12.2f} | {model_best / n:20.2f} | {pairs_model / max(pairs, 1):18.2f}, {pairs_base / max(pairs, 1):.2f} | {gain_model / n:7.1f} | {gain_best / n:5.1f} | {gain_base / n:6.1f}")
     m = fit(np.ones(len(rows), bool))
+    if args.test:
+        test_picks(m, args.test, cols, matrix)
     imp = sorted(zip(m.feature_importance("gain"), feats), reverse=True)[:12]
     print("gain by feature:", ", ".join(f"{f} {v:.0f}" for v, f in imp))
     trees = []

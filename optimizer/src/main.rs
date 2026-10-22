@@ -1577,13 +1577,77 @@ fn main() {
             // the plan --init played as it is to each of the turns --from (comma separated), then by the option model
             // (--model) to the end: how good the model is at finishing the plan's game, against the plan's own finish
             let model = civ6opt::learn::Trees::load(&arg(&args, "--model").expect("--model trees.json"));
+            // --span N: the model plays N turns from each start, the plan the rest (default: to the end)
+            let span: i64 = arg(&args, "--span").map(|x| x.parse().unwrap()).unwrap_or(i64::MAX / 2);
             let g = genome_arg(&p, arg(&args, "--init").as_deref());
             let (mut pl, st0) = planner(&p);
             pl.s.horizon = turn + ext;
             println!("plan {:.1}", opt::play(&pl, &st0, &mut GenomeChooser { genome: &g }, horizon).0);
             for from in arg(&args, "--from").expect("--from 0,20,40").split(',').map(|x| x.parse::<i64>().unwrap()) {
-                let mut ch = civ6opt::learn::PolicyChooser { genome: &g, model: &model, from, taken: HashMap::new() };
-                println!("model from T{} {:.1}", from + 1, opt::play(&pl, &st0, &mut ch, horizon).0);
+                let mut ch = civ6opt::learn::PolicyChooser { genome: &g, model: &model, from, to: from + span, taken: HashMap::new() };
+                let s = opt::play(&pl, &st0, &mut ch, horizon).0;
+                println!("model from T{} {s:.1}", from + 1);
+                // --out dir: each game's choices as a plan, for a look at what the model chose
+                if let Some(dir) = arg(&args, "--out") {
+                    save_plan(&format!("{dir}/from_T{}.json", from + 1), turn, s, &ch.taken, vec![]);
+                }
+            }
+        }
+        "keycheck" => {
+            // how much of what one changed decision does comes from the plan's later choices shifting: --samples
+            // random single changes of the plan --init, each played with the plan's other choices looked up as now
+            // (by the decision's count: the n-th production of a city) and by turn (the j-th decision of its kind
+            // and entity in that turn, as the plan made them; one the plan has not: the base policy)
+            let samples: usize = arg(&args, "--samples").map(|x| x.parse().unwrap()).unwrap_or(200);
+            let g = genome_arg(&p, arg(&args, "--init").as_deref());
+            let (mut pl, st0) = planner(&p);
+            pl.s.horizon = turn + ext;
+            let mut rec = Recorder { genome: &g, log: vec![] };
+            let base_score = opt::play(&pl, &st0, &mut rec, horizon).0;
+            let mut by_turn: HashMap<(Sym, Ent, i64, usize), Choice> = HashMap::new();
+            for (t, k, c, _) in &rec.log {
+                let j = by_turn.keys().filter(|x| x.0 == k.kind && x.1 == k.ent && x.2 == *t).count();
+                by_turn.insert((k.kind, k.ent.clone(), *t, j), c.clone());
+            }
+            struct ByTurn<'a> { plan: &'a HashMap<(Sym, Ent, i64, usize), Choice>, changed: &'a Key, to: &'a Choice, seen: HashMap<(Sym, Ent, i64), usize> }
+            impl civ6opt::planner::Chooser for ByTurn<'_> {
+                fn choose(&mut self, p: &Planner, st: &State, key: &Key, options: &[Choice]) -> Option<Choice> {
+                    let j = self.seen.entry((key.kind, key.ent.clone(), st.turn)).or_insert(0);
+                    let k = (key.kind, key.ent.clone(), st.turn, *j);
+                    *j += 1;
+                    if key == self.changed && options.contains(self.to) {
+                        return Some(self.to.clone());
+                    }
+                    match self.plan.get(&k) {
+                        Some(c) if options.contains(c) => Some(c.clone()),
+                        _ => p.base(st, key, options),
+                    }
+                }
+            }
+            {
+                let none = Key { kind: sym("none"), ent: Ent::I(-1), n: -1 };
+                let s = opt::play(&pl, &st0, &mut ByTurn { plan: &by_turn, changed: &none, to: &Choice::Nothing, seen: HashMap::new() }, horizon).0;
+                println!("plan {base_score:.1}, replayed by turn {s:.1}");
+            }
+            let cands: Vec<_> = rec.log.iter().filter(|d| d.0 <= turn && d.3.len() > 1).collect();
+            let mut rng = opt::Rng::new(5 + seed);
+            let mut stats: std::collections::BTreeMap<String, [usize; 3]> = Default::default();
+            for _ in 0..samples {
+                let (_, key, ch, opts) = cands[(rng.next_u64() % cands.len() as u64) as usize];
+                let alts: Vec<&Choice> = opts.iter().filter(|o| *o != ch).collect();
+                let a = alts[(rng.next_u64() % alts.len() as u64) as usize];
+                let mut k = g.clone();
+                k.insert(key.clone(), a.clone());
+                let by_count = opt::play(&pl, &st0, &mut GenomeChooser { genome: &k }, horizon).0;
+                let by_t = opt::play(&pl, &st0, &mut ByTurn { plan: &by_turn, changed: key, to: a, seen: HashMap::new() }, horizon).0;
+                let e = stats.entry(key.kind.as_string()).or_default();
+                e[0] += 1;
+                e[1] += (by_count < base_score - 1000.0) as usize;
+                e[2] += (by_t < base_score - 1000.0) as usize;
+            }
+            println!("kind | changes | score down by more than 1000: by count | by turn");
+            for (k, e) in stats {
+                println!("{k} | {} | {} | {}", e[0], e[1], e[2]);
             }
         }
         "psearch" => {
@@ -1597,6 +1661,8 @@ fn main() {
             let kick_to: i64 = arg(&args, "--kick-to").map(|x| x.parse().unwrap()).unwrap_or(turn);
             let out = arg(&args, "--out").expect("--out plan.json");
             let model = civ6opt::learn::Trees::load(&arg(&args, "--model").expect("--model trees.json"));
+            // --span N: the model plays the N turns after the changed decision's, the plan the rest (default: to the end)
+            let span: i64 = arg(&args, "--span").map(|x| x.parse().unwrap()).unwrap_or(i64::MAX / 2);
             let mut g = genome_arg(&p, arg(&args, "--init").as_deref());
             let (mut pl, st0) = planner(&p);
             pl.s.horizon = turn + ext;
@@ -1625,7 +1691,7 @@ fn main() {
                         loop {
                             let job = { job_rx.lock().unwrap().recv() };
                             let Ok((id, from, cand)) = job else { break };
-                            let mut ch = civ6opt::learn::PolicyChooser { genome: &cand, model, from, taken: HashMap::new() };
+                            let mut ch = civ6opt::learn::PolicyChooser { genome: &cand, model, from, to: from + span, taken: HashMap::new() };
                             let s = opt::play(&wpl, &wst0, &mut ch, horizon).0;
                             if res_tx.send((id, s, ch.taken)).is_err() {
                                 break;

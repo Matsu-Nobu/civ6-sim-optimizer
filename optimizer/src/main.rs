@@ -1619,6 +1619,15 @@ fn main() {
             // model's), and its choice is tried at every decision: the game then scores at least as the guide
             // (a rollout of the guide's policy), so games from the best one so far only get better
             let guide: HashMap<Key, Choice> = arg(&args, "--guide").map(|x| genome_arg(&p, Some(&x))).unwrap_or_default();
+            // --kick N:R: at the N-th decision with options, take without trying the option the model ranks R-th among
+            // those other than the guide's choice (a perturbation: the decisions after it are tried as always, so
+            // they can fit the change; a game that ends better than the guide is a change of several decisions the
+            // single tries miss)
+            // N:NAME instead takes the option of that name (crate::learn::option_name), e.g. a near miss the rows show
+            // --near P: prints every tried option within P points of the decision's best try ("near <decision> <points
+            // below> <choice>"), the near misses to kick from
+            let near: f64 = arg(&args, "--near").map(|x| x.parse().unwrap()).unwrap_or(-1.0);
+            let kick: Option<(usize, String)> = arg(&args, "--kick").map(|x| { let (n, r) = x.split_once(':').expect("--kick N:R"); (n.parse().unwrap(), r.to_string()) });
             let model = civ6opt::learn::FALLBACK.get().expect("--fallback-model trees.json");
             let rows = arg(&args, "--rows").map(|path| {
                 use std::io::Write as _;
@@ -1633,6 +1642,10 @@ fn main() {
                 model: &'a civ6opt::learn::Trees,
                 top: usize,
                 guide: &'a HashMap<Key, Choice>,
+                kick: Option<(usize, String)>,
+                near: f64,
+                /// decisions with options so far
+                seen: usize,
                 st0: &'a State,
                 taken: HashMap<Key, Choice>,
                 job_tx: std::sync::mpsc::Sender<RoJob>,
@@ -1661,6 +1674,32 @@ fn main() {
                         let mut ranked: Vec<(f64, &Choice)> = options.iter()
                             .map(|o| (self.model.predict(&d, key.kind, o, &civ6opt::learn::option_features(p, st, key, base.as_ref(), o, &eng)), o)).collect();
                         ranked.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap());
+                        self.seen += 1;
+                        if let Some((n, r)) = self.kick.clone() {
+                            // before the kick the guide's game is kept as it is, without tries
+                            if self.seen < n {
+                                let c = self.guide.get(key).filter(|c| options.contains(c)).cloned().unwrap_or_else(|| ranked[0].1.clone());
+                                self.taken.insert(key.clone(), c.clone());
+                                return Some(c);
+                            }
+                            if n == self.seen {
+                                let g = self.guide.get(key);
+                                let others: Vec<&Choice> = ranked.iter().map(|x| x.1).filter(|o| Some(*o) != g).collect();
+                                let c = match r.parse::<usize>() {
+                                    Ok(rank) => others[rank.min(others.len() - 1)].clone(),
+                                    Err(_) => {
+                                        let want = civ6opt::scenario::choice_from(&json::parse(&r).unwrap_or_else(|e| panic!("--kick {n}:{r}: {e}")));
+                                        (*others.iter().find(|o| Some((**o).clone()) == want)
+                                            .unwrap_or_else(|| panic!("--kick {n}:{r}: no such option at {}", key_json(key)))).clone()
+                                    }
+                                };
+                                eprintln!("kick T{} {} -> {}", st.turn, key_json(key), choice_json(&c));
+                                self.taken.insert(key.clone(), c.clone());
+                                // the best try so far followed the guide here: the game may now fall below it
+                                self.last = f64::MIN;
+                                return Some(c);
+                            }
+                        }
                         let mut cands: Vec<&Choice> = ranked.iter().take(self.top).map(|x| x.1).collect();
                         if let Some(c) = self.guide.get(key).and_then(|c| options.iter().find(|o| *o == c)) {
                             if !cands.contains(&c) {
@@ -1680,6 +1719,11 @@ fn main() {
                         }
                         self.tried += cands.len();
                         let jb = (0..cands.len()).fold(0, |b, j| if scores[j] > scores[b] { j } else { b });
+                        for (j, o) in cands.iter().enumerate() {
+                            if j != jb && scores[j] >= scores[jb] - self.near {
+                                eprintln!("near {} {:.1} {}", self.seen, scores[jb] - scores[j], choice_json(o));
+                            }
+                        }
                         if scores[jb] < self.last - 1e-6 {
                             self.falls.push((st.turn, self.last, scores[jb]));
                         }
@@ -1708,7 +1752,7 @@ fn main() {
             }
             std::thread::scope(|sc| {
                 let (job_tx, res_rx) = rollout_workers(sc, &p, threads, turn, ext, horizon);
-                let mut on = Online { model, top, guide: &guide, st0: &st0, taken: HashMap::new(), job_tx, res_rx, tried: 0, t0, turn: -1, last: f64::MIN, falls: vec![], rows, decisions: 0 };
+                let mut on = Online { model, top, guide: &guide, kick, near, seen: 0, st0: &st0, taken: HashMap::new(), job_tx, res_rx, tried: 0, t0, turn: -1, last: f64::MIN, falls: vec![], rows, decisions: 0 };
                 let mut st = st0.clone();
                 while st.turn <= turn {
                     pl.advance(&mut st, &mut on);

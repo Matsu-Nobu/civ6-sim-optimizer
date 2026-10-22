@@ -13,13 +13,14 @@ use crate::model::*;
 use crate::rules::Rules;
 use crate::sym::Sym;
 
-/// (resource, amount) a unit needs to be completed or bought.
-pub fn unit_cost(r: &Rules, unit: Sym) -> Option<(Sym, f64)> {
+/// (resource, amount) a unit needs to be completed or bought; the amount scales with the game speed like
+/// production costs (online: half).
+pub fn unit_cost(r: &Rules, unit: Sym, speed: Sym) -> Option<(Sym, f64)> {
     let res = r.lookup_sym("Units", "UnitType", unit, "StrategicResource")?;
     if !r.has_table("Units_XP2") {
         return None;
     }
-    let amount = r.lookup_f("Units_XP2", "UnitType", unit, "ResourceCost");
+    let amount = (r.lookup_f("Units_XP2", "UnitType", unit, "ResourceCost") * r.game_speed_cost_multiplier(speed)).round();
     (amount > 0.0).then_some((res, amount))
 }
 
@@ -83,10 +84,10 @@ fn building_cap(r: &Rules, b: Sym) -> f64 {
 }
 
 /// The stockpile of `res` less what the units in production in the cities other than `except` will take.
-pub fn available(r: &Rules, st: &State, res: Sym, except: Option<Sym>) -> f64 {
+pub fn available(r: &Rules, st: &State, res: Sym, except: Option<Sym>, speed: Sym) -> f64 {
     let stock = st.acc.strategic.get(&res).copied().unwrap_or(0.0);
     let reserved: f64 = st.cities.iter().filter(|c| Some(c.name) != except)
-        .filter_map(|c| c.current.and_then(|u| unit_cost(r, u))).filter(|x| x.0 == res).map(|x| x.1).sum();
+        .filter_map(|c| c.current.and_then(|u| unit_cost(r, u, speed))).filter(|x| x.0 == res).map(|x| x.1).sum();
     stock - reserved
 }
 
@@ -113,8 +114,8 @@ pub fn accumulate(r: &Rules, st: &mut State, e: &crate::engine::Engine) {
 }
 
 /// Takes a completed or bought unit's cost from the stockpile.
-pub fn pay(r: &Rules, acc: &mut PlayerAcc, unit: Sym) {
-    if let Some((res, amount)) = unit_cost(r, unit) {
+pub fn pay(r: &Rules, acc: &mut PlayerAcc, unit: Sym, speed: Sym) {
+    if let Some((res, amount)) = unit_cost(r, unit, speed) {
         *acc.strategic.entry_or(res, 0.0) -= amount;
     }
 }

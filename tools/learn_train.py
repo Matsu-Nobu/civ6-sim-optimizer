@@ -72,6 +72,8 @@ def main():
     # with --target delta_objective: adds this many points per point of the research change (delta_research), a price
     # that weighs science against the rest instead of the requirement's cliff
     ap.add_argument("--research-price", type=float, default=0.0)
+    # skips holding each plan out in turn (the report of how well the model picks), which takes most of the time
+    ap.add_argument("--no-eval", action="store_true")
     args = ap.parse_args()
     cols, rows = load(args.rows)
     chosen_col, target = cols.index("chosen"), cols.index(args.target)
@@ -123,7 +125,7 @@ def main():
     # each plan held out in turn: the model trained on the others picks among the sampled options of its decisions
     print(f"{len(rows)} rows, {len(set(group))} decisions, {len(set(plan))} plans")
     print("held out | decisions | kept is best | model's pick is best | pairs ordered right: model, base policy | mean gain: model | best | base policy")
-    for hp in sorted(set(plan)) if len(set(plan)) > 1 else []:
+    for hp in sorted(set(plan)) if len(set(plan)) > 1 and not args.no_eval else []:
         m = fit(plan != hp)
         test = plan == hp
         pred = m.predict(x[test])

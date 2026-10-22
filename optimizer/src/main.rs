@@ -1615,6 +1615,10 @@ fn main() {
             let top: usize = arg(&args, "--top").map(|x| x.parse().unwrap()).unwrap_or(4);
             let threads: usize = arg(&args, "--threads").map(|x| x.parse().unwrap()).unwrap_or(8);
             let out = arg(&args, "--out").expect("--out plan.json");
+            // --guide plan.json: a game to follow after the decision tried (its choice where it can be taken, else the
+            // model's), and its choice is tried at every decision: the game then scores at least as the guide
+            // (a rollout of the guide's policy), so games from the best one so far only get better
+            let guide: HashMap<Key, Choice> = arg(&args, "--guide").map(|x| genome_arg(&p, Some(&x))).unwrap_or_default();
             let model = civ6opt::learn::FALLBACK.get().expect("--fallback-model trees.json");
             let rows = arg(&args, "--rows").map(|path| {
                 use std::io::Write as _;
@@ -1628,6 +1632,7 @@ fn main() {
             struct Online<'a> {
                 model: &'a civ6opt::learn::Trees,
                 top: usize,
+                guide: &'a HashMap<Key, Choice>,
                 st0: &'a State,
                 taken: HashMap<Key, Choice>,
                 job_tx: std::sync::mpsc::Sender<RoJob>,
@@ -1656,9 +1661,15 @@ fn main() {
                         let mut ranked: Vec<(f64, &Choice)> = options.iter()
                             .map(|o| (self.model.predict(&d, key.kind, o, &civ6opt::learn::option_features(p, st, key, base.as_ref(), o, &eng)), o)).collect();
                         ranked.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap());
-                        let cands: Vec<&Choice> = ranked.iter().take(self.top).map(|x| x.1).collect();
+                        let mut cands: Vec<&Choice> = ranked.iter().take(self.top).map(|x| x.1).collect();
+                        if let Some(c) = self.guide.get(key).and_then(|c| options.iter().find(|o| *o == c)) {
+                            if !cands.contains(&c) {
+                                cands.push(c);
+                            }
+                        }
                         for (j, o) in cands.iter().enumerate() {
-                            let mut g = self.taken.clone();
+                            let mut g = self.guide.clone();
+                            g.extend(self.taken.iter().map(|(k, c)| (k.clone(), c.clone())));
                             g.insert(key.clone(), (*o).clone());
                             self.job_tx.send((j, self.st0.clone(), 0.0, g)).unwrap();
                         }
@@ -1697,7 +1708,7 @@ fn main() {
             }
             std::thread::scope(|sc| {
                 let (job_tx, res_rx) = rollout_workers(sc, &p, threads, turn, ext, horizon);
-                let mut on = Online { model, top, st0: &st0, taken: HashMap::new(), job_tx, res_rx, tried: 0, t0, turn: -1, last: f64::MIN, falls: vec![], rows, decisions: 0 };
+                let mut on = Online { model, top, guide: &guide, st0: &st0, taken: HashMap::new(), job_tx, res_rx, tried: 0, t0, turn: -1, last: f64::MIN, falls: vec![], rows, decisions: 0 };
                 let mut st = st0.clone();
                 while st.turn <= turn {
                     pl.advance(&mut st, &mut on);

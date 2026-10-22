@@ -1,3 +1,0 @@
-# glibc's malloc scales across the search threads, so the build targets glibc (the system C toolchain: gcc, glibc).
-[build]
-target = "x86_64-unknown-linux-gnu"

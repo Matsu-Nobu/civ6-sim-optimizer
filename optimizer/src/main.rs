@@ -389,6 +389,31 @@ fn lns_span(p: &Problem, mut g: HashMap<Key, Choice>, turn: i64, ext: i64, horiz
 }
 
 /// A plan (genome) as a search result file.
+/// The option the model (crate::learn) ranks first among the options of decision `key` other than `ch`, at the state
+/// the plan `g` reaches that decision in.
+fn model_first(pl: &Planner, st0: &State, g: &HashMap<Key, Choice>, model: &civ6opt::learn::Trees, key: &Key, ch: &Choice) -> Option<Choice> {
+    struct At<'a> { g: &'a HashMap<Key, Choice>, model: &'a civ6opt::learn::Trees, key: &'a Key, ch: &'a Choice, found: Option<Choice> }
+    impl civ6opt::planner::Chooser for At<'_> {
+        fn choose(&mut self, p: &Planner, st: &State, key: &Key, options: &[Choice]) -> Option<Choice> {
+            if key == self.key && self.found.is_none() {
+                let eng = p.engine(&p.player_env(st), &st.cities);
+                let base = p.base(st, key, options);
+                let d = civ6opt::learn::decision_features(p, st, key, options, &eng);
+                self.found = options.iter().filter(|o| *o != self.ch)
+                    .map(|o| (self.model.predict(&d, key.kind, o, &civ6opt::learn::option_features(p, st, key, base.as_ref(), o, &eng)), o))
+                    .max_by(|a, b| a.0.partial_cmp(&b.0).unwrap()).map(|x| x.1.clone());
+            }
+            GenomeChooser { genome: self.g }.choose(p, st, key, options)
+        }
+    }
+    let mut at = At { g, model, key, ch, found: None };
+    let mut st = st0.clone();
+    while at.found.is_none() && st.turn <= pl.s.horizon {
+        pl.advance(&mut st, &mut at);
+    }
+    at.found
+}
+
 fn save_plan(out: &str, turn: i64, best: f64, g: &HashMap<Key, Choice>, extra: Vec<(&str, Value)>) {
     let mut plan: Vec<(&Key, &Choice)> = g.iter().collect();
     plan.sort_by(|x, y| format!("{:?}", x.0).cmp(&format!("{:?}", y.0)));
@@ -1547,6 +1572,108 @@ fn main() {
                     ("tried", Value::from(ro.tried as i64)), ("seconds", Value::from(t0.elapsed().as_secs_f64()))]));
                 eprintln!("saved {out}");
             });
+        }
+        "policy_from" => {
+            // the plan --init played as it is to each of the turns --from (comma separated), then by the option model
+            // (--model) to the end: how good the model is at finishing the plan's game, against the plan's own finish
+            let model = civ6opt::learn::Trees::load(&arg(&args, "--model").expect("--model trees.json"));
+            let g = genome_arg(&p, arg(&args, "--init").as_deref());
+            let (mut pl, st0) = planner(&p);
+            pl.s.horizon = turn + ext;
+            println!("plan {:.1}", opt::play(&pl, &st0, &mut GenomeChooser { genome: &g }, horizon).0);
+            for from in arg(&args, "--from").expect("--from 0,20,40").split(',').map(|x| x.parse::<i64>().unwrap()) {
+                let mut ch = civ6opt::learn::PolicyChooser { genome: &g, model: &model, from, taken: HashMap::new() };
+                println!("model from T{} {:.1}", from + 1, opt::play(&pl, &st0, &mut ch, horizon).0);
+            }
+        }
+        "psearch" => {
+            // policy search with the option model (crate::learn, --model): a candidate changes one decision of the
+            // incumbent (turn <= --kick-to; half the time to the model's first option, else to any) and plays the
+            // decisions of later turns by the model (PolicyChooser), so the plan after the change is fitted to it;
+            // each round plays --threads candidates side by side and the best, if better, becomes the incumbent (every
+            // choice of its game). Saves at every improvement.
+            let minutes: f64 = arg(&args, "--minutes").map(|x| x.parse().unwrap()).unwrap_or(30.0);
+            let threads: usize = arg(&args, "--threads").map(|x| x.parse().unwrap()).unwrap_or(8);
+            let kick_to: i64 = arg(&args, "--kick-to").map(|x| x.parse().unwrap()).unwrap_or(turn);
+            let out = arg(&args, "--out").expect("--out plan.json");
+            let model = civ6opt::learn::Trees::load(&arg(&args, "--model").expect("--model trees.json"));
+            let mut g = genome_arg(&p, arg(&args, "--init").as_deref());
+            let (mut pl, st0) = planner(&p);
+            pl.s.horizon = turn + ext;
+            let describe = |g: &HashMap<Key, Choice>| {
+                let mut rec = Recorder { genome: g, log: vec![] };
+                let s = opt::play(&pl, &st0, &mut rec, horizon).0;
+                (s, rec.log.into_iter().filter(|d| d.0 <= kick_to && d.3.len() > 1).collect::<Vec<_>>())
+            };
+            let (mut best, mut log) = describe(&g);
+            eprintln!("start {best:.1}, {} decisions", log.len());
+            let t0 = Instant::now();
+            let deadline = t0 + std::time::Duration::from_secs_f64(minutes * 60.0);
+            let mut rng = opt::Rng::new(77 + seed);
+            let (mut rounds, mut played) = (0usize, 0usize);
+            let mut hist: Vec<Value> = vec![];
+            type Job = (usize, i64, HashMap<Key, Choice>);
+            let (job_tx, job_rx) = std::sync::mpsc::channel::<Job>();
+            let job_rx = std::sync::Arc::new(std::sync::Mutex::new(job_rx));
+            let (res_tx, res_rx) = std::sync::mpsc::channel::<(usize, f64, HashMap<Key, Choice>)>();
+            std::thread::scope(|sc| {
+                for _ in 0..threads {
+                    let (job_rx, res_tx, p, model) = (job_rx.clone(), res_tx.clone(), &p, &model);
+                    sc.spawn(move || {
+                        let (mut wpl, wst0) = planner(p);
+                        wpl.s.horizon = turn + ext;
+                        loop {
+                            let job = { job_rx.lock().unwrap().recv() };
+                            let Ok((id, from, cand)) = job else { break };
+                            let mut ch = civ6opt::learn::PolicyChooser { genome: &cand, model, from, taken: HashMap::new() };
+                            let s = opt::play(&wpl, &wst0, &mut ch, horizon).0;
+                            if res_tx.send((id, s, ch.taken)).is_err() {
+                                break;
+                            }
+                        }
+                    });
+                }
+                while Instant::now() < deadline {
+                    let mut descr = vec![];
+                    for id in 0..threads {
+                        let (t, key, ch, opts) = log[(rng.next_u64() % log.len() as u64) as usize].clone();
+                        let a = if rng.next_u64() % 2 == 0 {
+                            // the model's first option other than the plan's choice, at the decision's state
+                            model_first(&pl, &st0, &g, &model, &key, &ch).unwrap_or_else(|| opts.iter().find(|o| **o != ch).unwrap().clone())
+                        } else {
+                            let alts: Vec<&Choice> = opts.iter().filter(|o| **o != ch).collect();
+                            alts[(rng.next_u64() % alts.len() as u64) as usize].clone()
+                        };
+                        let mut cand = g.clone();
+                        cand.insert(key.clone(), a.clone());
+                        job_tx.send((id, t, cand)).unwrap();
+                        descr.push((t, key, ch, a));
+                    }
+                    let mut res: Vec<(usize, f64, HashMap<Key, Choice>)> = (0..threads).map(|_| res_rx.recv().unwrap()).collect();
+                    rounds += 1;
+                    played += threads;
+                    res.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
+                    let (id, s, taken) = res.swap_remove(0);
+                    if s > best + 1e-9 {
+                        let (t, key, ch, a) = &descr[id];
+                        let (replayed, nlog) = describe(&taken);
+                        if (replayed - s).abs() > 1e-6 {
+                            eprintln!("warning: the kept plan replays to {replayed:.3}, its play {s:.3}");
+                        }
+                        eprintln!("round {rounds} T{t} {} {} -> {}: {best:.1} -> {replayed:.1} ({:.0}s, {played} played)", key.kind.as_string(),
+                                  choice_json(ch), choice_json(a), t0.elapsed().as_secs_f64());
+                        g = taken;
+                        best = replayed;
+                        log = nlog;
+                        hist.push(Value::Arr(vec![Value::from(rounds as i64), Value::from(*t), Value::from(best), Value::from(t0.elapsed().as_secs_f64())]));
+                        save_plan(&out, turn, best, &g, vec![("history", Value::Arr(hist.clone()))]);
+                    }
+                }
+                drop(job_tx);
+            });
+            save_plan(&out, turn, best, &g, vec![("history", Value::Arr(hist))]);
+            println!("{}", Value::obj(vec![("best", Value::from(best)), ("rounds", Value::from(rounds as i64)), ("played", Value::from(played as i64)),
+                ("seconds", Value::from(t0.elapsed().as_secs_f64()))]));
         }
         "variants" => {
             // strategy variants of a plan: each decision of --kind (default settle) changed to each other option, the rest

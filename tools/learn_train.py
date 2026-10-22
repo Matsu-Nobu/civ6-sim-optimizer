@@ -65,6 +65,7 @@ def main():
     ap.add_argument("--rounds", type=int, default=400)
     ap.add_argument("--test")
     ap.add_argument("--threads", type=int, default=4)
+    ap.add_argument("--objective", choices=["regression", "rank"], default="regression")
     args = ap.parse_args()
     cols, rows = load(args.rows)
     numeric = cols[4:-2]
@@ -86,8 +87,26 @@ def main():
                   feature_fraction=0.9, bagging_fraction=0.8, bagging_freq=1, cat_smooth=10, num_threads=args.threads, verbose=-1)
     feats = ["kind", "name"] + numeric
 
+    if args.objective == "rank":
+        # the order of the options within a decision (lambdarank), from grades of the score change: far worse, worse,
+        # a little worse, as good as the plan's choice, better, far better
+        params.update(objective="lambdarank", lambdarank_truncation_level=3, eval_at=[3])
+        params.pop("alpha")
+        grade = np.digitize(y, [-1000.0, -100.0, -1e-9, 1e-9, 100.0])
+
     def fit(mask):
-        d = lgb.Dataset(x[mask], y[mask], feature_name=feats, categorical_feature=[0, 1], free_raw_data=False)
+        if args.objective == "rank":
+            # a decision's rows are consecutive in the files (civ6opt writes each decision's options together)
+            keys = group[mask]
+            sizes = [1]
+            for a, b in zip(keys, keys[1:]):
+                if a == b:
+                    sizes[-1] += 1
+                else:
+                    sizes.append(1)
+            d = lgb.Dataset(x[mask], grade[mask], group=sizes, feature_name=feats, categorical_feature=[0, 1], free_raw_data=False)
+        else:
+            d = lgb.Dataset(x[mask], y[mask], feature_name=feats, categorical_feature=[0, 1], free_raw_data=False)
         return lgb.train(params, d, num_boost_round=args.rounds)
 
     # each plan held out in turn: the model trained on the others picks among the sampled options of its decisions

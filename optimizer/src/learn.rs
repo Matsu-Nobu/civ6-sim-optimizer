@@ -7,24 +7,24 @@
 //! belongs to (when it belongs to one), and of the option (its cost, whether the base policy picks it).
 use crate::json::{self, Value};
 use crate::model::*;
-use crate::planner::Planner;
+use crate::planner::{Chooser, Planner};
 use crate::sym::Sym;
 
 /// The value of a number the decision does not have (a city's when it belongs to none): below every real one, so
 /// the trees need no rule for missing values.
 pub const MISSING: f64 = -999.0;
 
-pub const NUMERIC: [&str; 32 + N_OPTION] = [
+pub const NUMERIC: [&str; 35 + N_OPTION] = [
     "turn", "n", "n_options", "food", "production", "gold", "science", "culture", "faith", "pop", "cities", "districts",
     "buildings", "improvements", "invested", "food_store", "charges", "settlers", "traders", "builders", "techs", "civics",
     "gold_stock", "military", "city_pop", "city_food_store", "city_housing_left", "city_districts", "city_buildings",
-    "city_food", "city_production", "city_progress", "option_cost", "option_is_base", "option_turns", "target_pop",
+    "city_food", "city_production", "city_progress", "req_penalty", "req_research_left", "req_slack", "option_cost", "option_is_base", "option_turns", "target_pop",
     "target_housing_left", "target_food", "target_production", "tile_food", "tile_production", "tile_worked",
-    "tile_resource", "tile_improved",
+    "tile_resource", "tile_improved", "option_on_req_path", "option_reward",
 ];
 
 /// The number of an option's own features (option_features).
-pub const N_OPTION: usize = 12;
+pub const N_OPTION: usize = 14;
 
 /// A name for the option the trees split on: the item, the builder's action and its improvement, ...
 pub fn option_name(c: &Choice) -> String {
@@ -82,13 +82,28 @@ pub fn decision_features(p: &Planner, st: &State, key: &Key, options: &[Choice],
         }
         None => f.extend_from_slice(&[MISSING; 8]),
     }
+    f.extend_from_slice(&requirement_numbers(p, st, v[21], v[4]));
     f
+}
+
+/// What the score asks for (Planner::milestones): its penalty at the state (value::features' shortfall), the research
+/// still needed for the required techs and civics (their paths' costs not done, less progress), and the turns that
+/// research takes at the current science less the turns left to the evaluation (> 0: late at this pace).
+fn requirement_numbers(p: &Planner, st: &State, penalty: f64, science: f64) -> [f64; 3] {
+    let Some(m) = p.milestones.as_ref() else { return [0.0; 3] };
+    let left: f64 = m.paths.iter().flat_map(|(_, path)| path.iter())
+        .filter(|(x, _)| !st.acc.techs.contains(x) && !st.acc.civics.contains(x))
+        .map(|(x, c)| (c - st.acc.tech_progress.get(x).or(st.acc.civic_progress.get(x)).copied().unwrap_or(0.0)).max(0.0)).sum();
+    let turns_left = (p.s.horizon - st.turn + 1) as f64;
+    [penalty, left, left / science.max(1.0) - turns_left]
 }
 
 /// The numbers of one option (appended to the decision's): its cost and whether the base policy (`base`,
 /// Planner::base) picks it; the turns it takes the city to make it; the city it acts on (a builder's, a purchase's,
 /// a governor's, a route's destination; else the decision's city); the tile it acts on (a builder's, a bought one, a
-/// new city's site): its yields before the action, whether a citizen works it, has a resource, an improvement.
+/// new city's site): its yields before the action, whether a citizen works it, has a resource, an improvement;
+/// whether it is a required tech or civic or one on the way to it, and the points the score gives for one (a rewarded
+/// unit).
 pub fn option_features(p: &Planner, st: &State, key: &Key, base: Option<&Choice>, c: &Choice, eng: &crate::engine::Engine) -> [f64; N_OPTION] {
     let cost = option_cost(p, c);
     let target = match c {
@@ -113,7 +128,16 @@ pub fn option_features(p: &Planner, st: &State, key: &Key, base: Option<&Choice>
         }
         None => [MISSING; 5],
     };
-    [cost, (base == Some(c)) as i64 as f64, turns, city[0], city[1], city[2], city[3], tile[0], tile[1], tile[2], tile[3], tile[4]]
+    let item = match c {
+        Choice::S(x) | Choice::BuyItem(_, x, _, _) => Some(*x),
+        _ => None,
+    };
+    let (on_path, reward) = match (item, p.milestones.as_ref()) {
+        (Some(x), Some(m)) => (m.paths.iter().any(|(_, path)| path.iter().any(|(y, _)| *y == x)) as i64 as f64,
+                               m.reward.iter().filter(|(what, _)| *what == x.as_string()).map(|(_, pts)| *pts).sum::<f64>()),
+        _ => (0.0, 0.0),
+    };
+    [cost, (base == Some(c)) as i64 as f64, turns, city[0], city[1], city[2], city[3], tile[0], tile[1], tile[2], tile[3], tile[4], on_path, reward]
 }
 
 /// Gradient boosted regression trees, as tools/learn_train.py writes them.
@@ -193,5 +217,31 @@ impl Tree {
                 return self.leaves[!i as usize];
             }
         }
+    }
+}
+
+/// Plays the plan's choices up to turn `from` and the model's from the next turn on: at each decision with options,
+/// the option the trees rank first. Keeps every choice it makes in `taken`, which plays the same game as a plan.
+pub struct PolicyChooser<'g> {
+    pub genome: &'g std::collections::HashMap<Key, Choice>,
+    pub model: &'g Trees,
+    pub from: i64,
+    pub taken: std::collections::HashMap<Key, Choice>,
+}
+
+impl Chooser for PolicyChooser<'_> {
+    fn choose(&mut self, p: &Planner, st: &State, key: &Key, options: &[Choice]) -> Option<Choice> {
+        let c = if st.turn <= self.from || options.len() < 2 {
+            crate::opt::GenomeChooser { genome: self.genome }.choose(p, st, key, options)?
+        } else {
+            let eng = p.engine(&p.player_env(st), &st.cities);
+            let base = p.base(st, key, options);
+            let d = decision_features(p, st, key, options, &eng);
+            let scores: Vec<f64> = options.iter().map(|o| self.model.predict(&d, key.kind, o, &option_features(p, st, key, base.as_ref(), o, &eng))).collect();
+            let best = (0..options.len()).fold(0, |b, j| if scores[j] > scores[b] { j } else { b });
+            options[best].clone()
+        };
+        self.taken.insert(key.clone(), c.clone());
+        Some(c)
     }
 }

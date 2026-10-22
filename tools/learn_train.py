@@ -56,13 +56,13 @@ def main():
 
     # each plan held out in turn: the model trained on the others picks among the sampled options of its decisions
     print(f"{len(rows)} rows, {len(set(group))} decisions, {len(set(plan))} plans")
-    print("held out | decisions | kept is best | model's pick is best | mean gain: model | best | base policy")
+    print("held out | decisions | kept is best | model's pick is best | pairs ordered right: model, base policy | mean gain: model | best | base policy")
     for hp in sorted(set(plan)) if len(set(plan)) > 1 else []:
         m = fit(plan != hp)
         test = plan == hp
         pred = m.predict(x[test])
         g, yt, ch, base = group[test], y[test], chosen[test], x[test][:, feats.index("option_is_base")]
-        n = kept_best = model_best = 0
+        n = kept_best = model_best = pairs = pairs_model = pairs_base = 0
         gain_model = gain_best = gain_base = 0.0
         for d in np.unique(g):
             i = np.where(g == d)[0]
@@ -73,9 +73,16 @@ def main():
             model_best += yt[j] >= best
             gain_model += yt[j]
             gain_best += best
+            # pairs of options whose scores differ by more than the noise of the huber loss's alpha
+            for a in i:
+                for c in i:
+                    if yt[a] > yt[c] + 50:
+                        pairs += 1
+                        pairs_model += pred[a] > pred[c]
+                        pairs_base += base[a] > base[c]
             b = i[base[i] == 1]
             gain_base += yt[b[0]] if len(b) else 0.0
-        print(f"{hp:8} | {n:9} | {kept_best / n:12.2f} | {model_best / n:20.2f} | {gain_model / n:7.1f} | {gain_best / n:5.1f} | {gain_base / n:6.1f}")
+        print(f"{hp:8} | {n:9} | {kept_best / n:12.2f} | {model_best / n:20.2f} | {pairs_model / max(pairs, 1):18.2f}, {pairs_base / max(pairs, 1):.2f} | {gain_model / n:7.1f} | {gain_best / n:5.1f} | {gain_base / n:6.1f}")
     m = fit(np.ones(len(rows), bool))
     imp = sorted(zip(m.feature_importance("gain"), feats), reverse=True)[:12]
     print("gain by feature:", ", ".join(f"{f} {v:.0f}" for v, f in imp))

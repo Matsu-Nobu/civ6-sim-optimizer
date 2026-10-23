@@ -357,6 +357,12 @@ pub struct State {
     pub log: Vec<(Key, i64, Option<Choice>)>,
     pub counters: OMap<(Sym, Ent), i64>,
     pub builder_counter: i64,
+    /// stable builder ids given so far, by their base (Planner: turn ready and place made)
+    pub builder_bases: OMap<i64, i64>,
+    /// (old id, stable id) of every builder, and the city of every settler's settle decision, in order: what
+    /// `civ6opt convert_ids` rewrites a plan of the old numbering with
+    pub builder_ids: Vec<(i64, i64)>,
+    pub settle_origins: Vec<Sym>,
     pub settler_counter: i64,
     pub bought: Vec<(Sym, Sym)>,
     pub tiles_bought: i64,
@@ -591,6 +597,9 @@ pub fn state_from(v: &Value) -> State {
         log: vec![],
         counters: OMap::new(),
         builder_counter: 0,
+        builder_bases: OMap::default(),
+        builder_ids: vec![],
+        settle_origins: vec![],
         settler_counter: 0,
         bought: vec![],
         tiles_bought: 0,
@@ -696,6 +705,9 @@ pub fn state_from_row(d: &Value) -> State {
         log: vec![],
         counters: OMap::new(),
         builder_counter: 0,
+        builder_bases: OMap::default(),
+        builder_ids: vec![],
+        settle_origins: vec![],
         settler_counter: 0,
         bought: vec![],
         tiles_bought: 0,

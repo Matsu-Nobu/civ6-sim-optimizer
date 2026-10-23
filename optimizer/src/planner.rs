@@ -30,6 +30,10 @@ pub struct NearMaps {
     imp: HashMap<XY, Option<Sym>>,
 }
 
+/// Set by `--legacy-ids`: builders numbered in the order they are made and settlers' sites in one sequence, as
+/// plans made before the stable numbering have them (`civ6opt convert_ids` rewrites such plans).
+pub static LEGACY_IDS: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
 pub trait Chooser {
     fn choose(&mut self, p: &Planner, st: &State, key: &Key, options: &[Choice]) -> Option<Choice>;
 }
@@ -2162,8 +2166,17 @@ impl<'a> Planner<'a> {
         let mut bi = 0;
         while bi < st.builders.len() {
             if st.builders[bi].id.is_none() {
+                // a builder's id comes from the turn it can act and where it was made (a city center, a new city's
+                // site), not from how many builders came before it: a plan that makes one more builder keeps the
+                // ids, and so the planned actions, of the others
                 st.builder_counter += 1;
-                st.builders[bi].id = Some(st.builder_counter);
+                let b = &st.builders[bi];
+                let base = b.ready * 1_000_000 + b.at.0 as i64 * 1000 + b.at.1 as i64;
+                let k = st.builder_bases.get(&base).copied().unwrap_or(0);
+                st.builder_bases.insert(base, k + 1);
+                let stable = base * 10 + k;
+                st.builder_ids.push((st.builder_counter, stable));
+                st.builders[bi].id = Some(if LEGACY_IDS.load(std::sync::atomic::Ordering::Relaxed) { st.builder_counter } else { stable });
             }
             if st.builders[bi].ready > t_now {
                 bi += 1;
@@ -2588,7 +2601,10 @@ impl<'a> Planner<'a> {
             } else if item == s!("UNIT_SETTLER") {
                 let origin = st.cities[ci].center;
                 let opts = self.settle_sites(st, origin);
-                let target = self.decide(st, "settle", Ent::S(Sym(0)), opts, ch);
+                // a settler's site is numbered per city that made it, so one more settler elsewhere keeps the others'
+                st.settle_origins.push(name);
+                let ent = if LEGACY_IDS.load(std::sync::atomic::Ordering::Relaxed) { Ent::S(Sym(0)) } else { Ent::S(name) };
+                let target = self.decide(st, "settle", ent, opts, ch);
                 let target = match target { Some(Choice::Xy(x, y)) => Some((x, y)), _ => None };
                 let mut label = target.and_then(|t| self.s.site_names.iter().find(|(xy, _)| *xy == t).map(|(_, n)| *n));
                 if let Some(l) = label {

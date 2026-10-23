@@ -459,6 +459,9 @@ fn setup_milestones(p: &Problem, args: &[String], turn: i64) {
         }).collect();
         let _ = civ6opt::strategic::GIFTS.set(gifts);
     }
+    if args.iter().any(|a| a == "--legacy-ids") {
+        civ6opt::planner::LEGACY_IDS.store(true, std::sync::atomic::Ordering::Relaxed);
+    }
     if args.iter().any(|a| a == "--ally-supply") {
         opt::ALLY_SUPPLY.store(true, std::sync::atomic::Ordering::Relaxed);
     }
@@ -1622,6 +1625,39 @@ fn main() {
                     save_plan(&format!("{dir}/from_T{}.json", from + 1), turn, s, &ch.taken, vec![]);
                 }
             }
+        }
+        "convert_ids" => {
+            // rewrites a plan of the old numbering (--init; builders in the order made, settlers' sites in one
+            // sequence) to the stable one (crate::planner::LEGACY_IDS): plays it the old way, pairs each old id with
+            // its stable one, and saves the plan with stable keys to --out (which plays the same game)
+            civ6opt::planner::LEGACY_IDS.store(true, std::sync::atomic::Ordering::Relaxed);
+            let out = arg(&args, "--out").expect("--out plan.json");
+            let g = genome_arg(&p, arg(&args, "--init").as_deref());
+            let (mut pl, st0) = planner(&p);
+            pl.s.horizon = turn + ext;
+            let (old_score, _, end) = opt::play(&pl, &st0, &mut GenomeChooser { genome: &g }, horizon);
+            let builders: HashMap<i64, i64> = end.builder_ids.iter().copied().collect();
+            let mut per_city: HashMap<Sym, i64> = HashMap::new();
+            let settles: Vec<(Sym, i64)> = end.settle_origins.iter().map(|c| { let n = per_city.entry(*c).or_insert(0); *n += 1; (*c, *n - 1) }).collect();
+            let mut g2: HashMap<Key, Choice> = HashMap::new();
+            for (k, c) in &g {
+                let k2 = match (k.kind.as_string().as_str(), &k.ent) {
+                    ("builder", Ent::I(old)) => match builders.get(old) {
+                        Some(new) => Key { kind: k.kind, ent: Ent::I(*new), n: k.n },
+                        None => continue,
+                    },
+                    ("settle", _) => match settles.get(k.n as usize) {
+                        Some((city, n)) => Key { kind: k.kind, ent: Ent::S(*city), n: *n },
+                        None => continue,
+                    },
+                    _ => k.clone(),
+                };
+                g2.insert(k2, c.clone());
+            }
+            civ6opt::planner::LEGACY_IDS.store(false, std::sync::atomic::Ordering::Relaxed);
+            let (new_score, _, _) = opt::play(&pl, &st0, &mut GenomeChooser { genome: &g2 }, horizon);
+            eprintln!("old numbering {old_score:.3}, stable numbering {new_score:.3}");
+            save_plan(&out, turn, new_score, &g2, vec![]);
         }
         "online" => {
             // decides the game as it is played, with no plan: at each decision with options, each of the --top options

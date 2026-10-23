@@ -17,7 +17,8 @@ for round in $(seq 1 $3); do
   # the listed decisions are numbered in this game, which scores at least as the guide (ties may take another
   # option of the same score): it becomes the best the kicks follow
   best=$D/near_base$round.json
-  grep '^near ' $D/near_base$round.err | sort -k3 -g | head -40 > $D/near_list$round.txt
+  # a near miss of the same score (a citizen focus that changes nothing, ...) plays the same game: left out
+  grep '^near ' $D/near_base$round.err | awk '$3 > 0.5' | sort -k3 -g | head -40 > $D/near_list$round.txt
   echo "round $round $(date +%H:%M) best $(score $best), $(wc -l < $D/near_list$round.txt) near misses" >> $D/near_kicks.log
   improved=0
   while read -r _ n gap choice; do

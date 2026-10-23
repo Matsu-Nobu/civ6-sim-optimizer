@@ -1770,6 +1770,7 @@ impl<'a> Planner<'a> {
 
     // ---------------------------------------------------------------- the turn
     pub fn advance(&self, st: &mut State, ch: &mut dyn Chooser) {
+        let _g = crate::prof::start(17);
         self.advance_turn(st, ch);
         st.debt += (-st.acc.gold).max(0.0);
         let e = self.eng(st);
@@ -1777,6 +1778,7 @@ impl<'a> Planner<'a> {
     }
 
     fn advance_turn(&self, st: &mut State, ch: &mut dyn Chooser) {
+        let mut lap = std::time::Instant::now();
         crate::value::turn_start(st);
         // (on a plot no city owns yet, the improvement waits for the plot: the record acquires a plot and improves it
         // in one turn, and the replay acquires recorded plots after the builders)
@@ -2044,6 +2046,7 @@ impl<'a> Planner<'a> {
                 }
             }
         }
+        crate::prof::lap(&mut lap, 18);
         // citizens
         for ci in 0..st.cities.len() {
             let n = st.cities[ci].name;
@@ -2056,6 +2059,7 @@ impl<'a> Planner<'a> {
             st.cities[ci].population = pop;
             self.assign(st, ci, &env);
         }
+        crate::prof::lap(&mut lap, 19);
         // production before the builders: a chop goes into the item the city works on
         // a wonder another civilization finished first
         let taken = self.sc.wonders_taken(t_now).clone();
@@ -2127,6 +2131,7 @@ impl<'a> Planner<'a> {
                 }
             }
         }
+        crate::prof::lap(&mut lap, 20);
         // production choices
         for ci in 0..st.cities.len() {
             if st.cities[ci].current.is_some() || idle.contains(&st.cities[ci].name) {
@@ -2162,6 +2167,7 @@ impl<'a> Planner<'a> {
             }
             st.cities[ci].current = item;
         }
+        crate::prof::lap(&mut lap, 21);
         // builders
         let mut bi = 0;
         while bi < st.builders.len() {
@@ -2186,7 +2192,7 @@ impl<'a> Planner<'a> {
                 p
             } else {
                 // a builder that chose to wait decides again once something it could use changes
-                let mark = self.idle_mark(st);
+                let mark = { let _g = crate::prof::start(28); self.idle_mark(st) };
                 // (a replay follows the record's actions, whose turns do not depend on such changes)
                 if self.rec.is_none() && self.tiles_rec.is_none() && st.builders[bi].idle.as_ref() == Some(&mark) {
                     bi += 1;
@@ -2196,7 +2202,7 @@ impl<'a> Planner<'a> {
                 let opts = self.builder_options(st, &env, st.builders[bi].at);
                 // a builder's decisions are numbered per builder (one builder's change does not shift the others')
                 let bid = st.builders[bi].id.unwrap_or(0);
-                let act = self.decide(st, "builder", Ent::I(bid), opts, ch);
+                let act = { let _g = crate::prof::start(29); self.decide(st, "builder", Ent::I(bid), opts, ch) };
                 if act.is_none() || act == Some(Choice::Wait) {
                     st.builders[bi].idle = Some(mark);
                     bi += 1;
@@ -2205,7 +2211,7 @@ impl<'a> Planner<'a> {
                 let act = act.unwrap();
                 let Choice::Act(_, _, x, y, _) = act else { bi += 1; continue };
                 // replay: the recorded builder did it on that turn (its walk is not in the saves)
-                let k = if self.rec.is_some() || self.tiles_rec.is_some() { Some(0) } else { self.travel(st, st.builders[bi].at, (x, y), "UNIT_BUILDER") };
+                let k = if self.rec.is_some() || self.tiles_rec.is_some() { Some(0) } else { let _g = crate::prof::start(30); self.travel(st, st.builders[bi].at, (x, y), "UNIT_BUILDER") };
                 let Some(k) = k else { bi += 1; continue };
                 if k > 0 {
                     st.builders[bi].ready = t_now + k;
@@ -2269,6 +2275,7 @@ impl<'a> Planner<'a> {
                 st.cities[ci].owned[pi].feature = Some(what);
             } else {
                 let p = st.cities[ci].owned[pi].clone();
+                let _g = crate::prof::start(31);
                 let ys = self.harvest_yields(&self.eng(st), &p, st, Some(cname)).into_iter().find(|(k, _)| *k == what).map(|(_, y)| y);
                 let Some(ys) = ys else { bi += 1; continue };
                 if what == s!("feature") {
@@ -2292,10 +2299,12 @@ impl<'a> Planner<'a> {
         }
         st.builders.retain(|b| b.charges > 0);
         if !st.builders.is_empty() {
+            let _g = crate::prof::start(32);
             for ci in 0..st.cities.len() {
                 self.assign(st, ci, &env);
             }
         }
+        crate::prof::lap(&mut lap, 22);
         // purchase: as many as the player chooses in a turn (each item once per city), the options offered again
         // after each (gold, faith and tile prices change)
         let mut bought_now: Vec<(Sym, Sym)> = vec![];
@@ -2348,6 +2357,7 @@ impl<'a> Planner<'a> {
                 _ => break,
             }
         }
+        crate::prof::lap(&mut lap, 23);
         // routes that ran their course
         st.traders.retain(|t| !(t.lost && t.until.map(|u| t_now >= u).unwrap_or(false)));
         for i in 0..st.traders.len() {
@@ -2398,6 +2408,7 @@ impl<'a> Planner<'a> {
                 self.boost_cheapest(st, self.sc.game_era(t_now + 1), false);
             }
         }
+        crate::prof::lap(&mut lap, 24);
         // the turn itself
         // a recorded boost of turn t comes once the plan has built as many scouts as the record had built by t (gifted
         // scouts not counted on either side; on t, or later when the plan.s scouting lags)
@@ -2662,6 +2673,7 @@ impl<'a> Planner<'a> {
                 _ => {}
             }
         }
+        crate::prof::lap(&mut lap, 25);
         self.great_people(st, ch);
         self.rome_free_buildings(st);
         // replay: buildings and districts the next save shows done are done (bought, rushed, or finished on a
@@ -2706,6 +2718,7 @@ impl<'a> Planner<'a> {
                 }
             }
         }
+        crate::prof::lap(&mut lap, 26);
         // borders
         let mut owned_all: HashSet<XY> = st.cities.iter().flat_map(|c| c.owned.iter().map(|p| p.xy())).collect();
         for ci in 0..st.cities.len() {
@@ -2755,6 +2768,7 @@ impl<'a> Planner<'a> {
         if let Some(m) = self.milestones.as_ref() {
             m.record(st);
         }
+        crate::prof::lap(&mut lap, 27);
     }
 }
 

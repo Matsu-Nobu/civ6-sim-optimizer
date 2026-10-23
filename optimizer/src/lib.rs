@@ -47,8 +47,11 @@ pub mod envcfg {
 /// Coarse timers for profiling (CIV6OPT_PROFILE=1 prints them after a run).
 pub mod prof {
     use std::sync::atomic::{AtomicU64, Ordering};
-    pub static T: [AtomicU64; 14] = [const { AtomicU64::new(0) }; 14];
-    pub const NAMES: [&str; 14] = ["engine_new", "city_yields", "assign", "buildable", "builder_opts", "step", "amenity", "settle_sites", "route_opts", "site_possible", "grants", "other", "engine_key", "player_env"];
+    pub static T: [AtomicU64; 33] = [const { AtomicU64::new(0) }; 33];
+    pub const NAMES: [&str; 33] = ["engine_new", "city_yields", "assign", "buildable", "builder_opts", "step", "amenity", "settle_sites", "route_opts", "site_possible", "grants", "other", "engine_key", "player_env",
+        "learn_decision", "learn_option", "learn_predict", "advance",
+        "turn_start", "turn_citizens", "turn_chops", "turn_prod_choice", "turn_builders", "turn_purchase", "turn_routes", "turn_step", "turn_end", "turn_borders",
+        "b_idle_mark", "b_decide", "b_travel", "b_apply", "b_reassign"];
     pub struct Guard(usize, std::time::Instant);
     pub fn start(i: usize) -> Guard {
         Guard(i, std::time::Instant::now())
@@ -57,6 +60,12 @@ pub mod prof {
         fn drop(&mut self) {
             T[self.0].fetch_add(self.1.elapsed().as_nanos() as u64, Ordering::Relaxed);
         }
+    }
+    /// Adds the time since `t` to timer `i` and restarts `t` (the sections of one long function in turn).
+    pub fn lap(t: &mut std::time::Instant, i: usize) {
+        let now = std::time::Instant::now();
+        T[i].fetch_add((now - *t).as_nanos() as u64, Ordering::Relaxed);
+        *t = now;
     }
     pub fn report() -> String {
         NAMES.iter().enumerate().map(|(i, n)| format!("{n} {:.3}s", T[i].load(Ordering::Relaxed) as f64 / 1e9)).collect::<Vec<_>>().join(", ")

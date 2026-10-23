@@ -1620,11 +1620,238 @@ fn main() {
                 let mut ch = civ6opt::learn::PolicyChooser { genome: &g, model: &model, research: research.as_ref(), slack, from, to: from + span, taken: HashMap::new() };
                 let s = opt::play(&pl, &st0, &mut ch, horizon).0;
                 println!("model from T{} {s:.1}", from + 1);
+                if std::env::var("CIV6OPT_PROFILE").is_ok() {
+                    eprintln!("{}", civ6opt::prof::report());
+                }
                 // --out dir: each game's choices as a plan, for a look at what the model chose
                 if let Some(dir) = arg(&args, "--out") {
                     save_plan(&format!("{dir}/from_T{}.json", from + 1), turn, s, &ch.taken, vec![]);
                 }
             }
+        }
+        "mcts" => {
+            // Monte Carlo tree search at every decision of the game as it is played (no plan): the decision and the
+            // next --depth decisions form a tree; a simulation picks a path of choices (PUCT: the model's ranking as
+            // the prior, the best score found below a choice as its value; the simulator is deterministic, so a
+            // path's play is its exact value), plays the game to the end with them (later decisions: the guide's
+            // choice where it can be taken, else the model's), and learns from the play which decision comes next and
+            // its options. --sims simulations per decision, --threads at a time. The decision takes the first choice
+            // of the best path found; the path's later choices guide the next decisions, and they are always tried
+            // there, so the best play found never gets worse (checked at the end, as online does).
+            let sims: usize = arg(&args, "--sims").map(|x| x.parse().unwrap()).unwrap_or(48);
+            let depth: usize = arg(&args, "--depth").map(|x| x.parse().unwrap()).unwrap_or(3);
+            let top: usize = arg(&args, "--top").map(|x| x.parse().unwrap()).unwrap_or(8);
+            let threads: usize = arg(&args, "--threads").map(|x| x.parse().unwrap()).unwrap_or(16);
+            let cpuct: f64 = arg(&args, "--cpuct").map(|x| x.parse().unwrap()).unwrap_or(1.0);
+            let scale: f64 = arg(&args, "--scale").map(|x| x.parse().unwrap()).unwrap_or(300.0);
+            let out = arg(&args, "--out").expect("--out plan.json");
+            let guide: HashMap<Key, Choice> = arg(&args, "--guide").map(|x| genome_arg(&p, Some(&x))).unwrap_or_default();
+            let model = civ6opt::learn::FALLBACK.get().expect("--fallback-model trees.json");
+            let (mut pl, st0) = planner(&p);
+            pl.s.horizon = turn + ext;
+            let t0 = Instant::now();
+
+            // a play to the end, which also reports the first decision with options after `after`
+            type Next = Option<(Key, Vec<(Choice, f64)>)>;
+            type Job = (usize, State, f64, HashMap<Key, Choice>, Option<Key>);
+            struct Probe<'g> { genome: &'g HashMap<Key, Choice>, model: &'g civ6opt::learn::Trees, after: Option<Key>, passed: bool, next: Next }
+            impl civ6opt::planner::Chooser for Probe<'_> {
+                fn choose(&mut self, p: &Planner, st: &State, key: &Key, options: &[Choice]) -> Option<Choice> {
+                    if self.passed && self.next.is_none() && options.len() > 1 {
+                        self.next = Some((key.clone(), ranked(self.model, p, st, key, options)));
+                    }
+                    if self.after.as_ref() == Some(key) {
+                        self.passed = true;
+                    }
+                    GenomeChooser { genome: self.genome }.choose(p, st, key, options)
+                }
+            }
+            fn ranked(model: &civ6opt::learn::Trees, p: &Planner, st: &State, key: &Key, options: &[Choice]) -> Vec<(Choice, f64)> {
+                let eng = p.engine(&p.player_env(st), &st.cities);
+                let base = p.base(st, key, options);
+                let d = civ6opt::learn::decision_features(p, st, key, options, &eng);
+                let mut v: Vec<(Choice, f64)> = options.iter()
+                    .map(|o| (o.clone(), model.predict(&d, key.kind, o, &civ6opt::learn::option_features(p, st, key, base.as_ref(), o, &eng)))).collect();
+                v.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
+                v
+            }
+            /// The model's scores of the options as priors that sum to 1 (softmax over the `top` first, plus `keep`).
+            fn priors(r: &[(Choice, f64)], top: usize, keep: Option<&Choice>) -> Vec<(Choice, f64)> {
+                let mut v: Vec<(Choice, f64)> = r.iter().take(top).cloned().collect();
+                if let Some(k) = keep {
+                    if !v.iter().any(|x| x.0 == *k) {
+                        if let Some(x) = r.iter().find(|x| x.0 == *k) {
+                            v.push(x.clone());
+                        }
+                    }
+                }
+                let m = v.iter().map(|x| x.1).fold(f64::MIN, f64::max);
+                let z: f64 = v.iter().map(|x| (x.1 - m).exp()).sum();
+                v.into_iter().map(|(c, s)| (c, (s - m).exp() / z)).collect()
+            }
+            struct Child { choice: Choice, prior: f64, n: usize, inflight: usize, best: f64, node: Option<usize> }
+            struct Node { key: Key, children: Vec<Child> }
+
+            let (job_tx, job_rx) = std::sync::mpsc::channel::<Job>();
+            let job_rx = std::sync::Arc::new(std::sync::Mutex::new(job_rx));
+            let (res_tx, res_rx) = std::sync::mpsc::channel::<(usize, f64, Next)>();
+            std::thread::scope(|sc| {
+                for _ in 0..threads {
+                    let (job_rx, res_tx, p) = (job_rx.clone(), res_tx.clone(), &p);
+                    sc.spawn(move || {
+                        let (mut wpl, wst0) = planner(p);
+                        wpl.s.horizon = turn + ext;
+                        loop {
+                            let job = { job_rx.lock().unwrap().recv() };
+                            let Ok((id, start, prefix, g, after)) = job else { break };
+                            let mut probe = Probe { genome: &g, model, after, passed: false, next: None };
+                            let sc = opt::play_from(&wpl, &wst0, &start, prefix, &mut probe, horizon);
+                            if res_tx.send((id, sc, probe.next)).is_err() {
+                                break;
+                            }
+                        }
+                    });
+                }
+                struct Mcts<'a> {
+                    model: &'a civ6opt::learn::Trees,
+                    guide: &'a HashMap<Key, Choice>,
+                    taken: HashMap<Key, Choice>,
+                    /// the later choices of the best path found at the last decision
+                    pending: HashMap<Key, Choice>,
+                    snap: State,
+                    prefix: f64,
+                    sims: usize, depth: usize, top: usize, threads: usize, cpuct: f64, scale: f64,
+                    job_tx: std::sync::mpsc::Sender<Job>,
+                    res_rx: std::sync::mpsc::Receiver<(usize, f64, Next)>,
+                    played: usize,
+                    last: f64,
+                    falls: Vec<(i64, f64, f64)>,
+                    turn: i64,
+                    t0: Instant,
+                }
+                impl civ6opt::planner::Chooser for Mcts<'_> {
+                    fn choose(&mut self, p: &Planner, st: &State, key: &Key, options: &[Choice]) -> Option<Choice> {
+                        if options.len() < 2 {
+                            let c = options.first().cloned()?;
+                            self.taken.insert(key.clone(), c.clone());
+                            return Some(c);
+                        }
+                        // the genome every play starts from: the guide, then the best path's later choices, then the
+                        // choices made
+                        let mut base = self.guide.clone();
+                        base.extend(self.pending.iter().map(|(k, c)| (k.clone(), c.clone())));
+                        base.extend(self.taken.iter().map(|(k, c)| (k.clone(), c.clone())));
+                        let keep = base.get(key).filter(|c| options.contains(c)).cloned();
+                        let mut nodes = vec![Node { key: key.clone(), children: priors(&ranked(self.model, p, st, key, options), self.top, keep.as_ref()).into_iter()
+                            .map(|(c, pr)| Child { choice: c, prior: pr, n: 0, inflight: 0, best: f64::MIN, node: None }).collect() }];
+                        // the guide's (or the last best path's) choice is played first: the best never falls below it
+                        if let Some(k) = &keep {
+                            let i = nodes[0].children.iter().position(|c| c.choice == *k).unwrap();
+                            nodes[0].children.swap(0, i);
+                        }
+                        let mut best: (f64, Vec<(Key, Choice)>) = (f64::MIN, vec![]);
+                        let mut done = 0;
+                        while done < self.sims {
+                            let batch = self.threads.min(self.sims - done);
+                            let mut paths: Vec<Vec<(usize, usize)>> = vec![];
+                            for _ in 0..batch {
+                                let mut path = vec![];
+                                let mut ni = 0;
+                                loop {
+                                    let node = &nodes[ni];
+                                    let total: usize = node.children.iter().map(|c| c.n + c.inflight).sum();
+                                    let top_best = node.children.iter().map(|c| c.best).fold(f64::MIN, f64::max);
+                                    // unplayed choices first (by prior; the kept choice is first), then PUCT
+                                    let ci = match (0..node.children.len()).find(|&i| node.children[i].n + node.children[i].inflight == 0) {
+                                        Some(i) => i,
+                                        None => (0..node.children.len()).max_by(|&a, &b| {
+                                            let u = |c: &Child| (if c.n > 0 { (c.best - top_best) / self.scale } else { 0.0 })
+                                                + self.cpuct * c.prior * ((total + 1) as f64).sqrt() / (1 + c.n + c.inflight) as f64;
+                                            u(&node.children[a]).partial_cmp(&u(&node.children[b])).unwrap()
+                                        }).unwrap(),
+                                    };
+                                    path.push((ni, ci));
+                                    nodes[ni].children[ci].inflight += 1;
+                                    match nodes[ni].children[ci].node {
+                                        Some(next) if path.len() < self.depth && nodes[ni].children[ci].n > 0 => ni = next,
+                                        _ => break,
+                                    }
+                                }
+                                paths.push(path);
+                            }
+                            for (j, path) in paths.iter().enumerate() {
+                                let mut g = base.clone();
+                                for (ni, ci) in path {
+                                    g.insert(nodes[*ni].key.clone(), nodes[*ni].children[*ci].choice.clone());
+                                }
+                                let after = path.last().map(|(ni, _)| nodes[*ni].key.clone());
+                                self.job_tx.send((j, self.snap.clone(), self.prefix, g, after)).unwrap();
+                            }
+                            let mut results: Vec<Option<(f64, Next)>> = (0..paths.len()).map(|_| None).collect();
+                            for _ in 0..paths.len() {
+                                let (j, sc, next) = self.res_rx.recv().unwrap();
+                                results[j] = Some((sc, next));
+                            }
+                            for (path, res) in paths.iter().zip(results) {
+                                let (sc, next) = res.unwrap();
+                                for (ni, ci) in path {
+                                    let c = &mut nodes[*ni].children[*ci];
+                                    c.inflight -= 1;
+                                    c.n += 1;
+                                    c.best = c.best.max(sc);
+                                }
+                                let (lni, lci) = *path.last().unwrap();
+                                if nodes[lni].children[lci].node.is_none() && path.len() < self.depth {
+                                    if let Some((nk, opts)) = next {
+                                        let keep = base.get(&nk).filter(|c| opts.iter().any(|o| o.0 == **c)).cloned();
+                                        let children = priors(&opts, self.top, keep.as_ref()).into_iter()
+                                            .map(|(c, pr)| Child { choice: c, prior: pr, n: 0, inflight: 0, best: f64::MIN, node: None }).collect();
+                                        nodes.push(Node { key: nk, children });
+                                        let id = nodes.len() - 1;
+                                        nodes[lni].children[lci].node = Some(id);
+                                    }
+                                }
+                                if sc > best.0 {
+                                    best = (sc, path.iter().map(|(ni, ci)| (nodes[*ni].key.clone(), nodes[*ni].children[*ci].choice.clone())).collect());
+                                }
+                            }
+                            done += batch;
+                        }
+                        self.played += done;
+                        if best.0 < self.last - 1e-6 {
+                            self.falls.push((st.turn, self.last, best.0));
+                        }
+                        self.last = best.0;
+                        if st.turn != self.turn {
+                            self.turn = st.turn;
+                            eprintln!("T{} best play {:.1} ({} plays, {} nodes at this decision, {:.0}s)", st.turn, best.0, self.played, nodes.len(), self.t0.elapsed().as_secs_f64());
+                        }
+                        let c = best.1[0].1.clone();
+                        // the best play's genome was the guide, the earlier pending choices, the choices made and the path:
+                        // keep them all, so the next decision can play it again
+                        self.pending.remove(key);
+                        self.pending.extend(best.1[1..].iter().cloned());
+                        self.taken.insert(key.clone(), c.clone());
+                        Some(c)
+                    }
+                }
+                let mut m = Mcts { model, guide: &guide, taken: HashMap::new(), pending: HashMap::new(), snap: st0.clone(), prefix: 0.0, sims, depth, top, threads, cpuct, scale,
+                                   job_tx, res_rx, played: 0, last: f64::MIN, falls: vec![], turn: -1, t0 };
+                let mut st = st0.clone();
+                let mut total = 0.0;
+                while st.turn <= turn {
+                    m.snap = st.clone();
+                    m.prefix = total;
+                    pl.advance(&mut st, &mut m);
+                    total += opt::objective(&st.last_output);
+                }
+                let score = opt::play(&pl, &st0, &mut GenomeChooser { genome: &m.taken }, horizon).0;
+                eprintln!("check: the game scores {score:.3}, its last best play {:.3}; the best play fell at {} decisions{}", m.last, m.falls.len(),
+                          m.falls.iter().take(5).map(|f| format!(", T{} {:.1} -> {:.1}", f.0, f.1, f.2)).collect::<String>());
+                save_plan(&out, turn, score, &m.taken, vec![]);
+                println!("{}", Value::obj(vec![("best", Value::from(score)), ("played", Value::from(m.played as i64)), ("seconds", Value::from(t0.elapsed().as_secs_f64()))]));
+                drop(m);
+            });
         }
         "convert_ids" => {
             // rewrites a plan of the old numbering (--init; builders in the order made, settlers' sites in one
@@ -1663,7 +1890,8 @@ fn main() {
             // decides the game as it is played, with no plan: at each decision with options, each of the --top options
             // the model (--fallback-model, crate::learn) ranks first is tried by playing the game to the end with it
             // (the choices so far, that option, the model's choices after), and the best is taken. Every try
-            // starts from the game's start and replays the choices made so far (the simulator is deterministic).
+            // starts from the state at the start of the decision's turn and replays the choices made so far in that
+            // turn (the simulator is deterministic).
             // Saves the game's choices to --out as a plan. Rollout of the model's policy (Bertsekas): it plays at
             // least as well as the model.
             let top: usize = arg(&args, "--top").map(|x| x.parse().unwrap()).unwrap_or(4);
@@ -1700,7 +1928,9 @@ fn main() {
                 near: f64,
                 /// decisions with options so far
                 seen: usize,
-                st0: &'a State,
+                /// the state at the start of the turn being played, and the objective of the turns before it
+                snap: State,
+                prefix: f64,
                 taken: HashMap<Key, Choice>,
                 job_tx: std::sync::mpsc::Sender<RoJob>,
                 res_rx: std::sync::mpsc::Receiver<(usize, f64)>,
@@ -1764,7 +1994,7 @@ fn main() {
                             let mut g = self.guide.clone();
                             g.extend(self.taken.iter().map(|(k, c)| (k.clone(), c.clone())));
                             g.insert(key.clone(), (*o).clone());
-                            self.job_tx.send((j, self.st0.clone(), 0.0, g)).unwrap();
+                            self.job_tx.send((j, self.snap.clone(), self.prefix, g)).unwrap();
                         }
                         let mut scores = vec![f64::MIN; cands.len()];
                         for _ in 0..cands.len() {
@@ -1806,15 +2036,22 @@ fn main() {
             }
             std::thread::scope(|sc| {
                 let (job_tx, res_rx) = rollout_workers(sc, &p, threads, turn, ext, horizon);
-                let mut on = Online { model, top, guide: &guide, kick, near, seen: 0, st0: &st0, taken: HashMap::new(), job_tx, res_rx, tried: 0, t0, turn: -1, last: f64::MIN, falls: vec![], rows, decisions: 0 };
+                let mut on = Online { model, top, guide: &guide, kick, near, seen: 0, snap: st0.clone(), prefix: 0.0, taken: HashMap::new(), job_tx, res_rx, tried: 0, t0, turn: -1, last: f64::MIN, falls: vec![], rows, decisions: 0 };
                 let mut st = st0.clone();
+                let mut total = 0.0;
                 while st.turn <= turn {
+                    on.snap = st.clone();
+                    on.prefix = total;
                     pl.advance(&mut st, &mut on);
+                    total += opt::objective(&st.last_output);
                 }
                 let score = opt::play(&pl, &st0, &mut GenomeChooser { genome: &on.taken }, horizon).0;
                 eprintln!("check: the game scores {score:.3}, its last best try {:.3}; the best try fell at {} decisions{}", on.last, on.falls.len(),
                           on.falls.iter().take(5).map(|f| format!(", T{} {:.1} -> {:.1}", f.0, f.1, f.2)).collect::<String>());
                 save_plan(&out, turn, score, &on.taken, vec![]);
+                if std::env::var("CIV6OPT_PROFILE").is_ok() {
+                    eprintln!("{}", civ6opt::prof::report());
+                }
                 println!("{}", Value::obj(vec![("best", Value::from(score)), ("tried", Value::from(on.tried as i64)), ("seconds", Value::from(t0.elapsed().as_secs_f64()))]));
                 drop(on);
             });

@@ -67,6 +67,7 @@ fn city_numbers(p: &Planner, st: &State, eng: &crate::engine::Engine, c: &City) 
 /// The numbers of the state at a decision that are the same for all its options; `eng` is the engine of the state
 /// (Planner::engine).
 pub fn decision_features(p: &Planner, st: &State, key: &Key, options: &[Choice], eng: &crate::engine::Engine) -> Vec<f64> {
+    let _g = crate::prof::start(14);
     let v = crate::value::features(p, st);
     let mut f = vec![st.turn as f64, key.n as f64, options.len() as f64];
     // the value's features without its constant, in NUMERIC's order
@@ -105,6 +106,7 @@ fn requirement_numbers(p: &Planner, st: &State, penalty: f64, science: f64) -> [
 /// whether it is a required tech or civic or one on the way to it, and the points the score gives for one (a rewarded
 /// unit).
 pub fn option_features(p: &Planner, st: &State, key: &Key, base: Option<&Choice>, c: &Choice, eng: &crate::engine::Engine) -> [f64; N_OPTION] {
+    let _g = crate::prof::start(15);
     let cost = option_cost(p, c);
     let target = match c {
         Choice::Act(_, city, ..) | Choice::BuyItem(city, ..) | Choice::BuyTile(city, ..) | Choice::Appoint(_, city) | Choice::Route(_, city) =>
@@ -156,8 +158,8 @@ pub fn score_parts(p: &Planner, score: f64, st: &State) -> (f64, f64) {
 
 /// Gradient boosted regression trees, as tools/learn_train.py writes them.
 pub struct Trees {
-    kinds: Vec<String>,
-    names: Vec<String>,
+    kinds: std::collections::HashMap<String, usize>,
+    names: std::collections::HashMap<String, usize>,
     trees: Vec<Tree>,
 }
 
@@ -189,7 +191,8 @@ impl Trees {
             }).collect(),
             leaves: t["leaves"].as_array().unwrap().iter().map(|x| x.as_f64().unwrap()).collect(),
         }).collect();
-        let t = Trees { kinds: strs("kinds"), names: strs("names"), trees };
+        let index = |v: Vec<String>| v.into_iter().enumerate().map(|(i, s)| (s, i)).collect();
+        let t = Trees { kinds: index(strs("kinds")), names: index(strs("names")), trees };
         for c in v["check"].as_array().unwrap() {
             let x: Vec<f64> = c[0].as_array().unwrap().iter().map(|v| v.as_f64().unwrap()).collect();
             let (want, got) = (c[1].as_f64().unwrap(), t.eval(&x));
@@ -204,8 +207,9 @@ impl Trees {
 
     /// The predicted change of the final score when the option is chosen instead of the plan's choice.
     pub fn predict(&self, decision: &[f64], kind: Sym, option: &Choice, opt: &[f64; N_OPTION]) -> f64 {
+        let _g = crate::prof::start(16);
         // a name the training did not see gets a code of no category, which every categorical split sends right
-        let code = |vocab: &[String], s: &str| vocab.iter().position(|x| x == s).unwrap_or(vocab.len()) as f64;
+        let code = |vocab: &std::collections::HashMap<String, usize>, s: &str| vocab.get(s).copied().unwrap_or(vocab.len()) as f64;
         let mut x = vec![code(&self.kinds, &kind.as_string()), code(&self.names, &option_name(option))];
         x.extend_from_slice(decision);
         x.extend_from_slice(opt);

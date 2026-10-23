@@ -1853,6 +1853,19 @@ fn main() {
                 drop(m);
             });
         }
+        "complete" => {
+            // a plan (--init) with every decision of its game written out, also those it leaves to the base policy:
+            // a game played from it with --fallback-model (which fills such decisions with the model) stays the same
+            let out = arg(&args, "--out").expect("--out plan.json");
+            let g = genome_arg(&p, arg(&args, "--init").as_deref());
+            let (mut pl, st0) = planner(&p);
+            pl.s.horizon = turn + ext;
+            let mut rec = Recorder { genome: &g, log: vec![] };
+            let s = opt::play(&pl, &st0, &mut rec, horizon).0;
+            let full: HashMap<Key, Choice> = rec.log.into_iter().map(|d| (d.1, d.2)).collect();
+            eprintln!("{s:.3}, {} decisions", full.len());
+            save_plan(&out, turn, s, &full, vec![]);
+        }
         "convert_ids" => {
             // rewrites a plan of the old numbering (--init; builders in the order made, settlers' sites in one
             // sequence) to the stable one (crate::planner::LEGACY_IDS): plays it the old way, pairs each old id with

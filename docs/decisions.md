@@ -86,3 +86,4 @@
 | 10/18 | PC が落ちる原因は、高い負荷をかけて再現し、ハードウェアか WSL かを分けてから直す | BIOS の更新でも WSL が落ちた。MemTest86 は合格した | あなた | [history.md](history.md) の途中の作業 |
 | 10/20 | 探索は、WSL では落ちる原因が分かって再現できるまで、Windows で直接動かす（`optimizer/scripts/win_run.sh`） | 同じ探索を Windows で直接 16 スレッドで 1 時間近く回しても落ちなかった。WSL の中では、同じような負荷で 70 秒〜17 分で落ちていた。Windows 版と Linux 版の点数は完全に一致した | あなた | `optimizer/scripts/win_run.sh` |
 | 10/22 | プロジェクトは Windows・macOS・Linux のどれでも同じ手順で動かせるようにする。補助のスクリプトは bash から Python に移し、実行ファイルは OS に関係なく `optimizer/target/release/` に作る | WSL の不安定さで、WSL をやめて Windows に移す可能性がある。どの OS に移っても、手順を変えずに済む | あなた | `tools/civ6opt.py`、`tools/job.py`、`README.md` |
+| 10/23 | チーム戦では、足りない戦略資源（鉄など）とゴールドは味方からもらえる前提で探索する。もらえる量に上限は付けない。計画ごとに、もらう量を結果に出す | 実際の対局でも味方から鉄とゴールドをもらっている | あなた | `--ally-supply`、`optimizer/src/strategic.rs` |

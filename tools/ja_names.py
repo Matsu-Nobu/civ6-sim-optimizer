@@ -1,5 +1,5 @@
 """Writes data/rules/names_ja.tsv: each type of the rules database (TYPE<TAB>name), with the name the game's Japanese
-version shows. Look names up with grep, e.g. `grep -P '^DISTRICT_ENCAMPMENT\t' data/rules/names_ja.tsv` or
+version shows, and the city names (CITY_NAME_X<TAB>name, X as the saves name the city). Look names up with grep, e.g. `grep -P '^DISTRICT_ENCAMPMENT\t' data/rules/names_ja.tsv` or
 `grep -P '\t.*兵営' data/rules/names_ja.tsv`.
 
   ja_names.py <rules.sqlite>
@@ -43,6 +43,9 @@ def main(rules):
             name = text.get(f"LOC_{t}_NAME")
             if name:
                 out.write(f"{t}\t{name}\n")
+        for tag, name in sorted(text.items()):
+            if tag.startswith("LOC_CITY_NAME_"):
+                out.write(f"{tag[4:]}\t{name}\n")
 
 
 if __name__ == "__main__":

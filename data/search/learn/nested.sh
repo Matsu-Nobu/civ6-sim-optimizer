@@ -4,7 +4,10 @@
 # turn, the three options with the smallest loss are each kicked (online --kick: taken there, every decision after
 # it tried again), three games side by side. A game that ends better becomes the best; the list is then made again
 # from it. Progress is saved after every decision to nested_state.txt (the best game and the next decision), so the
-# script can be stopped at any time and started again: it goes on from there.
+# script can be stopped at any time and started again: it goes on from there. A pass goes through the production
+# decisions once; a pass that found a better game is followed by another from the first decision, and the script stops
+# after a pass that found none (no single production change, with every decision after it tried again, improves the
+# game).
 # Run from the repository root: data/search/learn/nested.sh <model> [first best game, when there is no state yet]
 B=optimizer/target/release/civ6opt
 G=data/games/rome_20261021.json
@@ -14,8 +17,9 @@ S=$D/nested_state.txt
 model=$1
 score() { $B run $G $C --genome "$1" 2>/dev/null | tail -1 | python3 -c "import json,sys; print(json.load(sys.stdin)['score'])"; }
 better() { python3 -c "import sys; sys.exit(0 if float(sys.argv[2]) > float(sys.argv[1]) + 1 else 1)" "$1" "$2"; }
+pass=1; improved=0
 if [ -f $S ]; then source $S; else best=$2; next=1; round=0; fi
-save() { printf 'best=%s\nnext=%s\nround=%s\n' "$best" "$next" "$round" > $S; }
+save() { printf 'best=%s\nnext=%s\nround=%s\npass=%s\nimproved=%s\n' "$best" "$next" "$round" "$pass" "$improved" > $S; }
 list() {
   round=$((round+1))
   $B online $G $C --fallback-model $model --guide $best --top 6 --threads 16 --near 1e9 --out $D/nested_base$round.json > /dev/null 2> $D/nested_base$round.err
@@ -30,7 +34,11 @@ list() {
 [ -f $D/nested_list$round.txt ] && [ $round -gt 0 ] || list
 while true; do
   n=$(awk -v n=$next '$2 >= n {print $2; exit}' $D/nested_list$round.txt)
-  [ -z "$n" ] && break
+  if [ -z "$n" ]; then
+    echo "pass $pass end $(date +%H:%M): $([ $improved = 1 ] && echo improved || echo no improvement), best $(score $best)" >> $D/nested.log
+    [ $improved = 0 ] && break
+    pass=$((pass+1)); improved=0; next=1; save; continue
+  fi
   old=$(score $best); k=0
   while read -r _ d gap choice; do
     k=$((k+1))
@@ -47,6 +55,7 @@ while true; do
   if [ "$top" != "$best" ]; then
     cp $top $D/nested_best$round.json; best=$D/nested_best$round.json
     echo "  new best $topscore at decision $n" >> $D/nested.log
+    improved=1
     save; list
   else
     save

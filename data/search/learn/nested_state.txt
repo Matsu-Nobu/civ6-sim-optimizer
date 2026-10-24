@@ -1,3 +1,5 @@
-best=data/search/learn/nested_base9.json
-next=565
-round=9
+best=data/search/learn/nested_base25.json
+next=570
+round=25
+pass=3
+improved=0

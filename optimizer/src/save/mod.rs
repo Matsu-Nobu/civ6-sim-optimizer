@@ -1127,6 +1127,8 @@ pub struct Unit {
     pub id: Option<i64>,
     pub builder_charges: Option<f64>,
     pub offset: i64,
+    /// the movement points the unit has at the save (the per-player unit list's mp/256)
+    pub moves: Option<f64>,
 }
 
 /// Live unit records: `type, kind (0 for settlers, 1..4, -1 for great people), ?, -9999, -9999, x, y, -1, owner`; builder charges
@@ -1161,7 +1163,7 @@ fn parse_units(p: &Bytes, d: &Dict, w: i64, h: i64) -> Vec<Unit> {
         }
         let f80 = p.u32(here + 80);
         let charges = (kind == 1 && f80 % 256 == 0 && f80 / 256 <= 10).then(|| (f80 / 256) as f64);
-        units.push(Unit { type_name: name.unwrap_or_else(|| format!("UNKNOWN_{th:08x}")), owner, x, y, id: None, builder_charges: charges, offset: here });
+        units.push(Unit { type_name: name.unwrap_or_else(|| format!("UNKNOWN_{th:08x}")), owner, x, y, id: None, builder_charges: charges, offset: here, moves: None });
     }
     // the per-player unit lists
     let mut list = vec![];
@@ -1187,13 +1189,14 @@ fn parse_units(p: &Bytes, d: &Dict, w: i64, h: i64) -> Vec<Unit> {
         if id <= 0 || id & 0xffff != p.i32(o - 12) as i64 {
             continue;
         }
-        list.push((id, x, y, owner));
+        list.push((id, x, y, owner, mp));
     }
     let mut used = vec![false; list.len()];
     for u in units.iter_mut() {
         if let Some(k) = (0..list.len()).find(|&k| !used[k] && list[k].3 == u.owner && list[k].1 == u.x && list[k].2 == u.y) {
             used[k] = true;
             u.id = Some(list[k].0);
+            u.moves = Some(list[k].4 as f64 / 256.0);
         }
     }
     units

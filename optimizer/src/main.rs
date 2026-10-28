@@ -1232,13 +1232,27 @@ fn main() {
             // the recorded one-turn moves of the player's land units (same id, two consecutive saves) that the movement
             // rules cannot do in one turn; --river-min: crossing a river costs min(3, points left)
             civ6opt::world::RIVER_MIN.store(args.iter().any(|a| a == "--river-min"), std::sync::atomic::Ordering::Relaxed);
-            let (pl, _) = planner(&p);
+            civ6opt::world::ANY_POINTS.store(args.iter().any(|a| a == "--any-points"), std::sync::atomic::Ordering::Relaxed);
+            let (mut pl, _) = planner(&p);
+            let has_routes = p.v["rows"].as_array().unwrap().iter().any(|r| r["routes"].as_array().is_some());
             let rows: Vec<&Value> = p.v["rows"].as_array().unwrap().iter().collect();
             let (mut n, mut bad) = (0, 0);
             for w in rows.windows(2) {
                 let (a, b) = (w[0], w[1]);
                 if a["cities"].as_array().map(|x| x.is_empty()).unwrap_or(true) || b["turn"].as_i64() != a["turn"].as_i64().map(|t| t + 1) {
                     continue;
+                }
+                // the roads of the turn's save (records written before 10/29 have only the start's roads)
+                if has_routes {
+                    for q in pl.w.map.plots.values_mut() {
+                        q.route = None;
+                    }
+                    for rt in a["routes"].as_array().into_iter().flatten() {
+                        let xy = (rt[0].as_i64().unwrap() as i32, rt[1].as_i64().unwrap() as i32);
+                        if let Some(q) = pl.w.map.plots.get_mut(&xy) {
+                            q.route = rt[2].as_i64();
+                        }
+                    }
                 }
                 let st = pl.state_at(a);
                 for u in a["units"].as_array().into_iter().flatten() {

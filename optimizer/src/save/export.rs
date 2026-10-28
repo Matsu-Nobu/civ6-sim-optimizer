@@ -517,6 +517,7 @@ pub fn row_json(g: &Save, d: &Dict, n: &Names, file: &str, pid: i64) -> Value {
     let units: Vec<Value> = g.units.iter().filter(|u| u.owner == pid).map(|u| Value::obj(vec![
         ("type", s(&u.type_name)), ("x", Value::from(u.x)), ("y", Value::from(u.y)), ("id", u.id.map(Value::from).unwrap_or(Value::Null)),
         ("charges", u.builder_charges.map(Value::from).unwrap_or(Value::Null)),
+        ("moves", u.moves.map(Value::from).unwrap_or(Value::Null)),
     ])).collect();
     // founded religions with their beliefs, and world-wide followers / cities following each
     let rels: Vec<Value> = {
@@ -552,6 +553,8 @@ pub fn row_json(g: &Save, d: &Dict, n: &Names, file: &str, pid: i64) -> Value {
         ("cities", Value::Arr(cities)),
         ("cityYields", city_yields),
         ("units", Value::Arr(units)),
+        // the plots with a road: [x, y, route index] (roads come with trade routes, builders and civilization traits)
+        ("routes", Value::Arr(g.map.plots.iter().filter_map(|q| q.route_index.map(|r| Value::from(vec![q.x, q.y, r]))).collect())),
         ("religions", Value::Arr(rels)),
         // every city in the world (possible trade route destinations), in the route endpoint format
         ("worldCities", Value::Arr(g.cities.iter().filter(|c| c.player_id != pid).map(|c| ctx.route_city(c)).collect())),

@@ -145,6 +145,8 @@ impl Map {
 
 /// Movement cost of one step (world.move_cost), or None if the step is not possible.
 pub static RIVER_MIN: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+/// civ6opt movecheck --any-points: a unit with any points left may enter a plot that costs more (to test the rule)
+pub static ANY_POINTS: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
 pub fn move_cost(r: &Rules, m: &Map, a: XY, b: XY, left: f64, full: f64, road_type: Sym, cities: &HashSet<XY>) -> Option<f64> {
     let p = m.plots.get(&b)?;
@@ -158,8 +160,14 @@ pub fn move_cost(r: &Rules, m: &Map, a: XY, b: XY, left: f64, full: f64, road_ty
     }
     let pa = &m.plots[&a];
     let road = pa.route.is_some() && p.route.is_some();
-    let road_cost = r.lookup_f("Routes", "RouteType", road_type, "MovementCost");
-    let bridges = r.lookup_truthy("Routes", "RouteType", road_type, "SupportsBridges");
+    // a road between two plots is the poorer of their roads (the save's route index is the row of Routes); a plot
+    // whose road type is not known has the era's (road_type)
+    let rt = match (pa.route, p.route) {
+        (Some(x), Some(y)) if x >= 0 && y >= 0 => r.tab("Routes").v(x.min(y) as u32, "RouteType").sym().unwrap_or(road_type),
+        _ => road_type,
+    };
+    let road_cost = r.lookup_f("Routes", "RouteType", rt, "MovementCost");
+    let bridges = r.lookup_truthy("Routes", "RouteType", rt, "SupportsBridges");
     // crossing a river costs max(3, the points left): a unit with fewer than 3 points crosses only with full points
     // (the user's rule), and the crossing ends its moves; RIVER_MIN (civ6opt movecheck --river-min) tries min(3, left)
     let cost = if m.river_between(a, b) && !(road && bridges) && !cities.contains(&a) && !cities.contains(&b) {
@@ -175,7 +183,7 @@ pub fn move_cost(r: &Rules, m: &Map, a: XY, b: XY, left: f64, full: f64, road_ty
         }
         c
     };
-    if cost <= left || left == full {
+    if cost <= left || left == full || (ANY_POINTS.load(std::sync::atomic::Ordering::Relaxed) && left > 0.0) {
         Some(cost.min(left))
     } else {
         None

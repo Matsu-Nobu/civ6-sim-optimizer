@@ -17,15 +17,39 @@ export interface TileInfo {
   district: District | null;
   worked: boolean;
   centre: City | null;
+  yields: number[] | null;
 }
 
 const RESOURCE_COLOURS: Record<string, string> = { bonus: "#e8f0d8", luxury: "#e070e0", strategic: "#ff9a3c" };
+
+/** food, production, gold, science, culture, faith: the colours drawn when the game's yield icons are missing */
+const YIELD_COLOURS = ["#7cc644", "#d08a3a", "#e8c53a", "#4fb0e8", "#b05ad8", "#c8d0dc"];
+
+/** where n icons of a tile's yields go, in icon sizes from the tile's centre */
+const YIELD_LAYOUT: [number, number][][] = [
+  [],
+  [[0, 0]],
+  [[-0.5, 0], [0.5, 0]],
+  [[-1, 0], [0, 0], [1, 0]],
+  [[-0.5, -0.5], [0.5, -0.5], [-0.5, 0.5], [0.5, 0.5]],
+  [[-1, -0.5], [0, -0.5], [1, -0.5], [-0.5, 0.5], [0.5, 0.5]],
+  [[-1, -0.5], [0, -0.5], [1, -0.5], [-1, 0.5], [0, 0.5], [1, 0.5]],
+];
+
+/** the game's yield icons (tools/game_icons.py): yield i in the column centred at x = 32 + 128 i, n of it (1 to 4)
+ * in the row centred at y = 64 + 128 (n - 1), the large icon for five or more in the fifth row */
+const yieldAtlas = new Image();
+yieldAtlas.src = "data/icons/yields.png";
+
+/** a settler on its way: [city it left, target x, target y, turn it founds the city] */
+type SettlerTrip = [string, number, number, number];
+export const settlerKey = (s: SettlerTrip) => `${s[0]}|${s[1]},${s[2]}`;
 
 const key = (x: number, y: number) => `${x},${y}`;
 
 /** what one play has on the map in one turn, by plot */
 class TurnIndex {
-  tiles = new Map<string, { city: City; feature: string | null; improvement: string | null }>();
+  tiles = new Map<string, { city: City; feature: string | null; improvement: string | null; yields: number[] | null }>();
   districts = new Map<string, District>();
   worked = new Set<string>();
   centres = new Map<string, City>();
@@ -33,7 +57,7 @@ class TurnIndex {
   constructor(state: TurnState | undefined) {
     if (!state) return;
     for (const c of state.cities) {
-      for (const [x, y, f, i] of c.tiles) this.tiles.set(key(x, y), { city: c, feature: f, improvement: i });
+      for (const [x, y, f, i, ys] of c.tiles) this.tiles.set(key(x, y), { city: c, feature: f, improvement: i, yields: ys });
       for (const d of c.districts) this.districts.set(key(d.x, d.y), d);
       for (const [x, y] of c.worked) this.worked.add(key(x, y));
       this.centres.set(key(c.xy[0], c.xy[1]), c);
@@ -54,8 +78,14 @@ export class MapView {
   private now = new TurnIndex(undefined);
   private changed = new Set<string>();
   private state: TurnState | undefined;
+  private prev: TurnState | undefined;
   hover: [number, number] | null = null;
   selected: string | null = null;
+  showYields = true;
+  /** how far the turn's moves are drawn (0: where units were last turn, 1: where they are now) */
+  progress = 1;
+  /** settler trip -> the first turn the play has it */
+  settlerStarts = new Map<string, number>();
 
   constructor(
     parent: HTMLElement,
@@ -76,6 +106,7 @@ export class MapView {
 
   setTurn(state: TurnState | undefined, prev: TurnState | undefined) {
     this.state = state;
+    this.prev = prev;
     this.now = new TurnIndex(state);
     const before = new TurnIndex(prev);
     this.changed.clear();
@@ -96,6 +127,7 @@ export class MapView {
       city: t?.city ?? null,
       feature: t ? t.feature : plot[3],
       improvement: t?.improvement ?? null,
+      yields: t?.yields ?? null,
       district: this.now.districts.get(k) ?? null,
       worked: this.now.worked.has(k),
       centre: this.now.centres.get(k) ?? null,
@@ -289,11 +321,13 @@ export class MapView {
       }
       if (t?.improvement && !d && !city && detail) {
         const label = IMPROVEMENT[t.improvement] ?? (this.data.names[t.improvement] ?? "改")[0];
+        // above the yield icons when they are drawn, else below the centre
+        const iy = this.showYields && scale >= 14 ? cy - r * 0.6 : cy + r * 0.45;
         ctx.fillStyle = "rgba(20,20,20,0.7)";
         ctx.beginPath();
-        ctx.arc(cx, cy + r * 0.45, r * 0.3, 0, Math.PI * 2);
+        ctx.arc(cx, iy, r * 0.25, 0, Math.PI * 2);
         ctx.fill();
-        this.text(label, cx, cy + r * 0.46, r * 0.36, "#ffe9a8");
+        this.text(label, cx, iy + 1, r * 0.3, "#ffe9a8");
       }
       if (p[4] && detail && !d && !city) {
         const cls = this.data.resource_classes?.[p[4]] ?? "bonus";
@@ -334,6 +368,22 @@ export class MapView {
       }
     }
 
+    // the yields a citizen working each owned plot gets
+    if (this.showYields && scale >= 14) {
+      const size = r * 0.46;
+      for (const [p, cx, cy] of visible) {
+        const t = this.now.tiles.get(key(p[0], p[1]));
+        // the city centre shows the city's population instead (its yields are in the tooltip)
+        if (!t?.yields || this.now.centres.has(key(p[0], p[1]))) continue;
+        const ys = t.yields.map((v, i) => [i, Math.round(v)] as [number, number]).filter(([, v]) => v > 0);
+        const layout = YIELD_LAYOUT[ys.length] ?? [];
+        ys.forEach(([i, v], j) => {
+          const [dx, dy] = layout[j];
+          this.yieldIcon(i, v, cx + dx * size, cy + dy * size + r * 0.1, size);
+        });
+      }
+    }
+
     // what changed this turn
     ctx.strokeStyle = "#ffe14f";
     ctx.lineWidth = Math.max(1.5, r * 0.12);
@@ -343,9 +393,53 @@ export class MapView {
       ctx.stroke();
     }
 
-    // builders
-    for (const [x, y, charges] of this.state?.builders ?? []) {
-      const [cx, cy] = S(...centre(x, y, this.data.height));
+    // settlers on their way: a dashed line from the city they left to the site, the settler along it
+    for (const trip of this.state?.settlers ?? []) {
+      const [from, tx, ty, arrive] = trip;
+      const city = this.state!.cities.find((c) => c.name === from);
+      if (!city) continue;
+      const [ax, ay] = S(...centre(city.xy[0], city.xy[1], this.data.height));
+      const [bx, by] = S(...centre(tx, ty, this.data.height));
+      ctx.strokeStyle = "#7dff9a";
+      ctx.lineWidth = Math.max(1.5, r * 0.1);
+      ctx.setLineDash([r * 0.3, r * 0.2]);
+      ctx.beginPath();
+      ctx.moveTo(ax, ay);
+      ctx.lineTo(bx, by);
+      ctx.stroke();
+      hexPath(bx, by, r * 0.9);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      const start = this.settlerStarts.get(settlerKey(trip)) ?? this.state!.turn;
+      const f = Math.min(1, Math.max(0, (this.state!.turn - 1 + this.progress - start + 1) / Math.max(1, arrive - start + 1)));
+      const [sx, sy] = [ax + (bx - ax) * f, ay + (by - ay) * f];
+      ctx.fillStyle = "#7dff9a";
+      ctx.strokeStyle = "#000";
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.arc(sx, sy, r * 0.3, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+      if (scale >= 5) this.text("開", sx, sy + 1, r * 0.36, "#000", true);
+    }
+
+    // builders: from where they were last turn to where they are now, with the way they went
+    const before = new Map((this.prev?.builders ?? []).filter((b) => b[3] >= 0).map((b) => [b[3], b]));
+    for (const [x, y, charges, id] of this.state?.builders ?? []) {
+      const [nx, ny] = S(...centre(x, y, this.data.height));
+      const was = id >= 0 ? before.get(id) : undefined;
+      let [cx, cy] = [nx, ny];
+      if (was && (was[0] !== x || was[1] !== y)) {
+        const [px, py] = S(...centre(was[0], was[1], this.data.height));
+        ctx.strokeStyle = "rgba(242,193,78,0.7)";
+        ctx.lineWidth = Math.max(1.5, r * 0.08);
+        ctx.beginPath();
+        ctx.moveTo(px + r * 0.38, py + r * 0.3);
+        ctx.lineTo(nx + r * 0.38, ny + r * 0.3);
+        ctx.stroke();
+        cx = px + (nx - px) * this.progress;
+        cy = py + (ny - py) * this.progress;
+      }
       ctx.fillStyle = "#f2c14e";
       ctx.strokeStyle = "#000";
       ctx.lineWidth = 1;
@@ -381,6 +475,25 @@ export class MapView {
     if (!this.state) {
       this.text("このターンの記録はありません", w / 2, 24, 14, "#ccc");
     }
+  }
+
+  private yieldIcon(i: number, v: number, x: number, y: number, size: number) {
+    const ctx = this.ctx;
+    if (yieldAtlas.complete && yieldAtlas.naturalWidth) {
+      const row = Math.min(v, 5) - 1;
+      // the first column starts left of the image: draw only the part that is in it
+      const sx = 128 * i - 32, sy = 128 * row;
+      const cut = Math.max(0, -sx);
+      const k = size / 64;
+      ctx.drawImage(yieldAtlas, sx + cut, sy, 128 - cut, 128, x - 64 * k + cut * k, y - 64 * k, (128 - cut) * k, 128 * k);
+      if (v >= 5) this.text(String(v), x + size * 0.28, y + size * 0.3, size * 0.55, "#fff", true);
+      return;
+    }
+    ctx.fillStyle = YIELD_COLOURS[i];
+    ctx.beginPath();
+    ctx.arc(x, y, size * 0.42, 0, Math.PI * 2);
+    ctx.fill();
+    this.text(String(v), x, y + 1, size * 0.6, "#000", true);
   }
 
   private text(s: string, x: number, y: number, size: number, colour: string, bold = false) {

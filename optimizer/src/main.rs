@@ -749,7 +749,18 @@ impl civ6opt::planner::Chooser for Recorder<'_> {
     }
 }
 
-fn snapshot(st: &State) -> Value {
+fn snapshot(pl: &Planner, st: &State) -> Value {
+    let env = pl.player_env(st);
+    let e = pl.engine(&env, &st.cities);
+    let ys = ["YIELD_FOOD", "YIELD_PRODUCTION", "YIELD_GOLD", "YIELD_SCIENCE", "YIELD_CULTURE", "YIELD_FAITH"];
+    // what an owned plot yields to a citizen working it (null on a district's plot, whose citizens are specialists)
+    let plot_yields = |c: &City, p: &Plot, amods: &civ6opt::yields::AppealMods| -> Value {
+        if p.xy() != c.center && c.districts.iter().any(|d| (d.x, d.y) == p.xy()) {
+            return Value::Null;
+        }
+        let y = civ6opt::yields::plot_yields(pl.r, &e, c, p, amods);
+        Value::from(ys.iter().map(|k| y.iter().filter(|(a, _)| a.as_string() == *k).map(|(_, v)| *v).sum::<f64>()).collect::<Vec<f64>>())
+    };
     Value::obj(vec![
         ("turn", Value::from(st.turn - 1)),
         ("research", Value::from(st.research.map(|x| x.as_string()))),
@@ -774,11 +785,18 @@ fn snapshot(st: &State) -> Value {
                     d.plot.wonder.map(|w| format!(":{}", w.as_string())).unwrap_or_default()))).collect())),
             ("improvements", Value::Arr(c.owned.iter().filter_map(|p| p.improvement).map(|i| Value::from(i.as_string())).collect())),
             ("owned", Value::from(c.owned.len() as i64)),
-            // each owned plot as [x, y, feature, improvement] (what the viewer draws)
-            ("tiles", Value::Arr(c.owned.iter().map(|p| Value::Arr(vec![Value::from(p.x as i64), Value::from(p.y as i64),
-                Value::from(p.feature.map(|x| x.as_string())), Value::from(p.improvement.map(|x| x.as_string()))])).collect())),
+            // each owned plot as [x, y, feature, improvement, yields when worked] (what the viewer draws)
+            ("tiles", {
+                let amods = civ6opt::yields::appeal_modifiers(&e, c.name);
+                Value::Arr(c.owned.iter().map(|p| Value::Arr(vec![Value::from(p.x as i64), Value::from(p.y as i64),
+                    Value::from(p.feature.map(|x| x.as_string())), Value::from(p.improvement.map(|x| x.as_string())),
+                    plot_yields(c, p, &amods)])).collect())
+            }),
         ])).collect())),
-        ("builder_at", Value::Arr(st.builders.iter().map(|b| Value::from(vec![b.at.0, b.at.1, b.charges as i32])).collect())),
+        ("builder_at", Value::Arr(st.builders.iter().map(|b| Value::from(vec![b.at.0 as i64, b.at.1 as i64, b.charges, b.id.unwrap_or(-1)])).collect())),
+        // settlers on their way: [city they left, target x, target y, turn they found the city]
+        ("settlers", Value::Arr(st.settlers.iter().filter_map(|s| s.target.map(|t| Value::Arr(vec![Value::from(s.from.as_string()),
+            Value::from(t.0 as i64), Value::from(t.1 as i64), Value::from(s.arrive)]))).collect())),
         ("techs", Value::from(st.acc.techs.len() as i64)),
         ("civics", Value::from(st.acc.civics.len() as i64)),
         ("government", Value::from(st.player.government.map(|x| x.as_string()))),
@@ -1073,7 +1091,7 @@ fn main() {
             while st.turn <= turn {
                 pl.advance(&mut st, &mut ch);
                 total += opt::objective(&st.last_output);
-                println!("{}", snapshot(&st));
+                println!("{}", snapshot(&pl, &st));
                 if args.iter().any(|a| a == "--costs") {
                     // each city's current item: its cost now (locked once started) and progress
                     let env = pl.player_env(&st);
@@ -1106,7 +1124,7 @@ fn main() {
             while st.turn <= turn + ext {
                 pl.advance(&mut st, &mut xc);
                 ext_total += opt::objective(&st.last_output);
-                println!("{}", snapshot(&st));
+                println!("{}", snapshot(&pl, &st));
             }
             if std::env::var("CIV6OPT_PROFILE").is_ok() {
                 eprintln!("{}", civ6opt::prof::report());
@@ -2323,7 +2341,7 @@ fn main() {
             let mut st = st0.clone();
             while st.turn <= turn {
                 pl.advance(&mut st, &mut ch);
-                println!("{}", snapshot(&st));
+                println!("{}", snapshot(&pl, &st));
             }
             println!("{}", opt::play(&pl, &st0, &mut civ6opt::skeleton::SkeletonChooser::new(&sk), horizon).0);
         }

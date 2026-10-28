@@ -1,6 +1,6 @@
 import "./app.css";
 import { Chart, type Series } from "./chart";
-import { MapView, type View } from "./map";
+import { MapView, settlerKey, type View } from "./map";
 import { PLAY_COLOURS, districtStyle } from "./style";
 import type { City, GameData, IndexEntry, Play, TurnState } from "./types";
 
@@ -14,6 +14,8 @@ const METRICS: [string, string, (s: TurnState, cum: number) => number][] = [
   ["pop", "人口", (s) => s.cities.reduce((a, c) => a + c.pop, 0)],
   ["cities", "都市の数", (s) => s.cities.length],
 ];
+
+const YIELD_NAMES = ["食料", "生産", "ゴールド", "科学", "文化", "信仰"];
 
 const $ = <T extends HTMLElement>(sel: string) => document.querySelector(sel) as T;
 const el = (tag: string, cls = "", text = "") => {
@@ -45,6 +47,7 @@ class App {
   private hover: [number, number] | null = null;
   private chart: Chart;
   private metric = "fp";
+  private frame = 0;
 
   constructor(index: IndexEntry[]) {
     const games = $<HTMLSelectElement>("#game");
@@ -61,6 +64,7 @@ class App {
     $("#play").onclick = () => this.toggle();
     $<HTMLSelectElement>("#speed").onchange = () => this.timer !== null && (this.toggle(), this.toggle());
     $<HTMLButtonElement>("#fit").onclick = () => this.fit();
+    $<HTMLInputElement>("#yields").onchange = () => this.redraw();
     const metric = $<HTMLSelectElement>("#metric");
     for (const [k, label] of METRICS) metric.append(new Option(label, k));
     metric.onchange = () => {
@@ -121,6 +125,7 @@ class App {
       let acc = 0;
       for (const s of play.turns) cum.set(s.turn, (acc += s.output[0] + s.output[1]));
       const map = new MapView(mapBox, this.data, this.view, colour, () => this.redraw(), (xy) => this.setHover(xy), (c) => this.select(c));
+      for (const s of play.turns) for (const trip of s.settlers) if (!map.settlerStarts.has(settlerKey(trip))) map.settlerStarts.set(settlerKey(trip), s.turn);
       return { play, colour, byTurn, cum, map, info, tab: "turn" as const };
     });
     const turns = this.columns.flatMap((c) => c.play.turns.map((s) => s.turn));
@@ -157,6 +162,7 @@ class App {
   }
 
   private go(turn: number) {
+    const step = turn === this.turn + 1;
     this.turn = Math.max(this.range[0], Math.min(this.range[1], turn));
     $<HTMLInputElement>("#turn").value = String(this.turn);
     $("#turnlabel").textContent = `T${this.turn}`;
@@ -164,14 +170,31 @@ class App {
       c.map.setTurn(c.byTurn.get(this.turn), c.byTurn.get(this.turn - 1));
       this.renderInfo(c);
     }
-    this.redraw();
     this.drawChart();
+    this.animate(step);
+  }
+
+  /** draws the turn's moves: over a moment after a step forward, else at once */
+  private animate(step: boolean) {
+    const id = ++this.frame;
+    const ms = Math.min(450, Number($<HTMLSelectElement>("#speed").value) * 0.8);
+    const t0 = performance.now();
+    const tick = () => {
+      if (id !== this.frame) return;
+      const p = step ? Math.min(1, (performance.now() - t0) / ms) : 1;
+      for (const c of this.columns) c.map.progress = p;
+      this.redraw();
+      if (p < 1) requestAnimationFrame(tick);
+    };
+    tick();
   }
 
   private redraw() {
+    const yields = $<HTMLInputElement>("#yields").checked;
     for (const c of this.columns) {
       c.map.hover = this.hover;
       c.map.selected = this.selected;
+      c.map.showYields = yields;
       c.map.draw();
     }
   }
@@ -198,6 +221,7 @@ class App {
         i.improvement && this.n(i.improvement),
         i.city && !i.centre && `${this.n(i.city.name)}の土地`,
         i.worked && "働いている",
+        i.yields && YIELD_NAMES.map((n, k) => (i.yields![k] ? `${n} ${fmt(i.yields![k])}` : "")).filter(Boolean).join(" "),
       ].filter(Boolean);
       const line = el("div", "", `${c.play.label}：${parts.join("、") || "なし"}`);
       line.style.color = c.colour;

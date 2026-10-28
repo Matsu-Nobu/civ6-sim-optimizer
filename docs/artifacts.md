@@ -107,6 +107,7 @@ cd optimizer && cargo build --release
 | `tools/job.py` | `civ6opt` を端末から切り離して動かし、`data/jobs/<名前>` に状態と出力を残す |
 | `tools/replay.py` | 記録したプレイを再現し、記録とターンごとに比べる（`check`）。再現の精度を対局ごとにまとめる（`summary`） |
 | `tools/plan_report.py` | 計画の対局を、ターンごとの決定（生産、購入、労働者の行動、研究、政策、総督など）の一覧にして Markdown に出力する |
+| `tools/game_icons.py` | ゲームのフォルダにあるテクスチャ（産出のアイコンなど）を PNG にして、ビューワ（`viewer/`）が読む場所に出力する |
 | `tools/viewer_data.py` | 対局の地図と、記録や計画の対局のターンごとの盤面と決定を、ビューワ（`viewer/`）が読む JSON に出力する |
 | `tools/replay_check.py` | `civ6opt run --genome record` の出力と記録を、ターンごとに比べる |
 | `tools/learn_train.py` | `civ6opt collect` と `irollout --rows` が書き出した選択肢の記録から、選択肢の点数への影響を学習する |

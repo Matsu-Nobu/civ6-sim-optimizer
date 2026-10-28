@@ -1182,13 +1182,31 @@ pub fn incoming_route_yields(e: &Engine, route: &Route, dest_city: &City) -> Vec
     y
 }
 
+/// What plot `w` of city `c` yields to a citizen working it (not a district's plot: its citizens are specialists).
+/// `amods`: appeal_modifiers(e, c.name).
+pub fn plot_yields(r: &Rules, e: &Engine, c: &City, w: &Plot, amods: &AppealMods) -> Vec<(Sym, f64)> {
+    let plot_mods: &[PlotMod] = e.plot_effects.get(&c.name).map(|v| v.as_slice()).unwrap_or(&[]);
+    let is_center = w.xy() == c.center;
+    let mut wp = w.clone();
+    wp.district_type = if is_center { Some(s!("DISTRICT_CITY_CENTER")) } else { None };
+    let mut out = tile_yields_bbcc(r, &wp, &e.env.techs, &e.env.civics, is_center, is_center && c.capital, plot_mods, Some(&e.plots), Some(c), Some(amods));
+    for (k, v) in terrain_from_adjacent_improvements(e, c.name, &wp, &e.plots) {
+        push_y(&mut out, k, v);
+    }
+    if !is_center {
+        for (k, v) in appeal_district_yields(r, c, &wp, &e.plots, amods) {
+            push_y(&mut out, k, v);
+        }
+    }
+    out
+}
+
 /// city_yields: the city's total yields (before % modifiers).
 pub fn city_yields(r: &Rules, e: &Engine, c: &City, routes: &[Route]) -> Y {
     let _g = crate::prof::start(1);
     let techs = &e.env.techs;
     let civics = &e.env.civics;
     let mut total: Vec<(Sym, f64)> = vec![];
-    let plot_mods: &[PlotMod] = e.plot_effects.get(&c.name).map(|v| v.as_slice()).unwrap_or(&[]);
     let plots = &e.plots;
     let amods = appeal_modifiers(e, c.name);
     let mut add_all = |v: Vec<(Sym, f64)>| for (k, x) in v { push_y(&mut total, k, x) };
@@ -1202,11 +1220,7 @@ pub fn city_yields(r: &Rules, e: &Engine, c: &City, routes: &[Route]) -> Y {
             add_all(specialist_yields(r, c, w.xy()).into_iter().map(|(k, v)| (k, v * n as f64)).collect());
             continue;
         }
-        add_all(tile_yields_bbcc(r, &wp, techs, civics, is_center, is_center && c.capital, plot_mods, Some(plots), Some(c), Some(&amods)));
-        add_all(terrain_from_adjacent_improvements(e, c.name, &wp, plots));
-        if !is_center {
-            add_all(appeal_district_yields(r, c, &wp, plots, &amods));
-        }
+        add_all(plot_yields(r, e, c, w, &amods));
     }
     for &b in &c.buildings {
         add_all(r.yield_rows("Building_YieldChanges", "BuildingType", b, "YieldType", "YieldChange"));

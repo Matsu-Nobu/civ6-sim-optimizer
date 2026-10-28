@@ -3,8 +3,8 @@
 /** x, y, terrain, feature, resource, river edges (bit 0 = north-east, then clockwise) */
 export type Plot = [number, number, string, string | null, string | null, number];
 
-/** an owned plot now: x, y, feature, improvement */
-export type Tile = [number, number, string | null, string | null];
+/** an owned plot now: x, y, feature, improvement, yields to a citizen working it (null on a district's plot) */
+export type Tile = [number, number, string | null, string | null, number[] | null];
 
 export interface District {
   type: string;
@@ -42,8 +42,10 @@ export interface TurnState {
   governors: string[];
   /** "UNIT_X:count" */
   units: string[];
-  /** x, y, charges */
-  builders: [number, number, number][];
+  /** x, y, charges, id (the same builder keeps its id from turn to turn; -1: none) */
+  builders: [number, number, number, number][];
+  /** settlers on their way: the city they left, target x, target y, the turn they found the city */
+  settlers: [string, number, number, number][];
   strategic: Record<string, number>;
   cities: City[];
 }

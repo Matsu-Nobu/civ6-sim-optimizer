@@ -46,8 +46,10 @@ def main(rules):
         cols = [c[1] for c in db.execute(f'pragma table_info("{table}")')]
         # the tables of types have the type in their first column (PolicyType in Policies)
         key = cols[0] if cols and cols[0].endswith("Type") else None
-        if "Name" in cols and key:
-            for t, tag in db.execute(f'select "{key}", Name from "{table}"'):
+        # the dedications (CommemorationTypes) have no Name: their category's text names them
+        col = next((c for c in ("Name", "CategoryDescription") if c in cols), None)
+        if col and key:
+            for t, tag in db.execute(f'select "{key}", "{col}" from "{table}"'):
                 if isinstance(tag, str):
                     tags.setdefault(t, tag)
     with open(OUT, "w") as out:

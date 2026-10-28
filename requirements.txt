@@ -1,2 +1,3 @@
 lightgbm
 numpy
+pillow

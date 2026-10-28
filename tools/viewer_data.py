@@ -36,7 +36,8 @@ def play(game, plan, opts):
         turns.append({"turn": t, "output": s["output"], "gold": s["gold"], "techs": s["techs"], "civics": s["civics"],
                       "research": s["research"], "civic": s["civic"], "government": s["government"],
                       "policies": s["policies"], "governors": s["governors"], "units": s["units_trained"],
-                      "builders": s["builder_at"], "strategic": s["strategic"], "cities": cities})
+                      "builders": s["builder_at"], "settlers": s["settlers"], "strategic": s["strategic"],
+                      "cities": cities})
     return {"turns": turns, "decisions": decisions_by_turn(decisions), "score": final["score"], "total": final["total"]}
 
 

@@ -9,10 +9,12 @@
 # after a pass that found none (no single production change, with every decision after it tried again, improves the
 # game).
 # Run from the repository root: data/search/learn/nested.sh <model> [first best game, when there is no state yet]
+# The game, the conditions and the folder can be given as G, C and D in the environment (default: the 10/21 Rome
+# game with the knights-and-Ballistics conditions, in data/search/learn).
 B=optimizer/target/release/civ6opt
-G=data/games/rome_20261021.json
-C="--turn 65 --ext 0 --allow-military --team --require TECH_BALLISTICS:1@65 --require-weight 20000 --reward UNIT_KNIGHT:100@65 --ally-supply"
-D=data/search/learn
+G=${G:-data/games/rome_20261021.json}
+C=${C:-"--turn 65 --ext 0 --allow-military --team --require TECH_BALLISTICS:1@65 --require-weight 20000 --reward UNIT_KNIGHT:100@65 --ally-supply"}
+D=${D:-data/search/learn}
 S=$D/nested_state.txt
 model=$1
 score() { $B run $G $C --genome "$1" 2>/dev/null | tail -1 | python3 -c "import json,sys; print(json.load(sys.stdin)['score'])"; }

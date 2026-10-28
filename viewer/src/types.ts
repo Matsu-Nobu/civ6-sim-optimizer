@@ -33,6 +33,8 @@ export interface TurnState {
   output: number[];
   gold: number;
   techs: number;
+  /** the techs researched */
+  tech_list: string[];
   civics: number;
   research: string | null;
   civic: string | null;
@@ -44,8 +46,9 @@ export interface TurnState {
   units: string[];
   /** x, y, charges, id (the same builder keeps its id from turn to turn; -1: none) */
   builders: [number, number, number, number][];
-  /** settlers on their way: the city they left, target x, target y, the turn they found the city */
-  settlers: [string, number, number, number][];
+  /** settlers on their way: the city they left, target x, target y, the turn they found the city, and the way:
+   * [x, y, the turn they enter the plot] for each plot after the city */
+  settlers: [string, number, number, number, [number, number, number][]][];
   strategic: Record<string, number>;
   cities: City[];
 }
@@ -71,6 +74,8 @@ export interface GameData {
   names: Record<string, string>;
   /** resource -> "bonus", "luxury" or "strategic" */
   resource_classes: Record<string, string>;
+  /** resource -> the tech that shows it on the map (no entry: always shown) */
+  resource_techs: Record<string, string>;
 }
 
 export interface IndexEntry {

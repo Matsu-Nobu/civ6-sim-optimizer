@@ -1283,12 +1283,24 @@ impl<'a> Planner<'a> {
     }
 
     pub fn travel(&self, st: &State, a: XY, b: XY, unit: &str) -> Option<i64> {
+        let (moves, cities) = self.travel_setup(st, unit);
+        travel_turns(self.r, &self.w.map, a, b, moves, self.road_type(st.turn), &cities)
+    }
+
+    /// travel and the way (crate::world::travel_path)
+    pub fn travel_way(&self, st: &State, a: XY, b: XY, unit: &str) -> Option<(i64, Vec<(XY, i64)>)> {
+        let (moves, cities) = self.travel_setup(st, unit);
+        crate::world::travel_path(self.r, &self.w.map, a, b, moves, self.road_type(st.turn), &cities)
+    }
+
+    /// a unit's movement points and the plots of the cities it moves through
+    fn travel_setup(&self, st: &State, unit: &str) -> (f64, HashSet<XY>) {
         let e = self.eng(st);
         let extra: f64 = e.unit_effects(s!("EFFECT_ADJUST_UNIT_MOVEMENT"), ss(unit), None).iter().map(|x| x.args.f("Amount")).sum();
         let moves = self.r.lookup_f("Units", "UnitType", ss(unit), "BaseMoves") + extra;
         let mut cities: HashSet<XY> = st.cities.iter().map(|c| c.center).collect();
         cities.extend(self.sc.world_cities(st.turn).iter().map(|c| (c.x, c.y)));
-        travel_turns(self.r, &self.w.map, a, b, moves, self.road_type(st.turn), &cities)
+        (moves, cities)
     }
 
     // ---------------------------------------------------------------- great people

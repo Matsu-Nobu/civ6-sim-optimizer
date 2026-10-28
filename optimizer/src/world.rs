@@ -180,14 +180,24 @@ pub fn move_cost(r: &Rules, m: &Map, a: XY, b: XY, left: f64, full: f64, road_ty
 
 /// Turns until a unit standing on `start` with full points can act on `goal` (0 = this turn).
 pub fn travel_turns(r: &Rules, m: &Map, start: XY, goal: XY, moves: f64, road_type: Sym, cities: &HashSet<XY>) -> Option<i64> {
+    travel_search(r, m, start, goal, moves, road_type, cities, false).map(|x| x.0)
+}
+
+/// travel_turns and the way: each plot after the start with the turn (0: the first) the unit enters it.
+pub fn travel_path(r: &Rules, m: &Map, start: XY, goal: XY, moves: f64, road_type: Sym, cities: &HashSet<XY>) -> Option<(i64, Vec<(XY, i64)>)> {
+    travel_search(r, m, start, goal, moves, road_type, cities, true)
+}
+
+fn travel_search(r: &Rules, m: &Map, start: XY, goal: XY, moves: f64, road_type: Sym, cities: &HashSet<XY>, keep_path: bool) -> Option<(i64, Vec<(XY, i64)>)> {
     use std::cmp::Reverse;
     use std::collections::BinaryHeap;
     if start == goal {
-        return Some(0);
+        return Some((0, vec![]));
     }
     // states ordered by (turn, -points left); points kept as integer quarters for the heap
     let q = |x: f64| (x * 4.0).round() as i64;
     let mut best: HashMap<XY, (i64, i64)> = HashMap::from([(start, (0, -q(moves)))]);
+    let mut came_from: HashMap<XY, XY> = HashMap::new();
     let mut heap = BinaryHeap::from([Reverse((0i64, -q(moves), start))]);
     while let Some(Reverse((t, neg_left, at))) = heap.pop() {
         let left = -(neg_left as f64) / 4.0;
@@ -195,7 +205,17 @@ pub fn travel_turns(r: &Rules, m: &Map, start: XY, goal: XY, moves: f64, road_ty
             continue;
         }
         if at == goal {
-            return Some(if left > 0.0 { t } else { t + 1 });
+            let turns = if left > 0.0 { t } else { t + 1 };
+            let mut path = vec![];
+            if keep_path {
+                let mut p = goal;
+                while p != start {
+                    path.push((p, best[&p].0));
+                    p = came_from[&p];
+                }
+                path.reverse();
+            }
+            return Some((turns, path));
         }
         for n in m.neighbours(at.0, at.1) {
             for (tt, ll) in [(t, left), (t + 1, moves)] {
@@ -206,6 +226,9 @@ pub fn travel_turns(r: &Rules, m: &Map, start: XY, goal: XY, moves: f64, road_ty
                 let state = (tt, -q(ll - c));
                 if tt <= 30 && state < *best.get(&n).unwrap_or(&(99, 0)) {
                     best.insert(n, state);
+                    if keep_path {
+                        came_from.insert(n, at);
+                    }
                     heap.push(Reverse((tt, -q(ll - c), n)));
                 }
                 break;

@@ -794,10 +794,17 @@ fn snapshot(pl: &Planner, st: &State) -> Value {
             }),
         ])).collect())),
         ("builder_at", Value::Arr(st.builders.iter().map(|b| Value::from(vec![b.at.0 as i64, b.at.1 as i64, b.charges, b.id.unwrap_or(-1)])).collect())),
-        // settlers on their way: [city they left, target x, target y, turn they found the city]
-        ("settlers", Value::Arr(st.settlers.iter().filter_map(|s| s.target.map(|t| Value::Arr(vec![Value::from(s.from.as_string()),
-            Value::from(t.0 as i64), Value::from(t.1 as i64), Value::from(s.arrive)]))).collect())),
+        // settlers on their way: [city they left, target x, target y, turn they found the city, the way: [x, y, turn
+        // they enter the plot], ...]; the way is the shortest one from the city (the planner keeps only its length);
+        // its turns are counted back from the founding turn
+        ("settlers", Value::Arr(st.settlers.iter().filter_map(|s| s.target.map(|t| {
+            let from = st.cities.iter().find(|c| c.name == s.from).map(|c| c.center);
+            let way = from.and_then(|a| pl.travel_way(st, a, t, "UNIT_SETTLER")).map(|(k, path)| path.iter()
+                .map(|(xy, tt)| Value::from(vec![xy.0 as i64, xy.1 as i64, s.arrive - k + tt])).collect::<Vec<_>>()).unwrap_or_default();
+            Value::Arr(vec![Value::from(s.from.as_string()), Value::from(t.0 as i64), Value::from(t.1 as i64), Value::from(s.arrive), Value::Arr(way)])
+        })).collect())),
         ("techs", Value::from(st.acc.techs.len() as i64)),
+        ("tech_list", Value::Arr(st.acc.techs.iter().map(|t| Value::from(t.as_string())).collect())),
         ("civics", Value::from(st.acc.civics.len() as i64)),
         ("government", Value::from(st.player.government.map(|x| x.as_string()))),
         ("gp_points", Value::Arr(st.gp.0.iter().map(|(k, v)| Value::from(format!("{}:{:.0}", k.as_string(), v))).collect())),

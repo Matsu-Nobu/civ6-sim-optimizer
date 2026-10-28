@@ -42,9 +42,22 @@ const YIELD_LAYOUT: [number, number][][] = [
 const yieldAtlas = new Image();
 yieldAtlas.src = "data/icons/yields.png";
 
-/** a settler on its way: [city it left, target x, target y, turn it founds the city] */
-type SettlerTrip = [string, number, number, number];
-export const settlerKey = (s: SettlerTrip) => `${s[0]}|${s[1]},${s[2]}`;
+/** where a settler is at time `t` (turn T ends at time T): the plots of its way are entered evenly within the turn
+ * each is entered in, and it moves straight between them; `pts`: the city it left and its way, on the screen */
+function settlerAt(pts: [number, number][], way: [number, number, number][], t: number): [number, number] {
+  const times = [-Infinity];
+  way.forEach(([, , turn], i) => {
+    const same = way.filter((w) => w[2] === turn);
+    times.push(turn - 1 + (same.indexOf(way[i]) + 1) / same.length);
+  });
+  for (let i = 1; i < pts.length; i++) {
+    if (t >= times[i]) continue;
+    const t0 = Number.isFinite(times[i - 1]) ? times[i - 1] : times[i] - 1;
+    const f = Math.max(0, Math.min(1, (t - t0) / (times[i] - t0)));
+    return [pts[i - 1][0] + (pts[i][0] - pts[i - 1][0]) * f, pts[i - 1][1] + (pts[i][1] - pts[i - 1][1]) * f];
+  }
+  return pts[pts.length - 1];
+}
 
 const key = (x: number, y: number) => `${x},${y}`;
 
@@ -85,8 +98,6 @@ export class MapView {
   showYields = true;
   /** how far the turn's moves are drawn (0: where units were last turn, 1: where they are now) */
   progress = 1;
-  /** settler trip -> the first turn the play has it */
-  settlerStarts = new Map<string, number>();
 
   constructor(
     parent: HTMLElement,
@@ -124,7 +135,7 @@ export class MapView {
     if (!plot) return null;
     const t = this.now.tiles.get(k);
     return {
-      plot,
+      plot: plot[4] && !this.revealed(plot[4]) ? [plot[0], plot[1], plot[2], plot[3], null, plot[5]] : plot,
       city: t?.city ?? null,
       feature: t ? t.feature : plot[3],
       improvement: t?.improvement ?? null,
@@ -346,11 +357,12 @@ export class MapView {
         if (img) ctx.drawImage(img, cx - r * 0.24, iy - r * 0.24, r * 0.48, r * 0.48);
         else this.text(IMPROVEMENT[t.improvement] ?? (this.data.names[t.improvement] ?? "改")[0], cx, iy + 1, r * 0.3, "#ffe9a8");
       }
-      const rIcon = p[4] && detail && !d && !city ? icon(p[4]) : null;
+      const shown = p[4] && this.revealed(p[4]);
+      const rIcon = shown && detail && !d && !city ? icon(p[4]!) : null;
       if (rIcon) {
         ctx.drawImage(rIcon, cx + r * 0.12, cy - r * 0.72, r * 0.6, r * 0.6);
-      } else if (p[4] && detail && !d && !city) {
-        const cls = this.data.resource_classes?.[p[4]] ?? "bonus";
+      } else if (shown && detail && !d && !city) {
+        const cls = this.data.resource_classes?.[p[4]!] ?? "bonus";
         ctx.fillStyle = RESOURCE_COLOURS[cls] ?? "#fff";
         ctx.beginPath();
         ctx.arc(cx + r * 0.42, cy - r * 0.38, r * 0.17, 0, Math.PI * 2);
@@ -413,26 +425,22 @@ export class MapView {
       ctx.stroke();
     }
 
-    // settlers on their way: a dashed line from the city they left to the site, the settler along it
-    for (const trip of this.state?.settlers ?? []) {
-      const [from, tx, ty, arrive] = trip;
+    // settlers on their way: their way from the city they left to the site (dashed), the settler where it is
+    for (const [from, tx, ty, , way] of this.state?.settlers ?? []) {
       const city = this.state!.cities.find((c) => c.name === from);
       if (!city) continue;
-      const [ax, ay] = S(...centre(city.xy[0], city.xy[1], this.data.height));
-      const [bx, by] = S(...centre(tx, ty, this.data.height));
+      const pts = [[city.xy[0], city.xy[1]], ...way.map(([x, y]) => [x, y])].map(([x, y]) => S(...centre(x, y, this.data.height)));
       ctx.strokeStyle = "#7dff9a";
       ctx.lineWidth = Math.max(1.5, r * 0.1);
       ctx.setLineDash([r * 0.3, r * 0.2]);
       ctx.beginPath();
-      ctx.moveTo(ax, ay);
-      ctx.lineTo(bx, by);
+      pts.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)));
       ctx.stroke();
+      const [bx, by] = S(...centre(tx, ty, this.data.height));
       hexPath(bx, by, r * 0.9);
       ctx.stroke();
       ctx.setLineDash([]);
-      const start = this.settlerStarts.get(settlerKey(trip)) ?? this.state!.turn;
-      const f = Math.min(1, Math.max(0, (this.state!.turn - 1 + this.progress - start + 1) / Math.max(1, arrive - start + 1)));
-      const [sx, sy] = [ax + (bx - ax) * f, ay + (by - ay) * f];
+      const [sx, sy] = settlerAt(pts, way, this.state!.turn - 1 + this.progress);
       this.unit("UNIT_SETTLER", "開", "#3f9f5a", sx, sy, r * 0.32);
     }
 
@@ -489,6 +497,12 @@ export class MapView {
     if (!this.state) {
       this.text("このターンの記録はありません", w / 2, 24, 14, "#ccc");
     }
+  }
+
+  /** whether the play sees `resource` this turn (its revealing tech researched) */
+  private revealed(resource: string): boolean {
+    const tech = this.data.resource_techs?.[resource];
+    return !tech || (this.state?.tech_list.includes(tech) ?? false);
   }
 
   /** a unit as a disc of `colour` with the game's icon (or `letter`) on it */

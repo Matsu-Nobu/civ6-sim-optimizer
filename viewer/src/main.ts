@@ -1,6 +1,6 @@
 import "./app.css";
 import { Chart, type Series } from "./chart";
-import { MapView, settlerKey, type View } from "./map";
+import { MapView, type View } from "./map";
 import { loadIcons, icon } from "./icons";
 import { PLAY_COLOURS, districtStyle } from "./style";
 import type { City, GameData, IndexEntry, Play, TurnState } from "./types";
@@ -126,7 +126,6 @@ class App {
       let acc = 0;
       for (const s of play.turns) cum.set(s.turn, (acc += s.output[0] + s.output[1]));
       const map = new MapView(mapBox, this.data, this.view, colour, () => this.redraw(), (xy) => this.setHover(xy), (c) => this.select(c));
-      for (const s of play.turns) for (const trip of s.settlers) if (!map.settlerStarts.has(settlerKey(trip))) map.settlerStarts.set(settlerKey(trip), s.turn);
       return { play, colour, byTurn, cum, map, info, tab: "turn" as const };
     });
     const turns = this.columns.flatMap((c) => c.play.turns.map((s) => s.turn));

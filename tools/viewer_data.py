@@ -33,7 +33,8 @@ def play(game, plan, opts):
             cities.append({"name": c["name"], "xy": c["xy"], "pop": c["pop"], "item": c["item"], "worked": c["worked"],
                            "yields": c["yields"], "buildings": c["buildings"], "districts": districts,
                            "tiles": c["tiles"]})
-        turns.append({"turn": t, "output": s["output"], "gold": s["gold"], "techs": s["techs"], "civics": s["civics"],
+        turns.append({"turn": t, "output": s["output"], "gold": s["gold"], "techs": s["techs"], "tech_list": s["tech_list"],
+                      "civics": s["civics"],
                       "research": s["research"], "civic": s["civic"], "government": s["government"],
                       "policies": s["policies"], "governors": s["governors"], "units": s["units_trained"],
                       "builders": s["builder_at"], "settlers": s["settlers"], "strategic": s["strategic"],
@@ -62,6 +63,9 @@ def main():
     res = g["rules"]["Resources"]
     col = res["cols"].index("ResourceClassType")
     classes = {r[0]: r[col].replace("RESOURCECLASS_", "").lower() for r in res["rows"]}
+    # a resource shows on the map once its PrereqTech is researched
+    tcol = res["cols"].index("PrereqTech")
+    reveal = {r[0]: r[tcol] for r in res["rows"] if r[tcol]}
     plots = [[p["x"], p["y"], p["terrain"], p["feature"], p["resource"], p["riverEdges"] if p["river"] else 0]
              for p in m["plots"]]
     plays = []
@@ -76,7 +80,8 @@ def main():
     names |= {k: f"新しい都市 {k[5:]}" for k in used if k.startswith("CITY_") and k[5:].isdigit()}
     data = {"name": name, "game": game, "options": opts, "width": m["width"], "height": m["height"], "plots": plots,
             "plays": plays, "names": names,
-            "resource_classes": {k: v for k, v in classes.items() if k in used}}
+            "resource_classes": {k: v for k, v in classes.items() if k in used},
+            "resource_techs": {k: v for k, v in reveal.items() if k in used}}
     OUT.mkdir(parents=True, exist_ok=True)
     (OUT / f"{name}.json").write_text(json.dumps(data, ensure_ascii=False, separators=(",", ":")))
     index_path = OUT / "index.json"

@@ -63,7 +63,7 @@ def decisions_by_turn(text):
         except json.JSONDecodeError:
             continue
         # the defaults a plan keeps (a builder waiting, nothing bought, a balanced citizen focus) are left out
-        if d["choice"] in (["wait"], ["none"], "balanced") or (d["key"][0] == "policy" and d["choice"] == "NONE"):
+        if d["choice"] in (["wait"], ["none"], "wait", "none", "balanced") or (d["key"][0] == "policy" and d["choice"] == "NONE"):
             continue
         # a decision with one option is still what the game did (the first scout, a forced civic), except the routine
         # ones

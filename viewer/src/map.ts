@@ -476,13 +476,38 @@ export class MapView {
     if (scale >= 3) {
       for (const c of this.state?.cities ?? []) {
         const [cx, cy] = S(...centre(c.xy[0], c.xy[1], this.data.height));
+        // a banner as the game's: the item being produced with its progress, the name, population / housing
         const name = this.data.names[c.name] ?? c.name;
         const size = Math.max(10, Math.min(16, r * 0.7));
+        const house = `${c.pop}/${Math.round(c.housing * 10) / 10}`;
         ctx.font = `bold ${size}px sans-serif`;
-        const tw = ctx.measureText(name).width;
-        ctx.fillStyle = "rgba(10,12,16,0.8)";
-        ctx.fillRect(cx - tw / 2 - 4, cy - r * 1.05 - size - 2, tw + 8, size + 5);
-        this.text(name, cx, cy - r * 1.05 - size / 2 + 1, size, "#fff", true);
+        const nw = ctx.measureText(name).width;
+        ctx.font = `${size * 0.8}px sans-serif`;
+        const hw = ctx.measureText(house).width;
+        const iw = size + 4;
+        const w = iw + nw + 6 + hw + 10;
+        const left = cx - w / 2, top = cy - r * 1.05 - size - 4;
+        ctx.fillStyle = "rgba(10,12,16,0.85)";
+        ctx.fillRect(left, top, w, size + 8);
+        const img = c.item ? icon(c.item) : null;
+        if (img) ctx.drawImage(img, left + 3, top + 2, size + 2, size + 2);
+        else if (c.item) this.text((this.data.names[c.item] ?? "?")[0], left + 3 + size / 2, top + size / 2 + 3, size * 0.8, "#ccc");
+        if (c.item && c.item_cost) {
+          const f = Math.min(1, c.item_progress / c.item_cost);
+          ctx.fillStyle = "#333";
+          ctx.fillRect(left, top + size + 5, w, 3);
+          ctx.fillStyle = "#e0a040";
+          ctx.fillRect(left, top + size + 5, w * f, 3);
+        }
+        ctx.textAlign = "left";
+        ctx.textBaseline = "middle";
+        ctx.font = `bold ${size}px sans-serif`;
+        ctx.fillStyle = "#fff";
+        ctx.fillText(name, left + iw + 2, top + size / 2 + 3);
+        ctx.font = `${size * 0.8}px sans-serif`;
+        // growth slows as the population nears the housing
+        ctx.fillStyle = c.pop >= c.housing - 1 ? "#ff8a6a" : "#9fd0ff";
+        ctx.fillText(house, left + iw + nw + 8, top + size / 2 + 3);
       }
     }
 

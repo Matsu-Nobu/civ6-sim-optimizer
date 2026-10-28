@@ -30,7 +30,8 @@ def play(game, plan, opts):
                 x, y = map(int, xy.split(","))
                 districts.append({"type": kind.rstrip("*"), "done": not kind.endswith("*"), "x": x, "y": y,
                                   "wonder": wonder or None})
-            cities.append({"name": c["name"], "xy": c["xy"], "pop": c["pop"], "item": c["item"], "worked": c["worked"],
+            cities.append({"name": c["name"], "xy": c["xy"], "pop": c["pop"], "housing": c["housing"], "item": c["item"],
+                           "item_progress": c["item_progress"], "item_cost": c["item_cost"], "worked": c["worked"],
                            "yields": c["yields"], "buildings": c["buildings"], "districts": districts,
                            "tiles": c["tiles"]})
         turns.append({"turn": t, "output": s["output"], "gold": s["gold"], "techs": s["techs"], "tech_list": s["tech_list"],

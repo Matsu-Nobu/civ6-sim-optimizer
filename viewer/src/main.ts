@@ -308,7 +308,7 @@ class App {
   private renderCities(c: Column, s: TurnState) {
     const table = el("table", "cities");
     const head = el("tr");
-    for (const h of ["都市", "人口", "生産中", "食料", "生産", "科学", "文化", "区域"]) head.append(el("th", "", h));
+    for (const h of ["都市", "人口", "住宅", "生産中", "進み", "食料", "生産", "科学", "文化", "区域"]) head.append(el("th", "", h));
     table.append(head);
     for (const city of s.cities) {
       const tr = el("tr", city.name === this.selected ? "sel" : "");
@@ -329,7 +329,18 @@ class App {
         chip.title = this.n(d.type) + (d.done ? "" : "（建設中）");
         ds.append(chip);
       }
-      tr.append(el("td", "", this.n(city.name)), el("td", "num", String(city.pop)), el("td", "", this.n(city.item)),
+      const item = el("td", "item");
+      const img = city.item ? icon(city.item) : null;
+      if (img) {
+        const im = el("img", "itemicon") as HTMLImageElement;
+        im.src = img.src;
+        item.append(im);
+      }
+      item.append(document.createTextNode(city.item ? this.n(city.item) : "（次の品目を選ぶ）"));
+      const progress = city.item && city.item_cost ? `${fmt(city.item_progress)}/${fmt(city.item_cost)}` : "";
+      const house = el("td", "num", fmt(city.housing));
+      if (city.pop >= city.housing - 1) house.classList.add("warn");
+      tr.append(el("td", "", this.n(city.name)), el("td", "num", String(city.pop)), house, item, el("td", "num", progress),
         el("td", "num", fmt(city.yields[0] ?? 0)), el("td", "num", fmt(city.yields[1] ?? 0)),
         el("td", "num", fmt(city.yields[3] ?? 0)), el("td", "num", fmt(city.yields[4] ?? 0)), ds);
       table.append(tr);

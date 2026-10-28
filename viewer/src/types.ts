@@ -18,7 +18,12 @@ export interface City {
   name: string;
   xy: [number, number];
   pop: number;
+  housing: number;
+  /** what the city is producing (null: it finished an item this turn and picks the next one next turn), the
+   * production put into it so far and its cost now */
   item: string | null;
+  item_progress: number;
+  item_cost: number | null;
   worked: [number, number][];
   /** food, production, gold, science, culture, faith */
   yields: number[];

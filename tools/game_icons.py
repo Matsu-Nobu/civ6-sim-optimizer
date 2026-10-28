@@ -4,7 +4,7 @@ viewer/public/data/icons/ (the images are the game's: they stay out of git).
   game_icons.py [--game <the game's folder>] [--workshop <the workshop's folder>]
 
 It writes the yield icons drawn on the map (yields.png) and, as <ICON_NAME>.png of 64 pixels, the icons of the
-districts, improvements, resources, the builder and the settler, with icons.json listing them.
+districts, improvements, resources, units, buildings (wonders too) and projects, with icons.json listing them.
 
 Two kinds of files hold the images.
 
@@ -41,8 +41,8 @@ OUT = civ6opt.ROOT / "viewer" / "public" / "data" / "icons"
 # DXGI_FORMAT -> the DDS four-character code and bytes per 4x4 block
 FORMATS = {71: (b"DXT1", 8), 72: (b"DXT1", 8), 77: (b"DXT5", 16), 78: (b"DXT5", 16)}
 
-# the icons the viewer draws (by prefix, or by name)
-WANTED = ("ICON_DISTRICT_", "ICON_IMPROVEMENT_", "ICON_RESOURCE_", "ICON_UNIT_BUILDER", "ICON_UNIT_SETTLER")
+# the icons the viewer draws (by prefix): the map's and what cities produce
+WANTED = ("ICON_DISTRICT_", "ICON_IMPROVEMENT_", "ICON_RESOURCE_", "ICON_UNIT_", "ICON_BUILDING_", "ICON_PROJECT_")
 SIZE = 64
 
 

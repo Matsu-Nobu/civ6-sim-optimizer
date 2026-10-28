@@ -777,6 +777,10 @@ fn snapshot(pl: &Planner, st: &State) -> Value {
             ("pop", Value::from(st.cacc(c.name).population)),
             ("food_store", Value::from(st.cacc(c.name).food_store)),
             ("item", Value::from(c.current.map(|x| x.as_string()))),
+            // the item's production so far and its cost now
+            ("item_progress", Value::from(c.current.and_then(|i| st.cacc(c.name).progress.get(&i).copied()).unwrap_or(0.0))),
+            ("item_cost", Value::from(c.current.and_then(|i| civ6opt::sim::current_cost(pl.r, &st.acc, &st.cities, &env, c.name, i, pl.speed)))),
+            ("housing", Value::from(civ6opt::growth::housing(pl.r, c, Some(&e)))),
             ("worked", Value::Arr(c.worked.iter().map(|w| Value::from(vec![w.x, w.y])).collect())),
             ("yields", Value::from(st.city_output.iter().find(|(n, _)| *n == c.name).map(|(_, y)| y.to_vec()).unwrap_or_default())),
             ("buildings", Value::Arr(c.buildings.iter().map(|b| Value::from(b.as_string())).collect())),

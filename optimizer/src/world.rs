@@ -158,8 +158,10 @@ pub fn move_cost(r: &Rules, m: &Map, a: XY, b: XY, left: f64, full: f64, road_ty
     let road = pa.route.is_some() && p.route.is_some();
     let road_cost = r.lookup_f("Routes", "RouteType", road_type, "MovementCost");
     let bridges = r.lookup_truthy("Routes", "RouteType", road_type, "SupportsBridges");
+    // crossing a river costs max(3, the points left): a unit with fewer than 3 points crosses only with full points
+    // (the user's rule), and the crossing ends its moves
     let cost = if m.river_between(a, b) && !(road && bridges) && !cities.contains(&a) && !cities.contains(&b) {
-        3f64.min(left)
+        3f64.max(left)
     } else if road {
         road_cost
     } else if cities.contains(&b) {

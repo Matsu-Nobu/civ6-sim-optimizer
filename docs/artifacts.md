@@ -8,6 +8,7 @@
 | `save_export/` | セーブから記録・地図・mod の版を書き出し、対局データを作るスクリプト（bash） |
 | `python_legacy/` | Python のシミュレータと診断用のスクリプト |
 | `tools/` | 分析のときに使う Python のスクリプト |
+| `viewer/` | 対局を地図の上でターンごとに再生するブラウザのビューワ（TypeScript と Vite） |
 | `game_mods/` | シミュレータの検証に使うゲームの mod |
 | `data/` | セーブ、書き出した記録、ルールのデータベース、対局データ、探索の結果 |
 | `docs/` | 文書 |
@@ -105,6 +106,8 @@ cd optimizer && cargo build --release
 | `tools/civ6opt.py` | ほかのスクリプトが読み込む部品。OS に合わせて `civ6opt` の実行ファイルを探し、優先度を下げて動かす |
 | `tools/job.py` | `civ6opt` を端末から切り離して動かし、`data/jobs/<名前>` に状態と出力を残す |
 | `tools/replay.py` | 記録したプレイを再現し、記録とターンごとに比べる（`check`）。再現の精度を対局ごとにまとめる（`summary`） |
+| `tools/plan_report.py` | 計画の対局を、ターンごとの決定（生産、購入、労働者の行動、研究、政策、総督など）の一覧にして Markdown に出力する |
+| `tools/viewer_data.py` | 対局の地図と、記録や計画の対局のターンごとの盤面と決定を、ビューワ（`viewer/`）が読む JSON に出力する |
 | `tools/replay_check.py` | `civ6opt run --genome record` の出力と記録を、ターンごとに比べる |
 | `tools/learn_train.py` | `civ6opt collect` と `irollout --rows` が書き出した選択肢の記録から、選択肢の点数への影響を学習する |
 | `tools/compare_methods.py` | 探索の手法を、同じ条件・同じ時間で比べる |

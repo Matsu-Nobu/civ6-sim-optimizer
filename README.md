@@ -55,6 +55,15 @@ Windows・macOS・Linux のどれでも同じ手順で動く。
 
 学習のスクリプト（`tools/learn_train.py`）を使うときは、仮想環境を作って `pip install -r requirements.txt` を実行する。
 
+## 対局を再生して見る
+
+`viewer/` は、対局を地図の上でターンごとに再生するブラウザのビューワである。2 つの対局（自分のプレイと探索の計画など）を左右に並べ、地図、そのターンの決定、産出、都市の一覧、ターンごとのグラフを比べられる。使うには Node.js 20 以降が要る。
+
+1. `python tools/viewer_data.py rome21 data/games/rome_20261021.json あなた=record 探索=<計画の .json> -- <探索と同じ civ6opt の条件>` を実行して、対局のデータを `viewer/public/data/` に書き出す。`record` は記録どおりの再現を表す。
+2. `viewer/` で `npm install` と `npm run dev` を実行し、表示された URL をブラウザで開く。
+
+地図はマウスのホイールで拡大・縮小し、ドラッグで動かす。左右の地図は一緒に動く。左右の矢印のキーでターンを送り、スペースのキーで再生を始める。都市をクリックすると、その都市の土地が明るくなり、都市の一覧にその都市の建物と区域が出る。
+
 # 文書の案内
 
 初めて読むときは、この文書、`docs/approach.md`、`docs/reports/` のレポートの順に読むと、全体がつかめる。特定の日の作業、決めたことの理由、ファイルの場所を調べるときは、それぞれ `docs/history.md`、`docs/decisions.md`、`docs/artifacts.md` を読む。

@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Civ6 対局ビューワ</title>
+  </head>
+  <body>
+    <header>
+      <select id="game" title="対局"></select>
+      <label>左 <select id="left"></select></label>
+      <label>右 <select id="right"></select></label>
+      <div class="controls">
+        <button id="first" title="最初のターン">⏮</button>
+        <button id="prev" title="前のターン（←）">◀</button>
+        <button id="play" title="再生（スペース）">▶</button>
+        <button id="next" title="次のターン（→）">▶▶</button>
+        <button id="last" title="最後のターン">⏭</button>
+        <select id="speed" title="再生の速さ">
+          <option value="1000">遅い</option>
+          <option value="500" selected>普通</option>
+          <option value="200">速い</option>
+        </select>
+      </div>
+      <input id="turn" type="range" min="0" max="0" />
+      <b id="turnlabel">T0</b>
+      <button id="fit" title="都市が収まるように地図を合わせる">全体</button>
+    </header>
+    <main id="columns"></main>
+    <footer>
+      <div class="charthead">
+        <select id="metric"></select>
+        <span id="legend"></span>
+        <span class="muted">グラフをクリックするとそのターンに移ります。黄色の枠は、そのターンに変わったタイルです。</span>
+      </div>
+      <div id="chart"></div>
+    </footer>
+    <div id="tip" hidden></div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

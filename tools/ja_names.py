@@ -37,12 +37,25 @@ def main(rules):
     files = sorted(p for p in GAME.rglob("*.xml") if "/Text/" in str(p) and "Scenario" not in str(p))
     for f in files + sorted(WORKSHOP.glob("*/lang/*.xml")):
         text.update(japanese_rows(f))
-    types = [t for (t,) in sqlite3.connect(f"file:{rules}?mode=ro", uri=True).execute("select Type from Types order by Type")]
+    db = sqlite3.connect(f"file:{rules}?mode=ro", uri=True)
+    types = [t for (t,) in db.execute("select Type from Types order by Type")]
+    # a type's Name column is its text's tag, which is not always LOC_<type>_NAME (POLICY_GOV_AUTOCRACY's is
+    # LOC_POLICY_AUTOCRACY_NAME)
+    tags = {}
+    for (table,) in db.execute("select name from sqlite_master where type = 'table'"):
+        cols = [c[1] for c in db.execute(f'pragma table_info("{table}")')]
+        # the tables of types have the type in their first column (PolicyType in Policies)
+        key = cols[0] if cols and cols[0].endswith("Type") else None
+        if "Name" in cols and key:
+            for t, tag in db.execute(f'select "{key}", Name from "{table}"'):
+                if isinstance(tag, str):
+                    tags.setdefault(t, tag)
     with open(OUT, "w") as out:
         for t in types:
-            name = text.get(f"LOC_{t}_NAME")
+            name = text.get(f"LOC_{t}_NAME") or text.get(tags.get(t, ""))
             if name:
-                out.write(f"{t}\t{name}\n")
+                # a few texts span lines; the table keeps one name per line
+                out.write(f"{t}\t{' '.join(name.split())}\n")
         for tag, name in sorted(text.items()):
             if tag.startswith("LOC_CITY_NAME_"):
                 out.write(f"{tag[4:]}\t{name}\n")

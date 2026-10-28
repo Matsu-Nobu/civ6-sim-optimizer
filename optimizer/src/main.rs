@@ -774,7 +774,11 @@ fn snapshot(st: &State) -> Value {
                     d.plot.wonder.map(|w| format!(":{}", w.as_string())).unwrap_or_default()))).collect())),
             ("improvements", Value::Arr(c.owned.iter().filter_map(|p| p.improvement).map(|i| Value::from(i.as_string())).collect())),
             ("owned", Value::from(c.owned.len() as i64)),
+            // each owned plot as [x, y, feature, improvement] (what the viewer draws)
+            ("tiles", Value::Arr(c.owned.iter().map(|p| Value::Arr(vec![Value::from(p.x as i64), Value::from(p.y as i64),
+                Value::from(p.feature.map(|x| x.as_string())), Value::from(p.improvement.map(|x| x.as_string()))])).collect())),
         ])).collect())),
+        ("builder_at", Value::Arr(st.builders.iter().map(|b| Value::from(vec![b.at.0, b.at.1, b.charges as i32])).collect())),
         ("techs", Value::from(st.acc.techs.len() as i64)),
         ("civics", Value::from(st.acc.civics.len() as i64)),
         ("government", Value::from(st.player.government.map(|x| x.as_string()))),

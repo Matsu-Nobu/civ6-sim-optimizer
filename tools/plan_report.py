@@ -54,14 +54,10 @@ def choice_text(kind, c):
     return json.dumps(c, ensure_ascii=False)
 
 
-def main():
-    if len(sys.argv) < 4:
-        sys.exit(__doc__)
-    game, plan, out, opts = sys.argv[1], sys.argv[2], Path(sys.argv[3]), sys.argv[4:]
-    decisions = civ6opt.run(["decisions", game, *opts, "--genome", plan], capture_output=True, text=True, check=True).stdout
-    states = civ6opt.run(["run", game, *opts, "--genome", plan], capture_output=True, text=True, check=True).stdout
+def decisions_by_turn(text):
+    """The `civ6opt decisions` output as {turn: [line, ...]} in Japanese."""
     by_turn = {}
-    for line in decisions.splitlines():
+    for line in text.splitlines():
         try:
             d = json.loads(line)
         except json.JSONDecodeError:
@@ -77,8 +73,13 @@ def main():
         kind = k[0]
         who = ja(k[1]) if kind in ("prod", "focus") else ""
         by_turn.setdefault(d["turn"], []).append(f"{KINDS.get(kind, kind)}{('（' + who + '）') if who else ''}：{choice_text(kind, d['choice'])}")
+    return by_turn
+
+
+def snapshots(text):
+    """The `civ6opt run` output as ({turn: state}, final line)."""
     snaps, final = {}, None
-    for line in states.splitlines():
+    for line in text.splitlines():
         try:
             d = json.loads(line)
         except json.JSONDecodeError:
@@ -87,6 +88,17 @@ def main():
             snaps[d["turn"]] = d
         elif "score" in d:
             final = d
+    return snaps, final
+
+
+def main():
+    if len(sys.argv) < 4:
+        sys.exit(__doc__)
+    game, plan, out, opts = sys.argv[1], sys.argv[2], Path(sys.argv[3]), sys.argv[4:]
+    decisions = civ6opt.run(["decisions", game, *opts, "--genome", plan], capture_output=True, text=True, check=True).stdout
+    states = civ6opt.run(["run", game, *opts, "--genome", plan], capture_output=True, text=True, check=True).stdout
+    by_turn = decisions_by_turn(decisions)
+    snaps, final = snapshots(states)
     lines = [f"# {Path(plan).name}", "", f"点数 {final['score']:.0f}、食料と生産の累計 {final['total']:.0f}。", ""]
     for t in sorted(by_turn):
         s = snaps.get(t)

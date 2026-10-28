@@ -1,6 +1,7 @@
 import "./app.css";
 import { Chart, type Series } from "./chart";
 import { MapView, settlerKey, type View } from "./map";
+import { loadIcons, icon } from "./icons";
 import { PLAY_COLOURS, districtStyle } from "./style";
 import type { City, GameData, IndexEntry, Play, TurnState } from "./types";
 
@@ -189,6 +190,18 @@ class App {
     tick();
   }
 
+  private pending = false;
+
+  /** redraws once on the next frame (as icons arrive) */
+  redrawSoon() {
+    if (this.pending) return;
+    this.pending = true;
+    requestAnimationFrame(() => {
+      this.pending = false;
+      this.redraw();
+    });
+  }
+
   private redraw() {
     const yields = $<HTMLInputElement>("#yields").checked;
     for (const c of this.columns) {
@@ -304,9 +317,16 @@ class App {
       const ds = el("td", "ds");
       for (const d of city.districts) {
         const [col, label] = districtStyle(d.type);
-        const chip = el("span", "chip", label);
-        chip.style.background = d.done ? col : "transparent";
-        chip.style.borderColor = col;
+        const img = icon(d.type);
+        const chip = el(img ? "img" : "span", "chip", img ? "" : label);
+        if (img) {
+          (chip as HTMLImageElement).src = img.src;
+          chip.style.opacity = d.done ? "1" : "0.45";
+          chip.style.border = "0";
+        } else {
+          chip.style.background = d.done ? col : "transparent";
+          chip.style.borderColor = col;
+        }
         chip.title = this.n(d.type) + (d.done ? "" : "（建設中）");
         ds.append(chip);
       }
@@ -351,9 +371,9 @@ class App {
   }
 }
 
-fetch("data/index.json")
-  .then((r) => r.json())
-  .then((index: IndexEntry[]) => new App(index))
+let app: App | null = null;
+Promise.all([fetch("data/index.json").then((r) => r.json()), loadIcons(() => app?.redrawSoon())])
+  .then(([index]) => (app = new App(index as IndexEntry[])))
   .catch(() => {
     document.body.innerHTML = "<p style='padding:2em'>viewer/public/data/index.json がありません。tools/viewer_data.py でデータを書き出してください。</p>";
   });

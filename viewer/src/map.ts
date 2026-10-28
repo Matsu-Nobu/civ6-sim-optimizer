@@ -1,4 +1,5 @@
 import { across, centre, corners, plotAt } from "./hex";
+import { icon } from "./icons";
 import { FEATURE, IMPROVEMENT, districtStyle, isHills, terrainColour } from "./style";
 import type { City, District, GameData, Plot, TurnState } from "./types";
 
@@ -295,7 +296,22 @@ export class MapView {
         ctx.fill();
       }
       const d = this.now.districts.get(k);
-      if (d) {
+      const dIcon = d && icon(d.type);
+      if (d && dIcon) {
+        // the game's district icon is a hex; one being built is faint, with a dashed outline
+        const size = r * 1.75;
+        ctx.globalAlpha = d.done ? 1 : 0.45;
+        ctx.drawImage(dIcon, cx - size / 2, cy - size / 2, size, size);
+        ctx.globalAlpha = 1;
+        if (!d.done) {
+          hexPath(cx, cy, r * 0.8);
+          ctx.setLineDash([r * 0.15, r * 0.12]);
+          ctx.strokeStyle = "#fff";
+          ctx.lineWidth = Math.max(1, r * 0.06);
+          ctx.stroke();
+          ctx.setLineDash([]);
+        }
+      } else if (d) {
         const [col, label] = districtStyle(d.type);
         hexPath(cx, cy, r * 0.78);
         ctx.fillStyle = d.done ? col : hexA(col, 0.35);
@@ -320,16 +336,20 @@ export class MapView {
         if (scale >= 4) this.text(String(city.pop), cx, cy, r * 0.85, "#fff", true);
       }
       if (t?.improvement && !d && !city && detail) {
-        const label = IMPROVEMENT[t.improvement] ?? (this.data.names[t.improvement] ?? "改")[0];
         // above the yield icons when they are drawn, else below the centre
         const iy = this.showYields && scale >= 14 ? cy - r * 0.6 : cy + r * 0.45;
         ctx.fillStyle = "rgba(20,20,20,0.7)";
         ctx.beginPath();
-        ctx.arc(cx, iy, r * 0.25, 0, Math.PI * 2);
+        ctx.arc(cx, iy, r * 0.27, 0, Math.PI * 2);
         ctx.fill();
-        this.text(label, cx, iy + 1, r * 0.3, "#ffe9a8");
+        const img = icon(t.improvement);
+        if (img) ctx.drawImage(img, cx - r * 0.24, iy - r * 0.24, r * 0.48, r * 0.48);
+        else this.text(IMPROVEMENT[t.improvement] ?? (this.data.names[t.improvement] ?? "改")[0], cx, iy + 1, r * 0.3, "#ffe9a8");
       }
-      if (p[4] && detail && !d && !city) {
+      const rIcon = p[4] && detail && !d && !city ? icon(p[4]) : null;
+      if (rIcon) {
+        ctx.drawImage(rIcon, cx + r * 0.12, cy - r * 0.72, r * 0.6, r * 0.6);
+      } else if (p[4] && detail && !d && !city) {
         const cls = this.data.resource_classes?.[p[4]] ?? "bonus";
         ctx.fillStyle = RESOURCE_COLOURS[cls] ?? "#fff";
         ctx.beginPath();
@@ -413,14 +433,7 @@ export class MapView {
       const start = this.settlerStarts.get(settlerKey(trip)) ?? this.state!.turn;
       const f = Math.min(1, Math.max(0, (this.state!.turn - 1 + this.progress - start + 1) / Math.max(1, arrive - start + 1)));
       const [sx, sy] = [ax + (bx - ax) * f, ay + (by - ay) * f];
-      ctx.fillStyle = "#7dff9a";
-      ctx.strokeStyle = "#000";
-      ctx.lineWidth = 1;
-      ctx.beginPath();
-      ctx.arc(sx, sy, r * 0.3, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.stroke();
-      if (scale >= 5) this.text("開", sx, sy + 1, r * 0.36, "#000", true);
+      this.unit("UNIT_SETTLER", "開", "#3f9f5a", sx, sy, r * 0.32);
     }
 
     // builders: from where they were last turn to where they are now, with the way they went
@@ -440,14 +453,15 @@ export class MapView {
         cx = px + (nx - px) * this.progress;
         cy = py + (ny - py) * this.progress;
       }
-      ctx.fillStyle = "#f2c14e";
-      ctx.strokeStyle = "#000";
-      ctx.lineWidth = 1;
-      ctx.beginPath();
-      ctx.arc(cx + r * 0.38, cy + r * 0.3, r * 0.24, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.stroke();
-      if (detail) this.text(String(charges), cx + r * 0.38, cy + r * 0.31, r * 0.32, "#000");
+      this.unit("UNIT_BUILDER", "労", "#b8862e", cx + r * 0.38, cy + r * 0.3, r * 0.28);
+      if (detail) {
+        // the builder's charges left
+        ctx.fillStyle = "#000";
+        ctx.beginPath();
+        ctx.arc(cx + r * 0.6, cy + r * 0.5, r * 0.13, 0, Math.PI * 2);
+        ctx.fill();
+        this.text(String(charges), cx + r * 0.6, cy + r * 0.51, r * 0.2, "#fff", true);
+      }
     }
 
     // city names
@@ -475,6 +489,21 @@ export class MapView {
     if (!this.state) {
       this.text("このターンの記録はありません", w / 2, 24, 14, "#ccc");
     }
+  }
+
+  /** a unit as a disc of `colour` with the game's icon (or `letter`) on it */
+  private unit(type: string, letter: string, colour: string, x: number, y: number, rr: number) {
+    const ctx = this.ctx;
+    ctx.fillStyle = colour;
+    ctx.strokeStyle = "#000";
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.arc(x, y, rr, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    const img = icon(type);
+    if (img) ctx.drawImage(img, x - rr * 0.8, y - rr * 0.8, rr * 1.6, rr * 1.6);
+    else if (this.view.scale >= 5) this.text(letter, x, y + 1, rr * 1.2, "#000", true);
   }
 
   private yieldIcon(i: number, v: number, x: number, y: number, size: number) {

@@ -799,13 +799,14 @@ fn snapshot(pl: &Planner, st: &State) -> Value {
         ])).collect())),
         ("builder_at", Value::Arr(st.builders.iter().map(|b| Value::from(vec![b.at.0 as i64, b.at.1 as i64, b.charges, b.id.unwrap_or(-1)])).collect())),
         // settlers on their way: [city they left, target x, target y, turn they found the city, the way: [x, y, turn
-        // they enter the plot], ...]; the way is the shortest one from the city (the planner keeps only its length);
-        // its turns are counted back from the founding turn
+        // they enter the plot], ..., the turns the shortest way takes (Planner::travel)]; the way is the shortest one
+        // from the city (the planner keeps only its length); its turns are counted back from the founding turn
         ("settlers", Value::Arr(st.settlers.iter().filter_map(|s| s.target.map(|t| {
             let from = st.cities.iter().find(|c| c.name == s.from).map(|c| c.center);
             let way = from.and_then(|a| pl.travel_way(st, a, t, "UNIT_SETTLER")).map(|(k, path)| path.iter()
                 .map(|(xy, tt)| Value::from(vec![xy.0 as i64, xy.1 as i64, s.arrive - k + tt])).collect::<Vec<_>>()).unwrap_or_default();
-            Value::Arr(vec![Value::from(s.from.as_string()), Value::from(t.0 as i64), Value::from(t.1 as i64), Value::from(s.arrive), Value::Arr(way)])
+            let k = from.and_then(|a| pl.travel(st, a, t, "UNIT_SETTLER"));
+            Value::Arr(vec![Value::from(s.from.as_string()), Value::from(t.0 as i64), Value::from(t.1 as i64), Value::from(s.arrive), Value::Arr(way), Value::from(k)])
         })).collect())),
         ("techs", Value::from(st.acc.techs.len() as i64)),
         ("tech_list", Value::Arr(st.acc.techs.iter().map(|t| Value::from(t.as_string())).collect())),
@@ -868,6 +869,11 @@ fn main() {
     let cmd = args.get(1).map(|s| s.as_str()).unwrap_or("");
     if cmd == "build" {
         build(&args);
+        return;
+    }
+    // civ6opt body <save> <out>: the save's decompressed data, for looking into the format
+    if cmd == "body" {
+        std::fs::write(&args[3], civ6opt::save::decompress(&std::fs::read(&args[2]).unwrap_or_else(|e| panic!("{}: {e}", args[2])))).unwrap();
         return;
     }
     // civ6opt export <save dir> <player id> <rules.sqlite>: one JSON line per save (the export rows), in file order;

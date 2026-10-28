@@ -1129,7 +1129,7 @@ pub struct Unit {
     pub offset: i64,
 }
 
-/// Live unit records: `type, kind (1..4, -1 for great people), ?, -9999, -9999, x, y, -1, owner`; builder charges
+/// Live unit records: `type, kind (0 for settlers, 1..4, -1 for great people), ?, -9999, -9999, x, y, -1, owner`; builder charges
 /// ×256 at +80. Ids come from the per-player unit lists (`[…, 1, index, id, x, y, owner, mp×256, domain, …]`),
 /// matched by owner and plot in file order.
 fn parse_units(p: &Bytes, d: &Dict, w: i64, h: i64) -> Vec<Unit> {
@@ -1140,7 +1140,7 @@ fn parse_units(p: &Bytes, d: &Dict, w: i64, h: i64) -> Vec<Unit> {
         let here = i;
         i += 1;
         let kind = p.i32(here + 4);
-        if !(1..=4).contains(&kind) && kind != -1 {
+        if !(0..=4).contains(&kind) && kind != -1 {
             continue;
         }
         if p.i32(here + 12) != -9999 || p.i32(here + 16) != -9999 {

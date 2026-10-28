@@ -1228,6 +1228,42 @@ fn main() {
             let st = pl.state_at(row);
             println!("{:?}", pl.travel(&st, a, b, &unit));
         }
+        "movecheck" => {
+            // the recorded one-turn moves of the player's land units (same id, two consecutive saves) that the movement
+            // rules cannot do in one turn; --river-min: crossing a river costs min(3, points left)
+            civ6opt::world::RIVER_MIN.store(args.iter().any(|a| a == "--river-min"), std::sync::atomic::Ordering::Relaxed);
+            let (pl, _) = planner(&p);
+            let rows: Vec<&Value> = p.v["rows"].as_array().unwrap().iter().collect();
+            let (mut n, mut bad) = (0, 0);
+            for w in rows.windows(2) {
+                let (a, b) = (w[0], w[1]);
+                if a["cities"].as_array().map(|x| x.is_empty()).unwrap_or(true) || b["turn"].as_i64() != a["turn"].as_i64().map(|t| t + 1) {
+                    continue;
+                }
+                let st = pl.state_at(a);
+                for u in a["units"].as_array().into_iter().flatten() {
+                    let Some(id) = u["id"].as_i64() else { continue };
+                    let Some(v) = b["units"].as_array().into_iter().flatten().find(|v| v["id"].as_i64() == Some(id)) else { continue };
+                    let from = (u["x"].as_i64().unwrap() as i32, u["y"].as_i64().unwrap() as i32);
+                    let to = (v["x"].as_i64().unwrap() as i32, v["y"].as_i64().unwrap() as i32);
+                    let ty = u["type"].as_str().unwrap_or("").to_string();
+                    if from == to || pl.r.lookup_sym("Units", "UnitType", sym(&ty), "Domain") != Some(sym("DOMAIN_LAND")) {
+                        continue;
+                    }
+                    if [from, to].iter().any(|xy| pl.w.map.plots.get(xy).map(|q| q.terrain == sym("TERRAIN_COAST") || q.terrain == sym("TERRAIN_OCEAN")).unwrap_or(true)) {
+                        continue;
+                    }
+                    n += 1;
+                    let way = pl.travel_way(&st, from, to, &ty);
+                    let turns = way.as_ref().map(|(_, path)| path.last().map(|x| x.1).unwrap_or(0));
+                    if turns != Some(0) {
+                        bad += 1;
+                        println!("T{} {ty} {id} {from:?} -> {to:?}: the rules need {:?}", a["turn"], way.map(|(_, path)| path));
+                    }
+                }
+            }
+            println!("{n} moves, {bad} the rules cannot do in one turn");
+        }
         "ils" => {
             // iterated local search that learns from its trials. Each round, --threads kicks of the incumbent (one
             // decision changed to another of its options, every decision from a turn on dropped, or an idle unit

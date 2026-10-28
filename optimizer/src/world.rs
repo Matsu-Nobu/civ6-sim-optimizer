@@ -144,6 +144,8 @@ impl Map {
 }
 
 /// Movement cost of one step (world.move_cost), or None if the step is not possible.
+pub static RIVER_MIN: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
 pub fn move_cost(r: &Rules, m: &Map, a: XY, b: XY, left: f64, full: f64, road_type: Sym, cities: &HashSet<XY>) -> Option<f64> {
     let p = m.plots.get(&b)?;
     if p.terrain.ends_with("MOUNTAIN") || p.terrain == s!("TERRAIN_COAST") || p.terrain == s!("TERRAIN_OCEAN") {
@@ -159,9 +161,9 @@ pub fn move_cost(r: &Rules, m: &Map, a: XY, b: XY, left: f64, full: f64, road_ty
     let road_cost = r.lookup_f("Routes", "RouteType", road_type, "MovementCost");
     let bridges = r.lookup_truthy("Routes", "RouteType", road_type, "SupportsBridges");
     // crossing a river costs max(3, the points left): a unit with fewer than 3 points crosses only with full points
-    // (the user's rule), and the crossing ends its moves
+    // (the user's rule), and the crossing ends its moves; RIVER_MIN (civ6opt movecheck --river-min) tries min(3, left)
     let cost = if m.river_between(a, b) && !(road && bridges) && !cities.contains(&a) && !cities.contains(&b) {
-        3f64.max(left)
+        if RIVER_MIN.load(std::sync::atomic::Ordering::Relaxed) { 3f64.min(left) } else { 3f64.max(left) }
     } else if road {
         road_cost
     } else if cities.contains(&b) {

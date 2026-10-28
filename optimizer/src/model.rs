@@ -377,6 +377,10 @@ pub struct State {
     pub req_at: Vec<(u32, f64)>,
     /// the gold missing at the ends of the turns so far, summed (a treasury below zero: the game disbands units)
     pub debt: f64,
+    /// each yield (food, production, gold, science, culture, faith) summed over the turns played so far
+    pub yields_sum: [f64; 6],
+    /// what harvests gave so far (food, production, gold, ...): they go to the item and the food store, not the yields
+    pub harvest_sum: [f64; 6],
 }
 
 impl State {
@@ -610,6 +614,8 @@ pub fn state_from(v: &Value) -> State {
         improving: vec![],
         req_at: vec![],
         debt: 0.0,
+        yields_sum: [0.0; 6],
+        harvest_sum: [0.0; 6],
     }
 }
 
@@ -718,5 +724,7 @@ pub fn state_from_row(d: &Value) -> State {
         improving: vec![],
         req_at: vec![],
         debt: 0.0,
+        yields_sum: [0.0; 6],
+        harvest_sum: [0.0; 6],
     }
 }

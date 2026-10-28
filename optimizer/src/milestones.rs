@@ -23,6 +23,9 @@ pub struct Milestone {
 
 #[derive(Clone, Debug, Default)]
 pub struct Milestones {
+    /// science and culture summed over the turns to the evaluation's end must reach these (e.g. the recorded play's):
+    /// each point short costs the weight (a slope, no cliff)
+    pub sum_floor: Option<([f64; 2], f64)>,
     pub list: Vec<Milestone>,
     pub weight: f64,
     /// what the plan must have at the evaluation turn: (district type placed, or "military" for units trained that
@@ -59,8 +62,14 @@ impl Milestone {
 }
 
 impl Milestones {
+    /// what the science and culture sums are short of sum_floor, times its weight
+    pub fn sum_floor_penalty(&self, st: &State) -> f64 {
+        self.sum_floor.map(|([sci, cul], w)| w * ((sci - st.yields_sum[3]).max(0.0) + (cul - st.yields_sum[4]).max(0.0))).unwrap_or(0.0)
+    }
+
     pub fn penalty(&self, st: &State) -> f64 {
-        let floors: f64 = self.list.iter().map(|m| { let (need, have) = m.balance(st); self.weight * (need - have).max(0.0) }).sum();
+        let floors: f64 = self.list.iter().map(|m| { let (need, have) = m.balance(st); self.weight * (need - have).max(0.0) }).sum::<f64>()
+            + self.sum_floor_penalty(st);
         let at = |k: u32| st.req_at.iter().find(|x| x.0 == k).map(|x| x.1);
         let req: f64 = (0..self.require.len()).map(|i| at(i as u32).unwrap_or_else(|| self.req_term(i, st))).sum();
         let reward: f64 = (0..self.reward.len()).map(|j| at(REWARD_KEY + j as u32).unwrap_or_else(|| self.reward_term(j, st))).sum();
@@ -69,7 +78,8 @@ impl Milestones {
 
     /// The part of `penalty` the requirements and floors make (without the rewards): what a plan pays for missing them.
     pub fn require_penalty(&self, st: &State) -> f64 {
-        let floors: f64 = self.list.iter().map(|m| { let (need, have) = m.balance(st); self.weight * (need - have).max(0.0) }).sum();
+        let floors: f64 = self.list.iter().map(|m| { let (need, have) = m.balance(st); self.weight * (need - have).max(0.0) }).sum::<f64>()
+            + self.sum_floor_penalty(st);
         let at = |k: u32| st.req_at.iter().find(|x| x.0 == k).map(|x| x.1);
         floors + (0..self.require.len()).map(|i| at(i as u32).unwrap_or_else(|| self.req_term(i, st))).sum::<f64>()
     }

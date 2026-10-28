@@ -500,8 +500,14 @@ fn setup_milestones(p: &Problem, args: &[String], turn: i64) {
         eprintln!("requirement {w}: the one on offer at T{t} is {:?}, {need:.0} points", offered.map(|x| x.as_string()));
         (w.clone(), members, need.max(1.0))
     }).collect();
+    // --sum-floor SCIENCE,CULTURE,WEIGHT: the science and culture summed to the evaluation's end must reach these
+    let sum_floor = arg(args, "--sum-floor").map(|x| {
+        let v: Vec<f64> = x.split(',').map(|y| y.parse().unwrap()).collect();
+        assert!(v.len() == 3, "--sum-floor SCIENCE,CULTURE,WEIGHT");
+        ([v[0], v[1]], v[2])
+    });
     let Some(spec) = arg(args, "--milestones") else {
-        let m = if require.is_empty() && reward.is_empty() { None } else { Some(std::sync::Arc::new(civ6opt::milestones::Milestones { list: vec![], weight: 0.0, require, require_weight, smooth, paths, reward, gp, require_at, reward_at })) };
+        let m = if require.is_empty() && reward.is_empty() && sum_floor.is_none() { None } else { Some(std::sync::Arc::new(civ6opt::milestones::Milestones { sum_floor, list: vec![], weight: 0.0, require, require_weight, smooth, paths, reward, gp, require_at, reward_at })) };
         let _ = MILESTONES.set(m);
         return;
     };
@@ -515,7 +521,7 @@ fn setup_milestones(p: &Problem, args: &[String], turn: i64) {
                   m.costs.iter().map(|x| x.1).sum::<f64>(), m.growth, m.bonus);
         list.push(m);
     }
-    let _ = MILESTONES.set(Some(std::sync::Arc::new(civ6opt::milestones::Milestones { list, weight, require, require_weight, smooth, paths, reward, gp, require_at, reward_at })));
+    let _ = MILESTONES.set(Some(std::sync::Arc::new(civ6opt::milestones::Milestones { sum_floor, list, weight, require, require_weight, smooth, paths, reward, gp, require_at, reward_at })));
 }
 
 fn genome_from(v: &Value) -> HashMap<Key, Choice> {
@@ -1016,6 +1022,57 @@ fn main() {
                 eprintln!("{path}: {plays} decisions sampled ({:.0}s)", t0.elapsed().as_secs_f64());
             }
         }
+        "valuerows" => {
+            // rows for comparing models of a state's value (tools/value_compare.py): --plays plays (default 2000) on
+            // --threads (default 8); each play but the first changes 1 to --changes (default 5) decisions of the
+            // --init plan to other options at random and plays to the end. Each turn's state is one row: play, turn,
+            // the value features (crate::value::features), the play's score. Written as TSV to --out.
+            let plays: usize = arg(&args, "--plays").map(|x| x.parse().unwrap()).unwrap_or(2000);
+            let threads: usize = arg(&args, "--threads").map(|x| x.parse().unwrap()).unwrap_or(8);
+            let changes: u64 = arg(&args, "--changes").map(|x| x.parse().unwrap()).unwrap_or(5);
+            let out = arg(&args, "--out").expect("--out rows.tsv");
+            let g0 = genome_arg(&p, arg(&args, "--init").as_deref());
+            let (mut pl, st0) = planner(&p);
+            pl.s.horizon = turn + ext;
+            let mut rec = Recorder { genome: &g0, log: vec![] };
+            opt::play(&pl, &st0, &mut rec, opt::Horizon::plain(turn));
+            let cands: Vec<(i64, Key, Vec<Choice>)> = rec.log.iter().filter(|d| d.3.len() > 1).map(|d| (d.0, d.1.clone(), d.3.clone())).collect();
+            let lines = std::sync::Mutex::new(Vec::<String>::new());
+            std::thread::scope(|sc| {
+                for w in 0..threads {
+                    let (p, cands, g0, lines) = (&p, &cands, &g0, &lines);
+                    sc.spawn(move || {
+                        let (mut wpl, wst0) = planner(p);
+                        wpl.s.horizon = turn + ext;
+                        let mut rng = opt::Rng::new(5000 + w as u64 + seed);
+                        let mut i = w;
+                        while i < plays {
+                            let mut g = g0.clone();
+                            if i > 0 {
+                                for _ in 0..1 + rng.next_u64() % changes {
+                                    let (_, k, o) = &cands[(rng.next_u64() % cands.len() as u64) as usize];
+                                    g.insert(k.clone(), o[(rng.next_u64() % o.len() as u64) as usize].clone());
+                                }
+                            }
+                            let mut st = wst0.clone();
+                            let mut feats = vec![];
+                            while st.turn <= turn {
+                                feats.push((st.turn, civ6opt::value::features(&wpl, &st)));
+                                wpl.advance(&mut st, &mut GenomeChooser { genome: &g });
+                            }
+                            let score = opt::play(&wpl, &wst0, &mut GenomeChooser { genome: &g }, horizon).0;
+                            let mut l = lines.lock().unwrap();
+                            for (t, f) in feats {
+                                l.push(format!("{i}\t{t}\t{}\t{score:.2}", f.iter().map(|x| format!("{x:.4}")).collect::<Vec<_>>().join("\t")));
+                            }
+                            i += threads;
+                        }
+                    });
+                }
+            });
+            std::fs::write(&out, lines.into_inner().unwrap().join("\n") + "\n").unwrap();
+            eprintln!("wrote {out}");
+        }
         "learn" => {
             // fits the value model (crate::value) to plays around the --init plan: each play but the first changes one
             // of its decisions (turn T) to another option at random and plays to the end, the plan's choices elsewhere;
@@ -1136,6 +1193,7 @@ fn main() {
                               m.weight * (need - have).max(0.0));
                 }
             }
+            let harvested = st.harvest_sum;
             let mut ext_total = 0.0;
             let mut xc = opt::ExtChooser;
             while st.turn <= turn + ext {
@@ -1148,6 +1206,7 @@ fn main() {
             }
             let idle = opt::idle_units(&st0, &st);
             println!("{}", Value::obj(vec![("total", Value::from(total)), ("ext", Value::from(ext_total)), ("idle_units", Value::from(idle)),
+                ("harvested", Value::from(harvested[..3].to_vec())),
                 ("floor_penalty", Value::from(floor)),
                 ("debt", Value::from(debt)),
                 ("score", Value::from(total + ext_w * ext_total - opt::IDLE_UNIT_PENALTY * idle - opt::debt_penalty(debt) - floor)), ("seconds", Value::from(t.elapsed().as_secs_f64())),

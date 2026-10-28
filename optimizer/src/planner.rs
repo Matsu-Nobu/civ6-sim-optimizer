@@ -1783,8 +1783,17 @@ impl<'a> Planner<'a> {
     // ---------------------------------------------------------------- the turn
     pub fn advance(&self, st: &mut State, ch: &mut dyn Chooser) {
         let _g = crate::prof::start(17);
+        let harvested = st.harvest_sum;
         self.advance_turn(st, ch);
+        // what the turn's harvests gave (food to the store, production to the item, gold to the treasury) counts in
+        // the turn's output as the plots' yields do: a chop and a lumber mill are both production the city gets
+        for k in 0..3 {
+            st.last_output[k] += st.harvest_sum[k] - harvested[k];
+        }
         st.debt += (-st.acc.gold).max(0.0);
+        for i in 0..6 {
+            st.yields_sum[i] += st.last_output[i];
+        }
         let e = self.eng(st);
         crate::strategic::accumulate(self.r, st, &e);
     }
@@ -2299,6 +2308,9 @@ impl<'a> Planner<'a> {
                     eprintln!("HARVEST {cname} {:?} {:?} {ys:?}", (x, y), what);
                 }
                 self.chop_into(st, ci, get_y(&ys, s!("YIELD_PRODUCTION")), &env);
+                for (k, y) in ["YIELD_FOOD", "YIELD_PRODUCTION", "YIELD_GOLD"].iter().enumerate() {
+                    st.harvest_sum[k] += get_y(&ys, sym(y));
+                }
                 let ca = st.cacc_mut(cname);
                 ca.food_store += get_y(&ys, s!("YIELD_FOOD"));
                 if get_y(&ys, s!("YIELD_FOOD")) > 0.0 {

@@ -931,6 +931,7 @@ fn main() {
     // --seed: varies a search's random numbers (0: as before)
     let seed: u64 = arg(&args, "--seed").map(|x| x.parse().unwrap()).unwrap_or(0);
     let ext_w: f64 = arg(&args, "--ext-weight").map(|x| x.parse().unwrap()).unwrap_or(1.0);
+    opt::EXT_MODEL.store(args.iter().any(|a| a == "--ext-model"), std::sync::atomic::Ordering::Relaxed);
     let horizon = opt::Horizon { turn, ext, w: ext_w, free: None, general: args.iter().any(|a| a == "--general") };
     // --value model.json: decisions the plan does not fix take the option with the best learned value --look turns
     // (default 3) after their own (crate::value; the model from civ6opt learn)

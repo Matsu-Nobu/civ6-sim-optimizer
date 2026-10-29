@@ -1005,31 +1005,35 @@ impl<'a> Planner<'a> {
     /// Chopped (harvested) production goes into the current item with the item's production percent (policies,
     /// buildings); one it finishes completes and carries over only the plain amount beyond what it lacked
     /// (CivFanatics, "Is chopping overflow overcorrected?").
-    fn chop_into(&self, st: &mut State, ci: usize, amount: f64, env: &Env) {
+    /// A harvest's production into the city's item; returns the production the item got. What the item does not
+    /// need to finish is lost (the game's rule since Gathering Storm: only the turn's own production overflows).
+    fn chop_into(&self, st: &mut State, ci: usize, amount: f64, env: &Env) -> f64 {
         let c = &st.cities[ci];
         let n = c.name;
         let item = c.current;
         let ca = st.acc.cities.get(&n).cloned().unwrap_or_default();
         let Some(item) = item.filter(|_| amount > 0.0 && ca.chopped.is_none()) else {
             st.cacc_mut(n).raw += amount;
-            return;
+            return amount;
         };
         let e = self.eng(st);
         let pct = item_production_percent(self.r, &e, c, item);
         let Some(cost) = crate::sim::current_cost(self.r, &st.acc, &st.cities, env, n, item, self.speed) else {
             st.cacc_mut(n).raw += amount;
-            return;
+            return amount;
         };
         let ca = st.cacc_mut(n);
         let prog = ca.progress.get(&item).copied().unwrap_or(0.0) + ca.overflow;
         ca.overflow = 0.0;
-        let lack = cost - prog;
+        let lack = (cost - prog).max(0.0);
         let boosted = amount * (1.0 + pct / 100.0);
         if boosted >= lack {
-            ca.progress.insert(item, cost + (amount - lack).max(0.0));
+            ca.progress.insert(item, cost);
             ca.chopped = Some(item);
+            lack
         } else {
             ca.progress.insert(item, prog + boosted);
+            boosted
         }
     }
 
@@ -2307,10 +2311,11 @@ impl<'a> Planner<'a> {
                 if crate::envcfg::trace_city(&cname.as_string()) {
                     eprintln!("HARVEST {cname} {:?} {:?} {ys:?}", (x, y), what);
                 }
-                self.chop_into(st, ci, get_y(&ys, s!("YIELD_PRODUCTION")), &env);
-                for (k, y) in ["YIELD_FOOD", "YIELD_PRODUCTION", "YIELD_GOLD"].iter().enumerate() {
-                    st.harvest_sum[k] += get_y(&ys, sym(y));
-                }
+                // the production counts as far as the item used it
+                let used = self.chop_into(st, ci, get_y(&ys, s!("YIELD_PRODUCTION")), &env);
+                st.harvest_sum[0] += get_y(&ys, s!("YIELD_FOOD"));
+                st.harvest_sum[1] += used;
+                st.harvest_sum[2] += get_y(&ys, s!("YIELD_GOLD"));
                 let ca = st.cacc_mut(cname);
                 ca.food_store += get_y(&ys, s!("YIELD_FOOD"));
                 if get_y(&ys, s!("YIELD_FOOD")) > 0.0 {

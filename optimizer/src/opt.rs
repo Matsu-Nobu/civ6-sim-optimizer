@@ -50,6 +50,19 @@ impl Horizon {
 /// never spends, which would leave gold worth nothing) and no settlers or idle units are made.
 pub struct ExtChooser;
 
+/// --ext-model: the extension's decisions are the learned model's (learn::FALLBACK, from --fallback-model) instead of
+/// the base policy's, so what the plan leaves (forests, population, housing) is used about as a good player would
+pub static EXT_MODEL: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+impl ExtChooser {
+    fn pick(p: &Planner, st: &State, key: &Key, options: &[Choice]) -> Option<Choice> {
+        match crate::learn::FALLBACK.get() {
+            Some(m) if EXT_MODEL.load(std::sync::atomic::Ordering::Relaxed) => crate::learn::model_pick(m, p, st, key, options),
+            _ => p.base(st, key, options),
+        }
+    }
+}
+
 impl Chooser for ExtChooser {
     fn choose(&mut self, p: &Planner, st: &State, key: &Key, options: &[Choice]) -> Option<Choice> {
         if key.kind == s!("prod") {
@@ -57,7 +70,7 @@ impl Chooser for ExtChooser {
             // production and a citizen and misprice the position the plan leaves
             let keep: Vec<Choice> = options.iter().filter(|o| !o.sym().map(|u| idle_unit(u) || u == s!("UNIT_SETTLER")).unwrap_or(false)).cloned().collect();
             if !keep.is_empty() {
-                return p.base(st, key, &keep);
+                return Self::pick(p, st, key, &keep);
             }
         }
         if key.kind == s!("buy") && key.n > 0 {
@@ -71,7 +84,10 @@ impl Chooser for ExtChooser {
                 return Some(o.clone());
             }
         }
-        p.base(st, key, options)
+        if key.kind == s!("buy") || key.kind == s!("settle") {
+            return p.base(st, key, options);
+        }
+        Self::pick(p, st, key, options)
     }
 }
 

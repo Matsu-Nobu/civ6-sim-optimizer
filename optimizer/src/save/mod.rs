@@ -600,7 +600,8 @@ fn scan_for_type(p: &Bytes, d: &Dict, from: i64, to: i64, kind: &str) -> Option<
     }
 }
 
-/// `{POLICY_*, slot}` pairs ending within 64 bytes before `end`, read backwards while they stay policies.
+/// `{POLICY_* or -1, slot type}` pairs (one per slot, -1 for an empty one) ending within 64 bytes before `end`, read
+/// backwards while they stay such pairs.
 fn slotted_policies(p: &Bytes, d: &Dict, end: i64) -> Vec<&'static str> {
     let mut last = -1;
     let mut o = end - 8;
@@ -614,11 +615,17 @@ fn slotted_policies(p: &Bytes, d: &Dict, end: i64) -> Vec<&'static str> {
     let mut out = vec![];
     let mut o = last;
     while o >= 0 {
-        let Some(policy) = type_at(p, d, o, "KIND_POLICY") else { break };
         let slot = p.i32(o + 4);
         if !(0..=15).contains(&slot) {
             break;
         }
+        // an empty slot is (-1, its slot type): read on past it (11/01 run: Urban Planning in the economic slot was
+        // lost behind an empty diplomatic slot, only the wildcard's Colonization read)
+        if p.i32(o) == -1 {
+            o -= 8;
+            continue;
+        }
+        let Some(policy) = type_at(p, d, o, "KIND_POLICY") else { break };
         out.insert(0, policy);
         o -= 8;
     }

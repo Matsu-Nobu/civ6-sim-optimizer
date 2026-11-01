@@ -2852,167 +2852,213 @@ fn main() {
             let (mut exact, mut n) = (0, 0);
             let mut kinds: HashMap<&'static str, i64> = HashMap::new();
             for t in from..turn {
-                let (Some(d), Some(r)) = (rows.get(&t), rec.turn(t + 1)) else { continue };
+                let (Some(d), Some(_)) = (rows.get(&t), rec.turn(t + 1)) else { continue };
                 if d["cities"].as_array().map(|a| a.is_empty()).unwrap_or(true) {
                     continue;
                 }
-                let mut st = pl.state_at(d);
-                let mut ch = civ6opt::record::RecordedChooser::new(&rec);
-                let before = (st.research, st.civic);
-                pl.advance(&mut st, &mut ch);
-                if args.iter().any(|a| a == "--verbose") {
-                    println!("  research {:?} -> {:?} civic {:?} -> {:?} science {:.2} culture {:.2} tech progress {:?}", before.0.map(|x| x.as_string()), st.research.map(|x| x.as_string()),
-                             before.1.map(|x| x.as_string()), st.civic.map(|x| x.as_string()), st.last_output[3], st.last_output[4],
-                             st.acc.tech_progress.iter().map(|(k, v)| format!("{k} {v:.1}")).collect::<Vec<_>>());
-                }
-                if let Some(kinds) = arg(&args, "--log") {
-                    for (k, tt, c) in st.log.iter() {
-                        if kinds.split(',').any(|x| x == k.kind.as_string()) {
-                            println!("  T{tt} {} -> {}", key_json(k), c.as_ref().map(choice_json).unwrap_or(Value::Null));
+                // A single-player run's save shows a policy or government change a turn before the game applies it (the
+                // 11/01 runs: Urban Planning's +1 production still counted in the turn the save shows Colonization). On
+                // such a turn the record's next policies and government are also tried as the old ones and as both; the
+                // first try without model errors is taken.
+                let r0 = rec.turn(t + 1).cloned();
+                let old_pol: Vec<Sym> = d["player"]["policies"].as_array().map(|a| a.iter().filter_map(osym).collect()).unwrap_or_default();
+                let old_gov = osym(&d["player"]["government"]);
+                let mut variants: Vec<(std::rc::Rc<civ6opt::record::Record>, bool)> = vec![(rec.clone(), false)];
+                if let Some(r0) = r0.as_ref().filter(|r0| r0.policies != old_pol || (r0.gov.is_some() && r0.gov != old_gov)) {
+                    let mut keep = (*rec).clone();
+                    if let Some(x) = keep.turns.get_mut(&(t + 1)) {
+                        x.policies = old_pol.clone();
+                        x.gov = old_gov.or(x.gov);
+                    }
+                    let mut both = (*rec).clone();
+                    if let Some(x) = both.turns.get_mut(&(t + 1)) {
+                        for q in &old_pol {
+                            if !x.policies.contains(q) {
+                                x.policies.push(*q);
+                            }
                         }
                     }
+                    let _ = r0;
+                    variants.push((std::rc::Rc::new(keep), true));
+                    variants.push((std::rc::Rc::new(both), true));
                 }
-                let mut diffs: Vec<String> = vec![];
+                let mut chosen: Option<(Vec<(&'static str, String)>, bool)> = None;
+                for (rec_v, alt) in variants.iter().cloned() {
+                    pl.rec = Some(rec_v.clone());
+                    let r = rec_v.turn(t + 1).unwrap();
+                    let mut st = pl.state_at(d);
+                    let mut ch = civ6opt::record::RecordedChooser::new(&rec_v);
+                    let before = (st.research, st.civic);
+                    pl.advance(&mut st, &mut ch);
+                    if args.iter().any(|a| a == "--verbose") {
+                        println!("  research {:?} -> {:?} civic {:?} -> {:?} science {:.2} culture {:.2} tech progress {:?}", before.0.map(|x| x.as_string()), st.research.map(|x| x.as_string()),
+                                 before.1.map(|x| x.as_string()), st.civic.map(|x| x.as_string()), st.last_output[3], st.last_output[4],
+                                 st.acc.tech_progress.iter().map(|(k, v)| format!("{k} {v:.1}")).collect::<Vec<_>>());
+                    }
+                    if let Some(kinds) = arg(&args, "--log") {
+                        for (k, tt, c) in st.log.iter() {
+                            if kinds.split(',').any(|x| x == k.kind.as_string()) {
+                                println!("  T{tt} {} -> {}", key_json(k), c.as_ref().map(choice_json).unwrap_or(Value::Null));
+                            }
+                        }
+                    }
+                    let mut diffs: Vec<(&'static str, String)> = vec![];
+                    let note = |k: &'static str, s: String, diffs: &mut Vec<(&'static str, String)>| diffs.push((k, s));
+                    // the turn's food and production against the next save's player yields (those of this turn)
+                    let gy = &rows.get(&(t + 1)).map(|x| &x["player"]["yields"]);
+                    let (gf, gp) = gy.map(|y| (y["YIELD_FOOD"].as_f64().unwrap_or(0.0), y["YIELD_PRODUCTION"].as_f64().unwrap_or(0.0))).unwrap_or((0.0, 0.0));
+                    if (st.last_output[0] - gf).abs() > 0.05 || (st.last_output[1] - gp).abs() > 0.05 {
+                        // (the saves show the yields as of the next turn's start, with the item's percent bonus: changes made
+                        // there, such as a new government, show in them; the cities' food and progress are checked below)
+                        note("yields (shown at the next turn's start, not in the save)", format!("F {:.1}/{gf} P {:.1}/{gp}", st.last_output[0], st.last_output[1]), &mut diffs);
+                    }
+                    for c in &st.cities {
+                        let Some(rc) = r.city(c.name) else { continue };
+                        let ca = st.cacc(c.name);
+                        if ca.population as i64 != rc.pop {
+                            note("pop", format!("{} pop {}/{}", c.name, ca.population, rc.pop), &mut diffs);
+                        }
+                        if (ca.food_store - rc.food).abs() > 0.5 {
+                            note("food", format!("{} food {:.1}/{:.1}", c.name, ca.food_store, rc.food), &mut diffs);
+                        }
+                        let gprog = rows.get(&(t + 1)).and_then(|x| x["cities"].as_array().and_then(|a| a.iter().find(|cc| osym(&cc["name"]) == Some(c.name)).cloned()));
+                        // the save holds the overflow not yet in the item (whole units): the item's progress and the overflow
+                        // together, against the model's
+                        let held = gprog.as_ref().and_then(|x| x["production"]["heldOverflow"].as_f64());
+                        if let (Some(item), Some(gc), Some(h)) = (rc.current, gprog.as_ref(), held) {
+                            let gt = gc["production"]["progress"][item.as_string().as_str()].as_f64().unwrap_or(0.0) + h;
+                            let mt = ca.progress.get(&item).copied().unwrap_or(0.0) + ca.overflow + ca.raw;
+                            // the overflow the turn began with is held in whole units, so the model's start lacks its fraction
+                            // (under 1, then times the item's percent bonus; 10/18 Nantes T29: 4.5 held as 4)
+                            let start_held = d["cities"].as_array().and_then(|a| a.iter().find(|cc| osym(&cc["name"]) == Some(c.name)))
+                                .and_then(|cc| cc["production"]["heldOverflow"].as_f64()).unwrap_or(0.0);
+                            if mt - gt < -0.5 || mt - gt >= 1.0 {
+                                if start_held > 0.0 && gt > mt && gt - mt < 2.0 {
+                                    note("progress (overflow fraction, not in the save)", format!("{} {} progress {:.1}/{:.1}", c.name, item, mt, gt), &mut diffs);
+                                } else {
+                                    note("progress", format!("{} {} progress {:.1}/{:.1}", c.name, item, mt, gt), &mut diffs);
+                                }
+                            }
+                        }
+                        if let (Some(item), Some(gc), None) = (rc.current, gprog, held) {
+                            let g = gc["production"]["progress"][item.as_string().as_str()].as_f64().unwrap_or(0.0);
+                            // the model holds a finished item's overflow apart until the next item; the game puts it in the next one
+                            // (a city the record left without an item this turn keeps its production apart too: not in the save)
+                            let idle_now = d["cities"].as_array().and_then(|a| a.iter().find(|cc| osym(&cc["name"]) == Some(c.name)))
+                                .map(|cc| cc["production"]["current"].is_null()).unwrap_or(false);
+                            let sv = ca.progress.get(&item).copied().unwrap_or(0.0) + if !idle_now && (c.current.is_none() || c.current == Some(item) && ca.progress.get(&item).copied().unwrap_or(0.0) == 0.0) { ca.overflow } else { 0.0 };
+                            let started = d["cities"].as_array().and_then(|a| a.iter().find(|cc| osym(&cc["name"]) == Some(c.name)))
+                                .map(|cc| cc["production"]["progress"][item.as_string().as_str()].as_f64().unwrap_or(0.0) == 0.0).unwrap_or(true);
+                            // the overflow the model holds may already be in the game's next item or still held apart
+                            let sv_held = ca.progress.get(&item).copied().unwrap_or(0.0);
+                            if (g - sv).abs() > 0.5 && (g - sv_held).abs() > 0.5 && g > 0.0 {
+                                // an item begun this turn gets the overflow of the last one, which the saves do not hold
+                                if started && sv < g {
+                                    note("progress (overflow, not in the save)", format!("{} {} progress {:.1}/{:.1}", c.name, item, sv, g), &mut diffs);
+                                } else {
+                                    note("progress", format!("{} {} progress {:.1}/{:.1}", c.name, item, sv, g), &mut diffs);
+                                }
+                            }
+                        }
+                        let missing: Vec<String> = rc.buildings.iter().filter(|b| !c.buildings.contains(b)).map(|b| b.as_string()).collect();
+                        let extra: Vec<String> = c.buildings.iter().filter(|b| !rc.buildings.contains(b)).map(|b| b.as_string()).collect();
+                        if !missing.is_empty() || !extra.is_empty() {
+                            note("buildings", format!("{} buildings -{:?} +{:?}", c.name, missing, extra), &mut diffs);
+                        }
+                    }
+                    if st.acc.techs.len() != r.techs.len() || st.acc.civics.len() != r.civics.len() {
+                        // one behind after a completion last turn: its overflow (not in the save) finished the next one
+                        let n_of = |tt: i64, k: &str| rows.get(&tt).map(|x| x["player"][k].as_array().map(|a| a.len()).unwrap_or(0)).unwrap_or(0);
+                        let carried = (st.acc.techs.len() + 1 == r.techs.len() && n_of(t - 1, "techs") < n_of(t, "techs"))
+                            || (st.acc.civics.len() + 1 == r.civics.len() && n_of(t - 1, "civics") < n_of(t, "civics"));
+                        let msg = format!("techs {}/{} civics {}/{}", st.acc.techs.len(), r.techs.len(), st.acc.civics.len(), r.civics.len());
+                        if carried {
+                            note("research (overflow, not in the save)", msg, &mut diffs);
+                        } else {
+                            note("research", msg, &mut diffs);
+                        }
+                    }
+                    for (k, v) in &r.tech_progress {
+                        let sv = st.acc.tech_progress.get(k).copied().unwrap_or(0.0);
+                        if (sv - v).abs() > 0.5 && !st.acc.techs.contains(k) {
+                            let fresh = d["player"]["techProgress"][k.as_string().as_str()].as_f64().unwrap_or(0.0) == 0.0;
+                            // one finished last turn left an overflow the save does not hold
+                            let finished_last = rows.get(&(t - 1)).map(|x| x["player"]["techs"].as_array().map(|a| a.len()).unwrap_or(0) < d["player"]["techs"].as_array().map(|a| a.len()).unwrap_or(0)).unwrap_or(false);
+                            // one finished this turn: the game puts its overflow into the queued one now, the model next turn
+                            let pending = st.acc.tech_overflow;
+                            if pending > 0.0 && (sv + pending - v).abs() <= 0.5 {
+                                note("research (overflow next turn, same total)", format!("{k} {sv:.1}+{pending:.1}/{v:.1}"), &mut diffs);
+                            } else if (fresh || finished_last) && sv < *v {
+                                note("research (overflow, not in the save)", format!("{k} {sv:.1}/{v:.1}"), &mut diffs);
+                            } else {
+                                note("research", format!("{k} {sv:.1}/{v:.1}"), &mut diffs);
+                            }
+                        }
+                    }
+                    for (k, v) in &r.civic_progress {
+                        let sv = st.acc.civic_progress.get(k).copied().unwrap_or(0.0);
+                        if (sv - v).abs() > 0.5 && !st.acc.civics.contains(k) {
+                            let fresh = d["player"]["civicProgress"][k.as_string().as_str()].as_f64().unwrap_or(0.0) == 0.0;
+                            // one finished last turn left an overflow the save does not hold
+                            let finished_last = rows.get(&(t - 1)).map(|x| x["player"]["civics"].as_array().map(|a| a.len()).unwrap_or(0) < d["player"]["civics"].as_array().map(|a| a.len()).unwrap_or(0)).unwrap_or(false);
+                            // one finished this turn: the game puts its overflow into the queued one now, the model next turn
+                            let pending = st.acc.civic_overflow;
+                            if pending > 0.0 && (sv + pending - v).abs() <= 0.5 {
+                                note("research (overflow next turn, same total)", format!("{k} {sv:.1}+{pending:.1}/{v:.1}"), &mut diffs);
+                            } else if (fresh || finished_last) && sv < *v {
+                                note("research (overflow, not in the save)", format!("{k} {sv:.1}/{v:.1}"), &mut diffs);
+                            } else {
+                                note("research", format!("{k} {sv:.1}/{v:.1}"), &mut diffs);
+                            }
+                        }
+                    }
+                    for (_, nt) in pl.rec_notes.borrow().iter().filter(|x| x.0 == t) {
+                        if nt.contains("done by the record") {
+                            note("done by the record (bought or carried over, not in the save)", nt.clone(), &mut diffs);
+                        }
+                    }
+                    // the boost rules on the next save's state (the recorded actions already done): each boost recorded this
+                    // turn should follow from them, and none they give should be missing from the record. Boosts by events
+                    // the model does not play (meeting, exploring, combat, religion, alliances; tribal villages) are the record's.
+                    if let Some(dn) = rows.get(&(t + 1)) {
+                        let sn = pl.state_at(dn);
+                        let by_rules: Vec<Sym> = pl.endogenous_boosts(&sn);
+                        let before = rec_v.turn(t).map(|x| x.boosted.clone()).unwrap_or_default();
+                        let cls_of = |item: Sym| {
+                            let col = if item.starts_with("TECH_") { "TechnologyType" } else { "CivicType" };
+                            p.rules.lookup_sym("Boosts", col, item, "BoostClass").map(|c| c.as_string()).unwrap_or_default()
+                        };
+                        for b in r.boosted.iter().filter(|b| !before.contains(b)) {
+                            let cls = cls_of(*b);
+                            if !cls.is_empty() && !EXOGENOUS_BOOSTS.contains(&cls.as_str()) && !by_rules.contains(b) {
+                                // its condition does not hold in the save: another source (village, city-state, ...), given by the record
+                                note("boost from another source (given by the record, not in the save)", format!("boost {b} recorded, not by the rules ({cls})"), &mut diffs);
+                            }
+                        }
+                        let done: Vec<Sym> = r.techs.iter().chain(r.civics.iter()).copied().collect();
+                        for b in by_rules.iter().filter(|b| !r.boosted.contains(b) && !done.contains(b)) {
+                            note("boost", format!("boost {b} by the rules, not recorded ({})", cls_of(*b)), &mut diffs);
+                        }
+                    }
+                    let errors = diffs.iter().any(|(k, _)| !(k.contains("not in the save") || k.contains("same total")));
+                    if chosen.is_none() || !errors {
+                        chosen = Some((diffs, alt));
+                    }
+                    if !errors {
+                        break;
+                    }
+                }
+                pl.rec = Some(rec.clone());
+                let (found, alt) = chosen.unwrap();
                 // differences the saves cannot settle (they lack the data) are marked "(save)" and not counted as errors
-                let mut note = |k: &'static str, s: String, diffs: &mut Vec<String>| {
+                let mut diffs: Vec<String> = vec![];
+                for (k, s) in found {
                     *kinds.entry(k).or_insert(0) += 1;
                     diffs.push(if k.contains("not in the save") || k.contains("same total") { format!("(save) {s}") } else { s });
-                };
-                // the turn's food and production against the next save's player yields (those of this turn)
-                let gy = &rows.get(&(t + 1)).map(|x| &x["player"]["yields"]);
-                let (gf, gp) = gy.map(|y| (y["YIELD_FOOD"].as_f64().unwrap_or(0.0), y["YIELD_PRODUCTION"].as_f64().unwrap_or(0.0))).unwrap_or((0.0, 0.0));
-                if (st.last_output[0] - gf).abs() > 0.05 || (st.last_output[1] - gp).abs() > 0.05 {
-                    // (the saves show the yields as of the next turn's start, with the item's percent bonus: changes made
-                    // there, such as a new government, show in them; the cities' food and progress are checked below)
-                    note("yields (shown at the next turn's start, not in the save)", format!("F {:.1}/{gf} P {:.1}/{gp}", st.last_output[0], st.last_output[1]), &mut diffs);
                 }
-                for c in &st.cities {
-                    let Some(rc) = r.city(c.name) else { continue };
-                    let ca = st.cacc(c.name);
-                    if ca.population as i64 != rc.pop {
-                        note("pop", format!("{} pop {}/{}", c.name, ca.population, rc.pop), &mut diffs);
-                    }
-                    if (ca.food_store - rc.food).abs() > 0.5 {
-                        note("food", format!("{} food {:.1}/{:.1}", c.name, ca.food_store, rc.food), &mut diffs);
-                    }
-                    let gprog = rows.get(&(t + 1)).and_then(|x| x["cities"].as_array().and_then(|a| a.iter().find(|cc| osym(&cc["name"]) == Some(c.name)).cloned()));
-                    // the save holds the overflow not yet in the item (whole units): the item's progress and the overflow
-                    // together, against the model's
-                    let held = gprog.as_ref().and_then(|x| x["production"]["heldOverflow"].as_f64());
-                    if let (Some(item), Some(gc), Some(h)) = (rc.current, gprog.as_ref(), held) {
-                        let gt = gc["production"]["progress"][item.as_string().as_str()].as_f64().unwrap_or(0.0) + h;
-                        let mt = ca.progress.get(&item).copied().unwrap_or(0.0) + ca.overflow + ca.raw;
-                        // the overflow the turn began with is held in whole units, so the model's start lacks its fraction
-                        // (under 1, then times the item's percent bonus; 10/18 Nantes T29: 4.5 held as 4)
-                        let start_held = d["cities"].as_array().and_then(|a| a.iter().find(|cc| osym(&cc["name"]) == Some(c.name)))
-                            .and_then(|cc| cc["production"]["heldOverflow"].as_f64()).unwrap_or(0.0);
-                        if mt - gt < -0.5 || mt - gt >= 1.0 {
-                            if start_held > 0.0 && gt > mt && gt - mt < 2.0 {
-                                note("progress (overflow fraction, not in the save)", format!("{} {} progress {:.1}/{:.1}", c.name, item, mt, gt), &mut diffs);
-                            } else {
-                                note("progress", format!("{} {} progress {:.1}/{:.1}", c.name, item, mt, gt), &mut diffs);
-                            }
-                        }
-                    }
-                    if let (Some(item), Some(gc), None) = (rc.current, gprog, held) {
-                        let g = gc["production"]["progress"][item.as_string().as_str()].as_f64().unwrap_or(0.0);
-                        // the model holds a finished item's overflow apart until the next item; the game puts it in the next one
-                        // (a city the record left without an item this turn keeps its production apart too: not in the save)
-                        let idle_now = d["cities"].as_array().and_then(|a| a.iter().find(|cc| osym(&cc["name"]) == Some(c.name)))
-                            .map(|cc| cc["production"]["current"].is_null()).unwrap_or(false);
-                        let sv = ca.progress.get(&item).copied().unwrap_or(0.0) + if !idle_now && (c.current.is_none() || c.current == Some(item) && ca.progress.get(&item).copied().unwrap_or(0.0) == 0.0) { ca.overflow } else { 0.0 };
-                        let started = d["cities"].as_array().and_then(|a| a.iter().find(|cc| osym(&cc["name"]) == Some(c.name)))
-                            .map(|cc| cc["production"]["progress"][item.as_string().as_str()].as_f64().unwrap_or(0.0) == 0.0).unwrap_or(true);
-                        // the overflow the model holds may already be in the game's next item or still held apart
-                        let sv_held = ca.progress.get(&item).copied().unwrap_or(0.0);
-                        if (g - sv).abs() > 0.5 && (g - sv_held).abs() > 0.5 && g > 0.0 {
-                            // an item begun this turn gets the overflow of the last one, which the saves do not hold
-                            if started && sv < g {
-                                note("progress (overflow, not in the save)", format!("{} {} progress {:.1}/{:.1}", c.name, item, sv, g), &mut diffs);
-                            } else {
-                                note("progress", format!("{} {} progress {:.1}/{:.1}", c.name, item, sv, g), &mut diffs);
-                            }
-                        }
-                    }
-                    let missing: Vec<String> = rc.buildings.iter().filter(|b| !c.buildings.contains(b)).map(|b| b.as_string()).collect();
-                    let extra: Vec<String> = c.buildings.iter().filter(|b| !rc.buildings.contains(b)).map(|b| b.as_string()).collect();
-                    if !missing.is_empty() || !extra.is_empty() {
-                        note("buildings", format!("{} buildings -{:?} +{:?}", c.name, missing, extra), &mut diffs);
-                    }
-                }
-                if st.acc.techs.len() != r.techs.len() || st.acc.civics.len() != r.civics.len() {
-                    // one behind after a completion last turn: its overflow (not in the save) finished the next one
-                    let n_of = |tt: i64, k: &str| rows.get(&tt).map(|x| x["player"][k].as_array().map(|a| a.len()).unwrap_or(0)).unwrap_or(0);
-                    let carried = (st.acc.techs.len() + 1 == r.techs.len() && n_of(t - 1, "techs") < n_of(t, "techs"))
-                        || (st.acc.civics.len() + 1 == r.civics.len() && n_of(t - 1, "civics") < n_of(t, "civics"));
-                    let msg = format!("techs {}/{} civics {}/{}", st.acc.techs.len(), r.techs.len(), st.acc.civics.len(), r.civics.len());
-                    if carried {
-                        note("research (overflow, not in the save)", msg, &mut diffs);
-                    } else {
-                        note("research", msg, &mut diffs);
-                    }
-                }
-                for (k, v) in &r.tech_progress {
-                    let sv = st.acc.tech_progress.get(k).copied().unwrap_or(0.0);
-                    if (sv - v).abs() > 0.5 && !st.acc.techs.contains(k) {
-                        let fresh = d["player"]["techProgress"][k.as_string().as_str()].as_f64().unwrap_or(0.0) == 0.0;
-                        // one finished last turn left an overflow the save does not hold
-                        let finished_last = rows.get(&(t - 1)).map(|x| x["player"]["techs"].as_array().map(|a| a.len()).unwrap_or(0) < d["player"]["techs"].as_array().map(|a| a.len()).unwrap_or(0)).unwrap_or(false);
-                        // one finished this turn: the game puts its overflow into the queued one now, the model next turn
-                        let pending = st.acc.tech_overflow;
-                        if pending > 0.0 && (sv + pending - v).abs() <= 0.5 {
-                            note("research (overflow next turn, same total)", format!("{k} {sv:.1}+{pending:.1}/{v:.1}"), &mut diffs);
-                        } else if (fresh || finished_last) && sv < *v {
-                            note("research (overflow, not in the save)", format!("{k} {sv:.1}/{v:.1}"), &mut diffs);
-                        } else {
-                            note("research", format!("{k} {sv:.1}/{v:.1}"), &mut diffs);
-                        }
-                    }
-                }
-                for (k, v) in &r.civic_progress {
-                    let sv = st.acc.civic_progress.get(k).copied().unwrap_or(0.0);
-                    if (sv - v).abs() > 0.5 && !st.acc.civics.contains(k) {
-                        let fresh = d["player"]["civicProgress"][k.as_string().as_str()].as_f64().unwrap_or(0.0) == 0.0;
-                        // one finished last turn left an overflow the save does not hold
-                        let finished_last = rows.get(&(t - 1)).map(|x| x["player"]["civics"].as_array().map(|a| a.len()).unwrap_or(0) < d["player"]["civics"].as_array().map(|a| a.len()).unwrap_or(0)).unwrap_or(false);
-                        // one finished this turn: the game puts its overflow into the queued one now, the model next turn
-                        let pending = st.acc.civic_overflow;
-                        if pending > 0.0 && (sv + pending - v).abs() <= 0.5 {
-                            note("research (overflow next turn, same total)", format!("{k} {sv:.1}+{pending:.1}/{v:.1}"), &mut diffs);
-                        } else if (fresh || finished_last) && sv < *v {
-                            note("research (overflow, not in the save)", format!("{k} {sv:.1}/{v:.1}"), &mut diffs);
-                        } else {
-                            note("research", format!("{k} {sv:.1}/{v:.1}"), &mut diffs);
-                        }
-                    }
-                }
-                for (_, nt) in pl.rec_notes.borrow().iter().filter(|x| x.0 == t) {
-                    if nt.contains("done by the record") {
-                        note("done by the record (bought or carried over, not in the save)", nt.clone(), &mut diffs);
-                    }
-                }
-                // the boost rules on the next save's state (the recorded actions already done): each boost recorded this
-                // turn should follow from them, and none they give should be missing from the record. Boosts by events
-                // the model does not play (meeting, exploring, combat, religion, alliances; tribal villages) are the record's.
-                if let Some(dn) = rows.get(&(t + 1)) {
-                    let sn = pl.state_at(dn);
-                    let by_rules: Vec<Sym> = pl.endogenous_boosts(&sn);
-                    let before = rec.turn(t).map(|x| x.boosted.clone()).unwrap_or_default();
-                    let cls_of = |item: Sym| {
-                        let col = if item.starts_with("TECH_") { "TechnologyType" } else { "CivicType" };
-                        p.rules.lookup_sym("Boosts", col, item, "BoostClass").map(|c| c.as_string()).unwrap_or_default()
-                    };
-                    for b in r.boosted.iter().filter(|b| !before.contains(b)) {
-                        let cls = cls_of(*b);
-                        if !cls.is_empty() && !EXOGENOUS_BOOSTS.contains(&cls.as_str()) && !by_rules.contains(b) {
-                            // its condition does not hold in the save: another source (village, city-state, ...), given by the record
-                            note("boost from another source (given by the record, not in the save)", format!("boost {b} recorded, not by the rules ({cls})"), &mut diffs);
-                        }
-                    }
-                    let done: Vec<Sym> = r.techs.iter().chain(r.civics.iter()).copied().collect();
-                    for b in by_rules.iter().filter(|b| !r.boosted.contains(b) && !done.contains(b)) {
-                        note("boost", format!("boost {b} by the rules, not recorded ({})", cls_of(*b)), &mut diffs);
-                    }
+                if alt {
+                    *kinds.entry("policy or government change (shown a turn early, not in the save)").or_insert(0) += 1;
+                    diffs.push("(save) policy or government change: computed with the old one in effect".to_string());
                 }
                 n += 1;
                 if diffs.iter().all(|d| d.starts_with("(save)")) {

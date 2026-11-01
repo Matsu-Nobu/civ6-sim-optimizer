@@ -89,6 +89,7 @@ impl RecTurn {
 /// A builder action of the recorded game: (turn, "improve" | "harvest", plot, improvement | "feature" | "resource")
 pub type Act = (i64, Sym, XY, Sym);
 
+#[derive(Clone)]
 pub struct Record {
     pub turns: BTreeMap<i64, RecTurn>,
     /// research / civic being worked on during each turn

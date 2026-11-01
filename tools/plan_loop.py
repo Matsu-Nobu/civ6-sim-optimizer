@@ -133,6 +133,8 @@ def main():
         if not play(run, save_name, end):
             print("  the segment did not reach its end; stopping", flush=True)
             break
+        if end >= last:
+            break
         start, save_name = end, f"EconRun_{run}_R{end:03d}"
         game = game_data_from(run, end)
     print("done", flush=True)

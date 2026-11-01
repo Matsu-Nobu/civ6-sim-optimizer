@@ -642,8 +642,18 @@ function PR.begin_turn()
   ContextPtr:SetUpdate(on_update)
 end
 
+-- Another player's diplomatic statement to us (a first meeting, a proposal) opens a screen that waits for the player.
+-- The session is closed as DiplomacyActionView.lua does when diplomacy is not available: the plan does no diplomacy.
+local function on_statement(from, to, k)
+  if to == me and from ~= me then
+    DiplomacyManager.CloseSession(k.SessionID)
+    log("diplomacy_closed", { from = from })
+  end
+end
+
 function PR.setup(on_finished, on_stuck)
   me = Game.GetLocalPlayer()
+  Events.DiplomacyStatement.Add(on_statement)
   PR.on_finished, PR.on_stuck = on_finished, on_stuck
   -- builders/settlers already on the map at the start carry no simulator id (the plan starts with none)
   -- a save made during autoplay keeps the AI playing the local player: stop that

@@ -32,7 +32,29 @@
       </Properties>
       <File>Civ6EconAutoplay.xml</File>
     </AddUserInterfaces>
+    <ReplaceUIScript id="econ_close_eracompletepopup">
+      <Properties>
+        <LoadOrder>20000</LoadOrder>
+        <LuaContext>EraCompletePopup</LuaContext>
+        <LuaReplace>Civ6Econ_EraCompletePopup.lua</LuaReplace>
+      </Properties>
+    </ReplaceUIScript>
+    <ReplaceUIScript id="econ_close_naturalwonderpopup">
+      <Properties>
+        <LoadOrder>20000</LoadOrder>
+        <LuaContext>NaturalWonderPopup</LuaContext>
+        <LuaReplace>Civ6Econ_NaturalWonderPopup.lua</LuaReplace>
+      </Properties>
+    </ReplaceUIScript>
+    <ReplaceUIScript id="econ_close_naturaldisasterpopup">
+      <Properties>
+        <LoadOrder>20000</LoadOrder>
+        <LuaContext>NaturalDisasterPopup</LuaContext>
+        <LuaReplace>Civ6Econ_NaturalDisasterPopup.lua</LuaReplace>
+      </Properties>
+    </ReplaceUIScript>
     <ImportFiles id="econautoplay_files">
+      <File>Civ6EconPopupClose.lua</File>
       <File>Civ6EconAutoplay.lua</File>
       <File>Civ6EconRunnerConfig.lua</File>
       <File>Civ6EconPlanRunner.lua</File>
@@ -50,5 +72,9 @@
     <File>LoadScreen.lua</File>
     <File>Civ6EconPlanRunner.lua</File>
     <File>Civ6EconPlan.lua</File>
+    <File>Civ6EconPopupClose.lua</File>
+    <File>Civ6Econ_EraCompletePopup.lua</File>
+    <File>Civ6Econ_NaturalWonderPopup.lua</File>
+    <File>Civ6Econ_NaturalDisasterPopup.lua</File>
   </Files>
 </Mod>

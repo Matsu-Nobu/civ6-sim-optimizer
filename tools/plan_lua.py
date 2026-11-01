@@ -3,7 +3,9 @@ the mod to play it in the game, and the simulator's turns of that plan for tools
 
   plan_lua.py <game data .json> <plan.json> <turns out .jsonl> [civ6opt options]
 
-Game turn t plays the simulator's turn t (the record replay matches the saves this way): the research, civic,
+Game turn t + 1 plays the simulator's turn t: a save loaded at the start of turn t gives the local player's cities
+nothing in that turn (measured on the 11/01 run from EconPlanStart_mp1_T002: the simulator's state after its turn t
+is the game's save of turn t + 2). In that turn the plan has the research, civic,
 government and policies in effect in that turn, each city's item (with a district's plot) and worked plots, the
 builders' orders, the settlers' moves, and the purchases, trade routes, governors, pantheon and dedication chosen in
 that turn. A builder acts on the turn its charge is used in the simulator; a settler moves from the turn after the
@@ -16,6 +18,7 @@ from pathlib import Path
 import civ6opt
 
 PLAN_FILE = civ6opt.ROOT / "game_mods" / "Civ6EconAutoplay" / "Civ6EconPlan.lua"
+OFFSET = 1
 
 
 def lua(v):
@@ -134,8 +137,15 @@ def main():
             x, y = c["xy"]
             out["cities"].append({"x": x, "y": y, "item": item, "sx": sx, "sy": sy,
                                   "worked": [[w[0], w[1], 1] for w in c["worked"] if [w[0], w[1]] != [x, y]]})
+    for d in turns.values():
+        for b in d["builders"]:
+            if "at" in b:
+                b["at"] += OFFSET
+        for st in d["settlers"]:
+            st["arrive"] += OFFSET
+    game_turns = {t + OFFSET: d for t, d in turns.items()}
     text = (f"-- Written by tools/plan_lua.py from {Path(game).name} and {Path(plan).name}. Do not edit.\n"
-            f"ECONPLAN = {{ START = {first}, LAST = {last}, OFFSET = 0, TURNS = {lua(turns)} }}\n")
+            f"ECONPLAN = {{ START = {first + OFFSET}, LAST = {last + OFFSET}, OFFSET = {OFFSET}, TURNS = {lua(game_turns)} }}\n")
     PLAN_FILE.write_text(text)
     n_unsup = sum(len(d["unsupported"]) for d in turns.values())
     print(f"turns {first}..{last}; {len(seen_builders)} builders; "

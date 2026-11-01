@@ -66,7 +66,7 @@ def compare(sim, rows):
 def mod_reports(log):
     """[(kind, turn, text)] of the mod's ECONPLAN lines other than its routine ones."""
     routine = {"tick", "city", "player", "unit_op", "unit_done", "buy", "route", "governor", "dedication", "plan_start",
-               "resolving"}
+               "resolving", "diplomacy_closed"}
     out = []
     for line in open(log, encoding="utf-8", errors="replace"):
         i = line.find("ECONPLAN ")

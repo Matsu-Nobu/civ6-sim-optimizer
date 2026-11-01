@@ -95,7 +95,10 @@ local function ensure_player(p)
   if p.research then
     local row = GameInfo.Technologies[p.research]
     local techs = pl:GetTechs()
-    if row and not techs:HasTech(row.Index) and techs:GetResearchingTech() ~= row.Index and again("research " .. p.research) then
+    -- only a tech the game can research now: one whose prerequisites are missing becomes the research target and
+    -- stalls all research (11/01 run: 5 techs at turn 66)
+    if row and not techs:HasTech(row.Index) and techs:GetResearchingTech() ~= row.Index and techs:CanResearch(row.Index)
+       and again("research " .. p.research) then
       UI.RequestPlayerOperation(me, PlayerOperations.RESEARCH, { [PlayerOperations.PARAM_TECH_TYPE] = row.Hash,
         [PlayerOperations.PARAM_INSERT_MODE] = PlayerOperations.VALUE_EXCLUSIVE })
       return false
@@ -104,7 +107,8 @@ local function ensure_player(p)
   local culture = pl:GetCulture()
   if p.civic then
     local row = GameInfo.Civics[p.civic]
-    if row and not culture:HasCivic(row.Index) and culture:GetProgressingCivic() ~= row.Index and again("civic " .. p.civic) then
+    if row and not culture:HasCivic(row.Index) and culture:GetProgressingCivic() ~= row.Index and culture:CanProgress(row.Index)
+       and again("civic " .. p.civic) then
       UI.RequestPlayerOperation(me, PlayerOperations.PROGRESS_CIVIC, { [PlayerOperations.PARAM_CIVIC_TYPE] = row.Hash,
         [PlayerOperations.PARAM_INSERT_MODE] = PlayerOperations.VALUE_EXCLUSIVE })
       return false
@@ -200,16 +204,27 @@ local function act(kind, id, o, turn)
   elseif o.op == "plant" then op = GameInfo.UnitOperations["UNITOPERATION_PLANT_FOREST"].Hash
   end
   if op == nil then log("unsupported_unit_op", { unit = kind, id = id, op = o.op }); return true end
-  if not can(u, op, p) then
-    local valid = {}
+  -- UnitPanel.lua checks an improvement by its index and requests it by its hash
+  local check_p = p
+  if o.op == "improve" then
+    check_p = { [UnitOperationTypes.PARAM_X] = o.x, [UnitOperationTypes.PARAM_Y] = o.y,
+                [UnitOperationTypes.PARAM_IMPROVEMENT_TYPE] = GameInfo.Improvements[o.what].Index }
+  end
+  if not can(u, op, check_p) then
+    -- the game's reasons and the improvements it allows here, asked as UnitPanel.lua does (results wanted: true)
+    local valid, reasons = {}, {}
     pcall(function()
-      local okb, res = UnitManager.CanStartOperation(u, UnitOperationTypes.BUILD_IMPROVEMENT, nil, true)
+      local here = { [UnitOperationTypes.PARAM_X] = u:GetX(), [UnitOperationTypes.PARAM_Y] = u:GetY() }
+      local _, res = UnitManager.CanStartOperation(u, UnitOperationTypes.BUILD_IMPROVEMENT, nil, here, true)
       for _, i in ipairs((res and res[UnitOperationResults.IMPROVEMENTS]) or {}) do
         local row = GameInfo.Improvements[i]; valid[#valid + 1] = row and row.ImprovementType or tostring(i)
       end
+      local _, why = UnitManager.CanStartOperation(u, op, nil, check_p, true)
+      for _, r in ipairs((why and why[UnitOperationResults.FAILURE_REASONS]) or {}) do reasons[#reasons + 1] = Locale.Lookup(r) end
     end)
     log("unit_op_refused", { unit = kind, id = id, op = o.op, what = o.what, at = { o.x, o.y }, moves = u:GetMovesRemaining(),
-                             unit_at = { u:GetX(), u:GetY() }, valid = valid })
+                             unit_at = { u:GetX(), u:GetY() }, valid = valid, reasons = reasons,
+                             charges = u:GetBuildCharges(), type = unit_type(u) })
     return true  -- try again next round / next turn
   end
   if kind == "builder" then o.charges = o.charges or u:GetBuildCharges() end

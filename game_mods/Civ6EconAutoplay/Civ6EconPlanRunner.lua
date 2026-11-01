@@ -76,10 +76,21 @@ local function find_new_unit(kind, x, y)
   return best
 end
 
+-- where a planned unit is first: a settler's first plot on its way (next to the city that made it), else none
+local function first_plot(kind, id)
+  local o = orders[kind][id]
+  if o and o.way and #o.way > 0 then return o.way[1][1], o.way[1][2] end
+  if o and o.from then return o.from[1], o.from[2] end
+end
+
 local function unit_of(kind, id)
   local uid = units[kind][id]
   if uid == nil then
-    local u = find_new_unit(kind, nil, nil)
+    -- a unit made after its order came: the free one nearest where the plan has it first, so that a settler made
+    -- in another city does not walk the plan's way from the wrong end (11/01 run)
+    local fx, fy = first_plot(kind, id)
+    local u = find_new_unit(kind, fx, fy)
+    if u == nil then return nil end
     if u == nil then return nil end
     units[kind][id] = u:GetID()
     log("unit_mapped_late", { unit = kind, id = id })
@@ -548,7 +559,9 @@ local function start_turn(turn)
   end
   for _, s in ipairs(d.settlers or {}) do
     if s.op == "go" then
-      local u = find_new_unit("settler", nil, nil)
+      local fx, fy = s.x, s.y
+      if s.way and #s.way > 0 then fx, fy = s.way[1][1], s.way[1][2] end
+      local u = find_new_unit("settler", fx, fy)
       if u then units.settler[s.id] = u:GetID() else log("unit_not_found", { unit = "settler", id = s.id }) end
       orders.settler[s.id] = { x = s.x, y = s.y, op = "found", turn = s.arrive, way = s.way }
     end

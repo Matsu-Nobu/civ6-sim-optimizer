@@ -391,8 +391,15 @@ pub fn start_state(d: &Value, db: &Connection) -> Value {
         ("civic", Value::Null),
         ("policy_dirty", Value::from(true)),
         ("known_govs", Value::Arr(known.iter().map(|g| Value::from(g.as_str())).collect())),
-        ("border", Value::Obj(cities_in.iter().map(|c| (name(c), Value::Arr(vec![Value::from(0.0),
-            Value::from(c["owned"].as_array().unwrap().len() as f64 - 7.0)]))).collect())),
+        // the border culture a city has stored is not read from the save; a capital founded on turn 1 has a turn's
+        // culture stored at a turn 2 start (11/01 run from EconPlanStart_mp1_T002: its first plot came a turn before
+        // the simulator's when it started from 0)
+        ("border", Value::Obj(cities_in.iter().enumerate().map(|(i, c)| {
+            let grown = c["owned"].as_array().unwrap().len() as f64 - 7.0;
+            let culture = d["cityYields"][i]["modified"]["YIELD_CULTURE"].as_f64().unwrap_or(0.0);
+            let stored = if t == 2 && grown <= 0.0 { culture } else { 0.0 };
+            (name(c), Value::Arr(vec![Value::from(stored), Value::from(grown)]))
+        }).collect())),
         ("focus", Value::Obj(cities_in.iter().map(|c| (name(c), Value::from("balanced"))).collect())),
         ("free_building_given", empty()),
         ("gov_plaza", Value::from(gov_plaza)),

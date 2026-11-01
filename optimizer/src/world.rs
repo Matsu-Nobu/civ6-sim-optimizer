@@ -148,7 +148,7 @@ pub static RIVER_MIN: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicB
 /// civ6opt movecheck --any-points: a unit with any points left may enter a plot that costs more (to test the rule)
 pub static ANY_POINTS: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
-pub fn move_cost(r: &Rules, m: &Map, a: XY, b: XY, left: f64, full: f64, road_type: Sym, cities: &HashSet<XY>, roads: &HashSet<XY>) -> Option<f64> {
+pub fn move_cost(r: &Rules, m: &Map, a: XY, b: XY, left: f64, full: f64, road_type: Sym, cities: &HashSet<XY>, roads: &HashSet<XY>, cleared: &HashSet<XY>) -> Option<f64> {
     let p = m.plots.get(&b)?;
     if p.terrain.ends_with("MOUNTAIN") || p.terrain == s!("TERRAIN_COAST") || p.terrain == s!("TERRAIN_OCEAN") {
         return None;
@@ -178,7 +178,8 @@ pub fn move_cost(r: &Rules, m: &Map, a: XY, b: XY, left: f64, full: f64, road_ty
         r.param("CITY_MOVEMENT_COST")
     } else {
         let mut c = r.lookup_f("Terrains", "TerrainType", p.terrain, "MovementCost");
-        if let Some(f) = p.feature {
+        // cleared: the plots whose feature was removed during the game (harvests)
+        if let Some(f) = p.feature.filter(|_| !cleared.contains(&b)) {
             c += r.lookup_f("Features", "FeatureType", f, "MovementChange");
         }
         c
@@ -191,17 +192,17 @@ pub fn move_cost(r: &Rules, m: &Map, a: XY, b: XY, left: f64, full: f64, road_ty
 }
 
 /// Turns until a unit standing on `start` with full points can act on `goal` (0 = this turn).
-pub fn travel_turns(r: &Rules, m: &Map, start: XY, goal: XY, moves: f64, road_type: Sym, cities: &HashSet<XY>, roads: &HashSet<XY>) -> Option<i64> {
-    travel_search(r, m, start, goal, moves, road_type, cities, roads, false).map(|x| x.0)
+pub fn travel_turns(r: &Rules, m: &Map, start: XY, goal: XY, moves: f64, road_type: Sym, cities: &HashSet<XY>, roads: &HashSet<XY>, cleared: &HashSet<XY>) -> Option<i64> {
+    travel_search(r, m, start, goal, moves, road_type, cities, roads, cleared, false).map(|x| x.0)
 }
 
 /// travel_turns and the way: each plot after the start with the turn (0: the first) the unit enters it.
-pub fn travel_path(r: &Rules, m: &Map, start: XY, goal: XY, moves: f64, road_type: Sym, cities: &HashSet<XY>, roads: &HashSet<XY>) -> Option<(i64, Vec<(XY, i64)>)> {
-    travel_search(r, m, start, goal, moves, road_type, cities, roads, true)
+pub fn travel_path(r: &Rules, m: &Map, start: XY, goal: XY, moves: f64, road_type: Sym, cities: &HashSet<XY>, roads: &HashSet<XY>, cleared: &HashSet<XY>) -> Option<(i64, Vec<(XY, i64)>)> {
+    travel_search(r, m, start, goal, moves, road_type, cities, roads, cleared, true)
 }
 
 #[allow(clippy::too_many_arguments)]
-fn travel_search(r: &Rules, m: &Map, start: XY, goal: XY, moves: f64, road_type: Sym, cities: &HashSet<XY>, roads: &HashSet<XY>, keep_path: bool) -> Option<(i64, Vec<(XY, i64)>)> {
+fn travel_search(r: &Rules, m: &Map, start: XY, goal: XY, moves: f64, road_type: Sym, cities: &HashSet<XY>, roads: &HashSet<XY>, cleared: &HashSet<XY>, keep_path: bool) -> Option<(i64, Vec<(XY, i64)>)> {
     use std::cmp::Reverse;
     use std::collections::BinaryHeap;
     if start == goal {
@@ -235,7 +236,7 @@ fn travel_search(r: &Rules, m: &Map, start: XY, goal: XY, moves: f64, road_type:
                 if ll <= 0.0 {
                     continue;
                 }
-                let Some(c) = move_cost(r, m, at, n, ll, moves, road_type, cities, roads) else { continue };
+                let Some(c) = move_cost(r, m, at, n, ll, moves, road_type, cities, roads, cleared) else { continue };
                 let state = (tt, -q(ll - c));
                 if tt <= 30 && state < *best.get(&n).unwrap_or(&(99, 0)) {
                     best.insert(n, state);

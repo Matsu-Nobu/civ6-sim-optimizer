@@ -1290,14 +1290,14 @@ impl<'a> Planner<'a> {
     }
 
     pub fn travel(&self, st: &State, a: XY, b: XY, unit: &str) -> Option<i64> {
-        let (moves, cities) = self.travel_setup(st, unit);
-        travel_turns(self.r, &self.w.map, a, b, moves, self.road_type(st.turn), &cities, &st.roads)
+        let (moves, cities, cleared) = self.travel_setup(st, unit);
+        travel_turns(self.r, &self.w.map, a, b, moves, self.road_type(st.turn), &cities, &st.roads, &cleared)
     }
 
     /// travel and the way (crate::world::travel_path)
     pub fn travel_way(&self, st: &State, a: XY, b: XY, unit: &str) -> Option<(i64, Vec<(XY, i64)>)> {
-        let (moves, cities) = self.travel_setup(st, unit);
-        crate::world::travel_path(self.r, &self.w.map, a, b, moves, self.road_type(st.turn), &cities, &st.roads)
+        let (moves, cities, cleared) = self.travel_setup(st, unit);
+        crate::world::travel_path(self.r, &self.w.map, a, b, moves, self.road_type(st.turn), &cities, &st.roads, &cleared)
     }
 
     /// A road along the shortest way a trader takes from a to b (a trade route lays one; so does the capital's road to a
@@ -1309,14 +1309,20 @@ impl<'a> Planner<'a> {
         }
     }
 
-    /// a unit's movement points and the plots of the cities it moves through
-    fn travel_setup(&self, st: &State, unit: &str) -> (f64, HashSet<XY>) {
+    /// a unit's movement points, the plots of the cities it moves through and the plots of our cities whose feature
+    /// the map has but the game removed (harvests)
+    fn travel_setup(&self, st: &State, unit: &str) -> (f64, HashSet<XY>, HashSet<XY>) {
         let e = self.eng(st);
         let extra: f64 = e.unit_effects(s!("EFFECT_ADJUST_UNIT_MOVEMENT"), ss(unit), None).iter().map(|x| x.args.f("Amount")).sum();
         let moves = self.r.lookup_f("Units", "UnitType", ss(unit), "BaseMoves") + extra;
+        if crate::envcfg::trace() == Some("moves") {
+            eprintln!("MOVES {unit} {moves}");
+        }
         let mut cities: HashSet<XY> = st.cities.iter().map(|c| c.center).collect();
         cities.extend(self.sc.world_cities(st.turn).iter().map(|c| (c.x, c.y)));
-        (moves, cities)
+        let cleared = st.cities.iter().flat_map(|c| c.owned.iter().chain(c.near.iter()))
+            .filter(|p| p.feature.is_none() && self.w.map.plots.get(&p.xy()).is_some_and(|q| q.feature.is_some())).map(|p| p.xy()).collect();
+        (moves, cities, cleared)
     }
 
     // ---------------------------------------------------------------- great people

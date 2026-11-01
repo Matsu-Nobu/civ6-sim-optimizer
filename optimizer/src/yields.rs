@@ -524,7 +524,11 @@ pub fn tile_yields_bbcc(r: &Rules, plot: &Plot, techs: &BTreeSet<Sym>, civics: &
         p.district_type = Some(s!("DISTRICT_CITY_CENTER"));
     }
     let resource = p.resource.filter(|&res| r.resource_revealed(res, techs));
-    let terrain = if p.feature.is_some() && is_impassable(r, None, p.feature) { None } else { Some(p.terrain) };
+    // a natural wonder's plot yields only the wonder's own yields, not its terrain's (11/01 run: Pantanal on grassland
+    // gives 2 food in the game, the feature's 2 without the grassland's 2); an impassable feature yields nothing of
+    // its terrain either
+    let natural_wonder = p.feature.is_some_and(|f| r.lookup_truthy("Features", "FeatureType", f, "NaturalWonder"));
+    let terrain = if natural_wonder || (p.feature.is_some() && is_impassable(r, None, p.feature)) { None } else { Some(p.terrain) };
     if let Some(t) = terrain {
         // Features.DoubleAdjacentTerrainYield (Torres del Paine): the terrain's own yields count twice next to it
         let mut times = 1.0;

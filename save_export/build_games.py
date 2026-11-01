@@ -33,6 +33,9 @@ GAMES = [
     ("econrun_rome2", "econrun_rome2", 0, 65, 8, []),
     # EconPlanStart_mp1_T002: a single-player start set up as the user's multiplayer games (BCY, no barbarians, huts)
     ("econrun_mp1", "econrun_mp1", 0, 65, 8, []),
+    # the plan of data/search/econrun_mp1 played in the game from EconPlanStart_mp1_T002 (11/01): a single-player save
+    # of turn t shows what a multiplayer autosave of turn t - 1 shows, so the rows are numbered one turn earlier
+    ("econrun_mp1e", "econrun_mp1e", 0, 64, 8, []),
 ]
 
 

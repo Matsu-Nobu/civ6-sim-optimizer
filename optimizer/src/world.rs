@@ -287,8 +287,30 @@ impl<'a> World<'a> {
     }
 
     /// The tile a border takes next: best value, then closest; ties: the smallest (x, y).
+    /// The plot a city's border takes with culture. The game picks at random among weighted candidates (the weights
+    /// are not published); in 371 border growths of the recorded games the plot was nearest the centre in 368, a
+    /// luxury resource among the nearest in 46 of 59, a bonus resource in 86 of 129 and a revealed strategic one in 11
+    /// of 15, far above an even pick; plots next to more of the city's plots were not preferred. So: the nearest, then
+    /// a luxury, then a bonus or revealed strategic resource, then the plot's value: the game's likeliest pick.
     pub fn next_border_tile(&self, ci: usize, cities: &[City], techs: &BTreeSet<Sym>, civics: &BTreeSet<Sym>, w: &Weights) -> Option<XY> {
-        self.border_tiles(ci, cities, techs, civics, w, 1).into_iter().next()
+        let city = &cities[ci];
+        let class = |xy: XY| -> i32 {
+            let p = &self.map.plots[&xy];
+            match p.resource.filter(|&res| self.r.resource_revealed(res, techs)) {
+                Some(res) => match self.r.lookup_sym("Resources", "ResourceType", res, "ResourceClassType").map(|c| c.as_string()) {
+                    Some(c) if c == "RESOURCECLASS_LUXURY" => 2,
+                    Some(c) if c == "RESOURCECLASS_BONUS" || c == "RESOURCECLASS_STRATEGIC" => 1,
+                    _ => 0,
+                },
+                None => 0,
+            }
+        };
+        self.border_tiles(ci, cities, techs, civics, w, usize::MAX).into_iter()
+            .map(|xy| (-self.map.distance(city.center, xy), class(xy), xy))
+            .enumerate()
+            // border_tiles lists by value: the first of equals keeps the value order
+            .max_by(|(i, a), (j, b)| (a.0, a.1).cmp(&(b.0, b.1)).then(j.cmp(i)))
+            .map(|(_, x)| x.2)
     }
 
     /// The `k` best plots a city could take next (adjacent to it, in its workable radius, nobody's), best first.

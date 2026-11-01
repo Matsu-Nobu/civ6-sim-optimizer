@@ -111,7 +111,9 @@ pub fn plot_requirement(r: &Rules, rt: Sym, p: &Plot, a: &Args, c: &Ctx) -> bool
     } else if (rt == s!("REQUIREMENT_PLOT_RESOURCE_CLASS_TYPE_MATCHES")) {
         p.resource.is_some() && r.resource_class(p.resource.unwrap()) == a.get("ResourceClassType")
     } else if (rt == s!("REQUIREMENT_PLOT_IMPROVED_RESOURCE_CLASS_TYPE_MATCHES")) {
-        improved_class(r, p, a.get("ResourceClassType"))
+        // a resource the player cannot see yet is not an improved resource of its class (10/21 Ravenna T57: God of
+        // Craftsmen gave nothing to a mine on coal before Industrialization)
+        improved_class(r, p, a.get("ResourceClassType")) && p.resource.map(|res| r.resource_revealed(res, c.techs)).unwrap_or(false)
     } else if (rt == s!("REQUIREMENT_PLOT_RESOURCE_VISIBLE")) {
         p.resource.map(|res| r.resource_revealed(res, c.techs)).unwrap_or(false)
     } else if (rt == s!("REQUIREMENT_PLAYER_HAS_RESOURCE_VISIBILITY")) {

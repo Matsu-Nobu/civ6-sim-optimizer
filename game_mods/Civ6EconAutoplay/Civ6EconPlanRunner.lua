@@ -279,36 +279,57 @@ local function ensure_production(c, pc)
   return false
 end
 
--- worked plots, read from the plots themselves (the MANAGE command targets come back empty outside the city screen)
-local function worked_plots(c)
+-- Citizens are managed as the city panel does (CityPanel.lua, PlotInfo.lua): with the city selected and the
+-- interface in CITY_MANAGEMENT mode, whose PARAM_MANAGE_CITIZEN parameter the MANAGE command needs (outside that mode
+-- the parameter is empty and the command does nothing). The worked plots are read from the same command's targets.
+local function with_city_screen(c, f)
+  UI.SelectCity(c)
+  UI.SetInterfaceMode(InterfaceModeTypes.CITY_MANAGEMENT)
+  local param = UI.GetInterfaceModeParameter(CityCommandTypes.PARAM_MANAGE_CITIZEN)
+  local ok, r = pcall(f, param)
+  UI.SetInterfaceMode(InterfaceModeTypes.SELECTION)
+  UI.DeselectAllCities()
+  if not ok then log("citizens_error", { error = tostring(r) }); return true end
+  return r
+end
+
+-- plot index -> citizens working it, the city centre left out
+local function worked_plots(c, param)
   local out = {}
-  local cx, cy = c:GetX(), c:GetY()
-  for dx = -3, 3 do
-    for dy = -3, 3 do
-      local p = Map.GetPlotXYWithRangeCheck(cx, cy, dx, dy, 3)
-      if p and p:GetOwner() == me and Cities.GetPlotPurchaseCity(p) == c and p:GetWorkerCount() > 0
-         and not (p:GetX() == cx and p:GetY() == cy) then
-        out[p:GetIndex()] = p:GetWorkerCount()
-      end
-    end
+  local t = CityManager.GetCommandTargets(c, CityCommandTypes.MANAGE, { [CityCommandTypes.PARAM_MANAGE_CITIZEN] = param })
+  local plots, units = t and t[CityCommandResults.PLOTS], t and t[CityCommandResults.CITIZENS]
+  for i, id in pairs(plots or {}) do
+    local p = Map.GetPlotByIndex(id)
+    if (units[i] or 0) > 0 and not (p:GetX() == c:GetX() and p:GetY() == c:GetY()) then out[id] = units[i] end
   end
   return out
 end
 
--- clicking an unworked plot moves a citizen there and locks it; one click per round, then look again
+-- A click on a plot moves a citizen to it (and locks it) or, on a worked plot, takes the citizen off. Citizens on plots
+-- the plan does not work are taken off first; one click per round, then the plots are read again.
 local function ensure_citizens(c, pc)
-  local have = worked_plots(c)
-  for _, w in ipairs(pc.worked) do
-    local pl = Map.GetPlot(w[1], w[2])
-    if pl and not (w[1] == pc.x and w[2] == pc.y) and (have[pl:GetIndex()] or 0) < w[3] then
-      if not again("citizens " .. pc.x .. "," .. pc.y .. " " .. w[1] .. "," .. w[2]) then return true end
-      CityManager.RequestCommand(c, CityCommandTypes.MANAGE, {
-        [CityCommandTypes.PARAM_MANAGE_CITIZEN] = UI.GetInterfaceModeParameter(CityCommandTypes.PARAM_MANAGE_CITIZEN),
-        [CityCommandTypes.PARAM_X] = w[1], [CityCommandTypes.PARAM_Y] = w[2] })
+  return with_city_screen(c, function(param)
+    local have = worked_plots(c, param)
+    local want = {}
+    for _, w in ipairs(pc.worked) do
+      local pl = Map.GetPlot(w[1], w[2])
+      if pl then want[pl:GetIndex()] = w[3] end
+    end
+    local function click(id, what)
+      local pl = Map.GetPlotByIndex(id)
+      if not again("citizens " .. pc.x .. "," .. pc.y .. " " .. what .. " " .. pl:GetX() .. "," .. pl:GetY()) then return true end
+      CityManager.RequestCommand(c, CityCommandTypes.MANAGE, { [CityCommandTypes.PARAM_MANAGE_CITIZEN] = param,
+        [CityCommandTypes.PARAM_X] = pl:GetX(), [CityCommandTypes.PARAM_Y] = pl:GetY() })
       return false
     end
-  end
-  return true
+    for id in pairs(have) do
+      if want[id] == nil then return click(id, "off") end
+    end
+    for id, n in pairs(want) do
+      if (have[id] or 0) < n then return click(id, "on") end
+    end
+    return true
+  end)
 end
 
 local function purchase(b)
@@ -494,7 +515,9 @@ local function report(turn)
     local c = city_at(pc.x, pc.y)
     if c then
       local worked = {}
-      for idx, n in pairs(worked_plots(c)) do local pl = Map.GetPlotByIndex(idx); worked[#worked + 1] = { pl:GetX(), pl:GetY(), n } end
+      with_city_screen(c, function(param)
+        for idx, n in pairs(worked_plots(c, param)) do local pl = Map.GetPlotByIndex(idx); worked[#worked + 1] = { pl:GetX(), pl:GetY(), n } end
+      end)
       local y = {}
       for row in GameInfo.Yields() do y[row.YieldType] = c:GetYield(row.Index) end
       local g = c:GetGrowth()

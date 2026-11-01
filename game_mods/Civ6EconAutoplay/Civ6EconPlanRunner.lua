@@ -131,13 +131,17 @@ local function ensure_player(p)
       local idx = culture:GetSlotPolicy(i)
       if idx ~= nil and idx >= 0 then in_slot[i] = GameInfo.Policies[idx].PolicyType; have[in_slot[i]] = i end
     end
-    for _, pol in ipairs(p.policies) do want[pol] = true end
+    -- only policies the game has unlocked: clearing a slot for one it has not unlocked empties the slot (11/01 run:
+    -- Colonization before Early Empire left the economic slot empty)
+    for _, pol in ipairs(p.policies) do
+      if culture:IsPolicyUnlocked(GameInfo.Policies[pol].Hash) then want[pol] = true end
+    end
     -- the plan's policies already slotted stay where they are: the engine cannot slot a policy that is active in the
     -- same request (GovernmentScreen.lua: Culture::CanSlotPolicy first checks !IsPolicyActive), so only the slots
     -- that change are cleared and only the new policies are added
     local taken, clear, add, missing = {}, {}, {}, {}
     for pol in pairs(want) do if have[pol] ~= nil then taken[have[pol]] = true end end
-    for _, pol in ipairs(p.policies) do if have[pol] == nil then missing[#missing + 1] = pol end end
+    for _, pol in ipairs(p.policies) do if want[pol] and have[pol] == nil then missing[#missing + 1] = pol end end
     local function place(pol, wildcard_ok)
       local t = GameInfo.Policies[pol].GovernmentSlotType
       for i = 0, n - 1 do
@@ -149,8 +153,10 @@ local function ensure_player(p)
     local left = {}
     for _, pol in ipairs(missing) do if not place(pol, false) then left[#left + 1] = pol end end
     for _, pol in ipairs(left) do if not place(pol, true) then log("policy_no_slot", { policy = pol }) end end
+    -- as GovernmentScreen.lua does, a slot that gets a policy is in the clear list too, empty or not (11/01 run: an
+    -- add to an empty slot left out of the list was refused every turn)
     for i = 0, n - 1 do
-      if in_slot[i] and (not want[in_slot[i]] or add[i]) then clear[#clear + 1] = i end
+      if add[i] or (in_slot[i] and not want[in_slot[i]]) then clear[#clear + 1] = i end
     end
     if (#clear > 0 or next(add) ~= nil) and again("policies") then
       local adds = {}
@@ -245,6 +251,20 @@ local function act(kind, id, o, turn)
     return true  -- try again next round / next turn
   end
   if kind == "builder" then o.charges = o.charges or u:GetBuildCharges() end
+  if o.requested == turn and not o.why_logged then
+    -- requested earlier this turn and no charge used: the game's reasons, asked as UnitPanel.lua does
+    local reasons, allowed = {}, nil
+    pcall(function()
+      local okb, why = UnitManager.CanStartOperation(u, op, nil, check_p, true)
+      allowed = okb
+      for _, r in ipairs((why and why[UnitOperationResults.FAILURE_REASONS]) or {}) do reasons[#reasons + 1] = Locale.Lookup(r) end
+    end)
+    log("unit_op_no_effect", { unit = kind, id = id, op = o.op, what = o.what, at = { o.x, o.y }, allowed = allowed,
+                               reasons = reasons, moves = u:GetMovesRemaining(), charges = u:GetBuildCharges(),
+                               activity = (u.GetActivityType ~= nil) and u:GetActivityType() or nil })
+    o.why_logged = true
+  end
+  o.requested = turn
   UnitManager.RequestOperation(u, op, p)
   log("unit_op", { unit = kind, id = id, op = o.op, what = o.what, at = { o.x, o.y }, plan_turn = o.turn })
   if kind == "settler" then o.op = nil end

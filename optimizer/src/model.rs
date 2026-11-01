@@ -381,6 +381,8 @@ pub struct State {
     pub yields_sum: [f64; 6],
     /// what harvests gave so far (food, production, gold, ...): they go to the item and the food store, not the yields
     pub harvest_sum: [f64; 6],
+    /// the roads made during the game (trade routes, the capital's roads to new cities), besides the map's
+    pub roads: std::collections::HashSet<XY>,
 }
 
 impl State {
@@ -616,6 +618,7 @@ pub fn state_from(v: &Value) -> State {
         debt: 0.0,
         yields_sum: [0.0; 6],
         harvest_sum: [0.0; 6],
+        roads: Default::default(),
     }
 }
 
@@ -726,5 +729,6 @@ pub fn state_from_row(d: &Value) -> State {
         debt: 0.0,
         yields_sum: [0.0; 6],
         harvest_sum: [0.0; 6],
+        roads: Default::default(),
     }
 }

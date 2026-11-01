@@ -811,6 +811,7 @@ impl<'a> Planner<'a> {
         let k = o.3;
         let hc = st.city(home).unwrap();
         let dist = self.w.map.distance(hc.center, (d.x, d.y)) as i64;
+        let d_xy = (d.x, d.y);
         let info = if d.player_id != st.player.player_id { Some(d) } else { None };
         // replay: the route the record started from that home to that destination, yielding from the turn after
         let rec = self.rec.as_ref().or(self.tiles_rec.as_ref());
@@ -827,6 +828,8 @@ impl<'a> Planner<'a> {
                 lost = !renewed;
             }
         }
+        let from = hc.center;
+        self.lay_road(st, from, (d_xy.0, d_xy.1));
         Trader { origin: home, dest: Some(dn), info, until: Some(until), start, lost }
     }
 
@@ -1288,13 +1291,22 @@ impl<'a> Planner<'a> {
 
     pub fn travel(&self, st: &State, a: XY, b: XY, unit: &str) -> Option<i64> {
         let (moves, cities) = self.travel_setup(st, unit);
-        travel_turns(self.r, &self.w.map, a, b, moves, self.road_type(st.turn), &cities)
+        travel_turns(self.r, &self.w.map, a, b, moves, self.road_type(st.turn), &cities, &st.roads)
     }
 
     /// travel and the way (crate::world::travel_path)
     pub fn travel_way(&self, st: &State, a: XY, b: XY, unit: &str) -> Option<(i64, Vec<(XY, i64)>)> {
         let (moves, cities) = self.travel_setup(st, unit);
-        crate::world::travel_path(self.r, &self.w.map, a, b, moves, self.road_type(st.turn), &cities)
+        crate::world::travel_path(self.r, &self.w.map, a, b, moves, self.road_type(st.turn), &cities, &st.roads)
+    }
+
+    /// A road along the shortest way a trader takes from a to b (a trade route lays one; so does the capital's road to a
+    /// new city): the plots of the way and a get a road.
+    fn lay_road(&self, st: &mut State, a: XY, b: XY) {
+        if let Some((_, way)) = self.travel_way(st, a, b, "UNIT_TRADER") {
+            st.roads.insert(a);
+            st.roads.extend(way.into_iter().map(|(xy, _)| xy));
+        }
     }
 
     /// a unit's movement points and the plots of the cities it moves through
@@ -1979,6 +1991,7 @@ impl<'a> Planner<'a> {
         }
         // settlers arriving
         let arriving: Vec<Settler> = st.settlers.iter().filter(|s| s.arrive <= t_now).cloned().collect();
+        let mut founding_harvest = [0.0; 3];
         for s in arriving {
             st.settlers.retain(|x| x != &s);
             let Some(target) = s.target else { continue };
@@ -2000,6 +2013,12 @@ impl<'a> Planner<'a> {
                         continue;
                     }
                     if let Some(p) = c.owned.iter_mut().find(|p| p.xy() == xy) {
+                        // the harvest's yields are in the recorded population and food store; they count in the
+                        // turn's output as every other harvest's do (Planner::advance)
+                        let ys = self.harvest_yields(&self.eng(st), p, st, Some(name)).into_iter().find(|(k, _)| *k == what).map(|(_, y)| y);
+                        for (k, y) in ["YIELD_FOOD", "YIELD_PRODUCTION", "YIELD_GOLD"].iter().enumerate() {
+                            founding_harvest[k] += ys.as_ref().map(|v| get_y(v, sym(y))).unwrap_or(0.0);
+                        }
                         if what == s!("feature") { p.feature = None } else { p.resource = None }
                         harvested += 1;
                     }
@@ -2008,6 +2027,12 @@ impl<'a> Planner<'a> {
             }
             st.cities.push(c);
             st.acc.cities.insert(name, acc);
+            // a new city's road to the capital (Rome: EFFECT_GRANT_CITY_ROAD_TO_CAPITAL)
+            if !self.eng(st).city_effects(s!("EFFECT_GRANT_CITY_ROAD_TO_CAPITAL"), name).is_empty() {
+                if let Some(cap) = st.cities.iter().find(|x| x.capital).map(|x| x.center) {
+                    self.lay_road(st, target, cap);
+                }
+            }
             st.border.insert(name, (0.0, 0));
             st.focus.insert(name, s!("balanced"));
             // units every new city gets (BBG Ancestral Hall: a builder, which acts on the founding turn)
@@ -2025,6 +2050,9 @@ impl<'a> Planner<'a> {
                     }
                 }
             }
+        }
+        for k in 0..3 {
+            st.harvest_sum[k] += founding_harvest[k];
         }
         // replay: the cities the record took from other players, as its save of this turn shows them
         if self.rec.is_some() || self.tiles_rec.is_some() {

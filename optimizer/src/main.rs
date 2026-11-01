@@ -816,6 +816,8 @@ fn snapshot(pl: &Planner, st: &State) -> Value {
         })).collect())),
         ("techs", Value::from(st.acc.techs.len() as i64)),
         ("tech_list", Value::Arr(st.acc.techs.iter().map(|t| Value::from(t.as_string())).collect())),
+        // the roads made during the game (State::roads), [x, y]
+        ("roads", Value::Arr({ let mut v: Vec<XY> = st.roads.iter().copied().collect(); v.sort(); v.into_iter().map(|xy| Value::from(vec![xy.0 as i64, xy.1 as i64])).collect() })),
         ("civics", Value::from(st.acc.civics.len() as i64)),
         ("government", Value::from(st.player.government.map(|x| x.as_string()))),
         ("gp_points", Value::Arr(st.gp.0.iter().map(|(k, v)| Value::from(format!("{}:{:.0}", k.as_string(), v))).collect())),

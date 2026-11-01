@@ -1562,8 +1562,9 @@ local function EconRunnerLoad()
   end)
   if not ok then print("ECONRUN load failed: " .. tostring(err)) end
 end
--- MODE "newgame": a fresh game set up like the user's games (Pangaea, standard size, online speed, Prince, no
--- barbarians, 12 city-states), player 0 as LEADER, the rest random; the AI then plays it (in-game script).
+-- MODE "newgame": a fresh game set up like the user's multiplayer games (their saves' headers: online speed, Prince,
+-- no barbarians, goody huts, BBG's better city yields on capitals with the maximum yields, the map and city-states of
+-- ECONRUN), player 0 as LEADER, the rest random; the AI then plays it (in-game script).
 local function EconRunnerNewGame()
   if econ_requested or ECONRUN == nil or (ECONRUN.MODE ~= "newgame" and ECONRUN.MODE ~= "newstart") then return end
   econ_requested = true
@@ -1582,7 +1583,10 @@ local function EconRunnerNewGame()
     set("handicap", function() GameConfiguration.SetValue("GAME_HANDICAP", DB.MakeHash("DIFFICULTY_PRINCE")) end)
     set("barbarians", function() GameConfiguration.SetValue("GAME_NO_BARBARIANS", true) end)
     set("bbg barbarians", function() GameConfiguration.SetValue("BARBS_SETTING", -1) end)  -- BBG's own setting; -1 = off
-    set("goody huts", function() GameConfiguration.SetValue("GAME_NO_GOODY_HUTS", true) end)
+    set("goody huts", function() GameConfiguration.SetValue("GAME_NO_GOODY_HUTS", ECONRUN.NO_HUTS == true) end)
+    -- BBG's better city yields (bbg_script.lua): -1 off, 0 every city, 1 capitals only; yields 0 standard, 1 no rng, 2 maximum
+    set("bcy", function() GameConfiguration.SetValue("BBCC_SETTING", ECONRUN.BCY or -1) end)
+    set("bcy yields", function() GameConfiguration.SetValue("BBCC_SETTING_YIELD", ECONRUN.BCY_YIELD or 0) end)
     set("city states", function() GameConfiguration.SetValue("CITY_STATE_COUNT", ECONRUN.CITY_STATES or 12) end)
     set("map script", function() MapConfiguration.SetScript(ECONRUN.MAP or "Pangaea.lua") end)
     set("map size", function() MapConfiguration.SetMapSize(DB.MakeHash(ECONRUN.MAP_SIZE or "MAPSIZE_STANDARD")) end)
@@ -1591,7 +1595,9 @@ local function EconRunnerNewGame()
     GameSetup_RefreshParameters()
     ReleasePlayerParameters()
     print("ECONRUN barbarians " .. tostring(GameConfiguration.GetValue("BARBS_SETTING")) .. " no-barbarians " ..
-          tostring(GameConfiguration.GetValue("GAME_NO_BARBARIANS")) .. " no-huts " .. tostring(GameConfiguration.GetValue("GAME_NO_GOODY_HUTS")))
+          tostring(GameConfiguration.GetValue("GAME_NO_BARBARIANS")) .. " no-huts " .. tostring(GameConfiguration.GetValue("GAME_NO_GOODY_HUTS")) ..
+          " bcy " .. tostring(GameConfiguration.GetValue("BBCC_SETTING")) .. " bcy yields " .. tostring(GameConfiguration.GetValue("BBCC_SETTING_YIELD")) ..
+          " city states " .. tostring(GameConfiguration.GetValue("CITY_STATE_COUNT")))
     print("ECONRUN new game, leader " .. tostring(PlayerConfigurations[0]:GetLeaderTypeName()) .. ", speed " ..
           tostring(GameConfiguration.GetValue("GAME_SPEED_TYPE")) .. ", map " .. tostring(MapConfiguration.GetScript()))
     Network.HostGame(ServerType.SERVER_TYPE_NONE)

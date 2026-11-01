@@ -32,7 +32,7 @@ SEARCH = ["--turn", "65", "--ext", "20", "--ext-model", "--fallback-model", str(
 
 
 def sh(*args, **kw):
-    return subprocess.run([str(a) for a in args], capture_output=True, text=True, **kw)
+    return subprocess.run([str(a) for a in args], capture_output=True, text=True, errors="replace", **kw)
 
 
 def civ_pids():

@@ -31,6 +31,8 @@ GAMES = [
     ("20261024", "france_20261024", 12, 45, 8, []),
     # the single-player start EconPlanStart_rome2_T002, from which plans are played in the game (docs/plan.md)
     ("econrun_rome2", "econrun_rome2", 0, 65, 8, []),
+    # EconPlanStart_mp1_T002: a single-player start set up as the user's multiplayer games (BCY, no barbarians, huts)
+    ("econrun_mp1", "econrun_mp1", 0, 65, 8, []),
 ]
 
 

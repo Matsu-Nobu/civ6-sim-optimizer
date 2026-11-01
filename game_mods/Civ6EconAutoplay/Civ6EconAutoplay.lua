@@ -15,7 +15,8 @@ local function save_named(name)
 end
 
 local function save_turn()
-  if ECONRUN.MODE == "off" then return end
+  -- "newstart" writes only its start save
+  if ECONRUN.MODE == "off" or ECONRUN.MODE == "newstart" then return end
   local ok, err = pcall(function()
     local turn = Game.GetCurrentGameTurn()
     if ECONRUN.MODE == "experiment" or ECONRUN.MODE == "newgame" or ECONRUN.MODE == "plan" then

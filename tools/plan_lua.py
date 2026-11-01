@@ -103,8 +103,10 @@ def main():
                 x, y = ch
                 s = next((s for s in snaps[t]["settlers"] if (s[1], s[2]) == (x, y)), None)
                 if t + 1 in turns:
+                    # the simulator's way, [x, y, turn the settler is there]: the mod walks it, since the game's own
+                    # path to the same plot can be a turn longer (11/01 run: the first settler founded a turn late)
                     turns[t + 1]["settlers"].append({"op": "go", "id": f"{d['key'][1]}{d['key'][2]}", "x": x, "y": y,
-                                                     "arrive": s[3] if s else t + 1})
+                                                     "arrive": s[3] if s else t + 1, "way": s[4] if s else []})
             elif kind == "buy" and ch[0] == "item":
                 cx, cy = centres[ch[1]]
                 out["buys"].append({"kind": "item", "x": cx, "y": cy, "item": ch[2], "yield": "YIELD_GOLD"})
@@ -143,6 +145,7 @@ def main():
                 b["at"] += OFFSET
         for st in d["settlers"]:
             st["arrive"] += OFFSET
+            st["way"] = [[w[0], w[1], w[2] + OFFSET] for w in st["way"]]
     game_turns = {t + OFFSET: d for t, d in turns.items()}
     text = (f"-- Written by tools/plan_lua.py from {Path(game).name} and {Path(plan).name}. Do not edit.\n"
             f"ECONPLAN = {{ START = {first + OFFSET}, LAST = {last + OFFSET}, OFFSET = {OFFSET}, TURNS = {lua(game_turns)} }}\n")

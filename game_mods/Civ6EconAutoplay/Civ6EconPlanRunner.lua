@@ -89,7 +89,6 @@ local function unit_of(kind, id)
 end
 
 -- ---------------------------------------------------------------- player choices
-local reslot = false
 local function ensure_player(p)
   local pl = player()
   if p.research then
@@ -118,41 +117,45 @@ local function ensure_player(p)
     local row = GameInfo.Governments[p.government]
     if row and culture:GetCurrentGovernment() ~= row.Index and again("government " .. p.government) then
       if not culture:RequestChangeGovernment(row.Hash) then log("government_failed", { government = p.government }) end
-      reslot = true  -- policies kept from the old government stay in their slots but do nothing until slotted again
       return false
     end
   end
-  if p.policies then
+  -- Policies only once the government is the plan's: a change made under the old government's slots uses up the
+  -- turn's one change (PolicyChangeMade) before the new slots exist (11/01 run, turn 28).
+  local gov_row = p.government and GameInfo.Governments[p.government]
+  if p.policies and (gov_row == nil or culture:GetCurrentGovernment() == gov_row.Index) then
     local n = culture:GetNumPolicySlots()
-    local have, want = {}, {}
+    local slot_type, in_slot, have, want = {}, {}, {}, {}
     for i = 0, n - 1 do
+      slot_type[i] = GameInfo.GovernmentSlots[culture:GetSlotType(i)].GovernmentSlotType
       local idx = culture:GetSlotPolicy(i)
-      if idx ~= nil and idx >= 0 then have[GameInfo.Policies[idx].PolicyType] = true end
+      if idx ~= nil and idx >= 0 then in_slot[i] = GameInfo.Policies[idx].PolicyType; have[in_slot[i]] = i end
     end
-    local same = true
-    for _, pol in ipairs(p.policies) do want[pol] = true; if not have[pol] then same = false end end
-    for pol in pairs(have) do if not want[pol] then same = false end end
-    if (not same or reslot) and again("policies") then
-      reslot = false
-      local clear, add, taken = {}, {}, {}
-      for i = 0, n - 1 do clear[#clear + 1] = i end
-      local function place(pol, wildcard_ok)
-        local slot_type = GameInfo.Policies[pol].GovernmentSlotType
-        for i = 0, n - 1 do
-          local st = GameInfo.GovernmentSlots[culture:GetSlotType(i)].GovernmentSlotType
-          if not taken[i] and (st == slot_type or (wildcard_ok and st == "SLOT_WILDCARD")) then
-            taken[i] = true; add[i] = GameInfo.Policies[pol].Hash; return true
-          end
+    for _, pol in ipairs(p.policies) do want[pol] = true end
+    -- the plan's policies already slotted stay where they are: the engine cannot slot a policy that is active in the
+    -- same request (GovernmentScreen.lua: Culture::CanSlotPolicy first checks !IsPolicyActive), so only the slots
+    -- that change are cleared and only the new policies are added
+    local taken, clear, add, missing = {}, {}, {}, {}
+    for pol in pairs(want) do if have[pol] ~= nil then taken[have[pol]] = true end end
+    for _, pol in ipairs(p.policies) do if have[pol] == nil then missing[#missing + 1] = pol end end
+    local function place(pol, wildcard_ok)
+      local t = GameInfo.Policies[pol].GovernmentSlotType
+      for i = 0, n - 1 do
+        if not taken[i] and (slot_type[i] == t or (wildcard_ok and slot_type[i] == "SLOT_WILDCARD")) then
+          taken[i] = true; add[i] = GameInfo.Policies[pol].Hash; return true
         end
       end
-      local left = {}
-      for _, pol in ipairs(p.policies) do if not place(pol, false) then left[#left + 1] = pol end end
-      for _, pol in ipairs(left) do if not place(pol, true) then log("policy_no_slot", { policy = pol }) end end
-      local slots, adds = {}, {}
-      for i = 0, n - 1 do slots[#slots + 1] = GameInfo.GovernmentSlots[culture:GetSlotType(i)].GovernmentSlotType end
+    end
+    local left = {}
+    for _, pol in ipairs(missing) do if not place(pol, false) then left[#left + 1] = pol end end
+    for _, pol in ipairs(left) do if not place(pol, true) then log("policy_no_slot", { policy = pol }) end end
+    for i = 0, n - 1 do
+      if in_slot[i] and (not want[in_slot[i]] or add[i]) then clear[#clear + 1] = i end
+    end
+    if (#clear > 0 or next(add) ~= nil) and again("policies") then
+      local adds = {}
       for i, h in pairs(add) do adds[#adds + 1] = { i, GameInfo.Policies[h] and GameInfo.Policies[h].PolicyType or tostring(h) } end
-      log("policy_request", { slots = slots, add = adds, want = p.policies,
-                              government = GameInfo.Governments[culture:GetCurrentGovernment()].GovernmentType })
+      log("policy_request", { clear = clear, add = adds, want = p.policies })
       culture:RequestPolicyChanges(clear, add)
       return false
     end
@@ -179,9 +182,16 @@ local function act(kind, id, o, turn)
     return true
   end
   if u:GetX() ~= o.x or u:GetY() ~= o.y then
-    if u:GetMovesRemaining() > 0 then
-      UnitManager.RequestOperation(u, UnitOperationTypes.MOVE_TO, { [UnitOperationTypes.PARAM_X] = o.x,
-        [UnitOperationTypes.PARAM_Y] = o.y })
+    -- with the simulator's way, the plot it is at by the end of this turn; else the destination
+    local tx, ty = o.x, o.y
+    if o.way and #o.way > 0 then
+      for _, w in ipairs(o.way) do
+        if w[3] <= turn then tx, ty = w[1], w[2] end
+      end
+    end
+    if u:GetMovesRemaining() > 0 and (u:GetX() ~= tx or u:GetY() ~= ty) then
+      UnitManager.RequestOperation(u, UnitOperationTypes.MOVE_TO, { [UnitOperationTypes.PARAM_X] = tx,
+        [UnitOperationTypes.PARAM_Y] = ty })
     end
     if o.op and turn >= o.turn and not o.late_logged then
       log("unit_late", { unit = kind, id = id, op = o.op, plan_turn = o.turn, at = { u:GetX(), u:GetY() }, to = { o.x, o.y } })
@@ -520,7 +530,7 @@ local function start_turn(turn)
     if s.op == "go" then
       local u = find_new_unit("settler", nil, nil)
       if u then units.settler[s.id] = u:GetID() else log("unit_not_found", { unit = "settler", id = s.id }) end
-      orders.settler[s.id] = { x = s.x, y = s.y, op = "found", turn = s.arrive }
+      orders.settler[s.id] = { x = s.x, y = s.y, op = "found", turn = s.arrive, way = s.way }
     end
   end
   if d.pantheon then pantheon_wanted = d.pantheon end

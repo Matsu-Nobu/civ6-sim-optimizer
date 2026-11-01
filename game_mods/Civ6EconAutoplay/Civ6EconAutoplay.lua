@@ -28,9 +28,10 @@ local function save_turn()
   if not ok then print("ECONRUN save failed: " .. tostring(err)) end
 end
 
+-- The game is not closed from here: closing it this way crashed the game. The user closes it.
 local function quit()
-  print("ECONRUN done, quitting")
-  Events.UserConfirmedClose()
+  print("ECONRUN done; the game can be closed")
+  ContextPtr:ClearUpdate()
 end
 
 local function on_autoplay_end()

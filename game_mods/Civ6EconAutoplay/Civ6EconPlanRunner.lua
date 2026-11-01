@@ -1,7 +1,7 @@
--- civ6-econ: replays a simulator plan (Civ6EconPlan.lua, written by scripts/plan_export.py) as the local player.
+-- civ6-econ: replays a simulator plan (Civ6EconPlan.lua, written by tools/plan_lua.py) as the local player.
 -- Each turn: player choices, unit orders, city production, purchases and worked plots are made to match the plan,
 -- checked over several rounds (requests are applied asynchronously), then the turn is ended.
--- Everything that could not be matched is printed as "ECONPLAN <json>" lines in Lua.log for scripts/plan_diff.py.
+-- Everything that could not be matched is printed as "ECONPLAN <json>" lines in Lua.log.
 include("Civ6EconPlan")
 
 local PR = {}
@@ -9,7 +9,7 @@ local me = 0
 local units = { builder = {}, settler = {} }   -- simulator id -> game unit id
 local orders = { builder = {}, settler = {} }  -- simulator id -> {x, y, op, what, turn (when to act)}
 local frames, rounds, phase, ended_at, end_tries = 0, 0, "idle", 0, 0
-local ROUND_FRAMES, MAX_ROUNDS, END_WAIT = 8, 30, 240
+local ROUND_FRAMES, MAX_ROUNDS, END_WAIT, FORCE_WAIT = 8, 30, 240, 160
 
 local function enc(v)
   local t = type(v)
@@ -323,6 +323,116 @@ local function purchase(b)
   log("buy", { item = b.item, city = { b.x, b.y }, yield = b.yield })
 end
 
+-- a plot bought by the city that owns its neighbourhood, as PlotInfo.lua does in the plot purchase mode
+local function purchase_plot(b)
+  local c = city_at(b.cx, b.cy)
+  if c == nil then log("buy_no_city", b); return end
+  local p = { [CityCommandTypes.PARAM_X] = b.x, [CityCommandTypes.PARAM_Y] = b.y,
+              [CityCommandTypes.PARAM_PLOT_PURCHASE] = 1 }
+  if not CityManager.CanStartCommand(c, CityCommandTypes.PURCHASE, p) then log("buy_plot_refused", b); return end
+  CityManager.RequestCommand(c, CityCommandTypes.PURCHASE, p)
+  log("buy", { plot = { b.x, b.y }, city = { b.cx, b.cy } })
+end
+
+-- ---------------------------------------------------------------- trade routes
+-- orders the game may refuse for a while (no free trader yet, a governor title not yet earned) are kept this many turns
+local KEEP_TURNS = 3
+local routes = {}  -- the routes to start: {ox, oy, dx, dy, turn}, kept until one starts
+local OP_TELEPORT = GameInfo.UnitOperations["UNITOPERATION_TELEPORT_TO_CITY"].Hash
+
+local function route_params(dest, u)
+  return { [UnitOperationTypes.PARAM_X0] = dest.dx, [UnitOperationTypes.PARAM_Y0] = dest.dy,
+           [UnitOperationTypes.PARAM_X1] = u:GetX(), [UnitOperationTypes.PARAM_Y1] = u:GetY() }
+end
+
+local function check(u, op, p)
+  local ok, r = pcall(function() return UnitManager.CanStartOperation(u, op, nil, p) end)
+  return ok and r
+end
+
+-- A trader in the origin city starts the route (TradeRouteChooser.lua); a free trader elsewhere first moves to the
+-- origin city as the trade origin chooser does (the simulator walks it there).
+local function ensure_routes()
+  local ok = true
+  local claimed = {}  -- traders given an order in this round
+  for i = #routes, 1, -1 do
+    local r = routes[i]
+    local started, moving = false, false
+    for _, u in player():GetUnits():Members() do
+      if unit_type(u) == "UNIT_TRADER" and not started and not moving and not claimed[u:GetID()] then
+        if u:GetX() == r.ox and u:GetY() == r.oy and check(u, UnitOperationTypes.MAKE_TRADE_ROUTE, route_params(r, u)) then
+          UnitManager.RequestOperation(u, UnitOperationTypes.MAKE_TRADE_ROUTE, route_params(r, u))
+          log("route", { from = { r.ox, r.oy }, to = { r.dx, r.dy } })
+          started, claimed[u:GetID()] = true, true
+        end
+      end
+    end
+    if not started then
+      for _, u in player():GetUnits():Members() do
+        local p = { [UnitOperationTypes.PARAM_X] = r.ox, [UnitOperationTypes.PARAM_Y] = r.oy }
+        if unit_type(u) == "UNIT_TRADER" and not moving and not claimed[u:GetID()] and check(u, OP_TELEPORT, p) then
+          UnitManager.RequestOperation(u, OP_TELEPORT, p)
+          moving, claimed[u:GetID()] = true, true
+        end
+      end
+    end
+    if started then
+      table.remove(routes, i)
+    elseif Game.GetCurrentGameTurn() > r.turn + KEEP_TURNS then
+      log("route_refused", r); table.remove(routes, i)
+    elseif moving then
+      ok = false
+    end
+  end
+  return ok
+end
+
+-- ---------------------------------------------------------------- governors and dedications
+local governors = {}  -- {op = "appoint", governor, x, y} / {op = "promote", governor, promotion}, plus turn
+
+local function ensure_governors()
+  local pg = player():GetGovernors()
+  for i = #governors, 1, -1 do
+    local g = governors[i]
+    local row = GameInfo.Governors[g.governor]
+    local done = false
+    if g.op == "appoint" then
+      local gov = pg:HasGovernor(row.Hash) and pg:GetGovernor(row.Hash) or nil
+      local c = city_at(g.x, g.y)
+      if gov == nil then
+        if again("appoint " .. g.governor) then
+          UI.RequestPlayerOperation(me, PlayerOperations.APPOINT_GOVERNOR, { [PlayerOperations.PARAM_GOVERNOR_TYPE] = row.Index })
+        end
+      elseif c == nil then
+        log("governor_no_city", g); done = true
+      elseif gov:GetAssignedCity() ~= nil and gov:GetAssignedCity():GetID() == c:GetID() then
+        log("governor", g); done = true
+      elseif again("assign " .. g.governor) then
+        UI.RequestPlayerOperation(me, PlayerOperations.ASSIGN_GOVERNOR, { [PlayerOperations.PARAM_GOVERNOR_TYPE] = row.Index,
+          [PlayerOperations.PARAM_PLAYER_ONE] = me, [PlayerOperations.PARAM_CITY_DEST] = c:GetID() })
+      end
+    else
+      local prow = GameInfo.GovernorPromotions[g.promotion]
+      local gov = pg:HasGovernor(row.Hash) and pg:GetGovernor(row.Hash) or nil
+      if gov ~= nil and gov:HasPromotion(prow.Hash) then
+        log("governor", g); done = true
+      elseif gov ~= nil and again("promote " .. g.promotion) then
+        UI.RequestPlayerOperation(me, PlayerOperations.PROMOTE_GOVERNOR, { [PlayerOperations.PARAM_GOVERNOR_TYPE] = row.Index,
+          [PlayerOperations.PARAM_GOVERNOR_PROMOTION_TYPE] = prow.Index })
+      end
+    end
+    if not done and Game.GetCurrentGameTurn() > g.turn + KEEP_TURNS then log("governor_refused", g); done = true end
+    if done then table.remove(governors, i) end
+  end
+  return true
+end
+
+local function commemorate(c)
+  UI.RequestPlayerOperation(me, PlayerOperations.COMMEMORATE,
+    { [PlayerOperations.PARAM_COMMEMORATION_TYPE] = GameInfo.CommemorationTypes[c].Index })
+  log("dedication", { what = c })
+end
+
 -- ---------------------------------------------------------------- the turn
 local function plan_of(turn) return ECONPLAN.TURNS[turn] end
 
@@ -336,7 +446,7 @@ local function start_turn(turn)
     elseif b.op == "go" then
       orders.builder[b.id] = { x = b.x, y = b.y }
     else
-      orders.builder[b.id] = { x = b.x, y = b.y, op = b.op, what = b.what, turn = turn }
+      orders.builder[b.id] = { x = b.x, y = b.y, op = b.op, what = b.what, turn = b.at or turn }
     end
   end
   for _, s in ipairs(d.settlers or {}) do
@@ -348,10 +458,12 @@ local function start_turn(turn)
   end
   if d.pantheon then pantheon_wanted = d.pantheon end
   for _, b in ipairs(d.buys or {}) do
-    if b.kind == "item" then purchase(b) else log("unsupported_buy", b) end
+    if b.kind == "item" then purchase(b) elseif b.kind == "tile" then purchase_plot(b) else log("unsupported_buy", b) end
   end
-  for _, g in ipairs(d.governors or {}) do log("unsupported_governor", { what = g }) end
-  for _, r in ipairs(d.routes or {}) do log("unsupported_route", r) end
+  for _, g in ipairs(d.governors or {}) do g.turn = turn; governors[#governors + 1] = g end
+  for _, r in ipairs(d.routes or {}) do r.turn = turn; routes[#routes + 1] = r end
+  if d.dedication then commemorate(d.dedication) end
+  for _, u in ipairs(d.unsupported or {}) do log("unsupported", u) end
 end
 
 local function round(turn)
@@ -360,6 +472,8 @@ local function round(turn)
   local ok = ensure_player(d)
   ok = ensure_pantheon() and ok
   ok = ensure_units(turn) and ok
+  ok = ensure_routes() and ok
+  ok = ensure_governors() and ok
   for _, pc in ipairs(d.cities or {}) do
     local c = city_at(pc.x, pc.y)
     if c == nil then
@@ -433,6 +547,13 @@ local function resolve(b, turn)
       local c = city_at(pc.x, pc.y)
       if c and current_item(c) == nil then ensure_production(c, pc) end
     end
+  elseif b == "ENDTURN_BLOCKING_COMMEMORATION_AVAILABLE" then
+    -- the plan's dedication of the era: the simulator chooses it in a turn near the era's start
+    for t = turn - 2, turn + 3 do
+      local dt = plan_of(t)
+      if dt and dt.dedication then commemorate(dt.dedication); return true end
+    end
+    return false
   elseif b == "ENDTURN_BLOCKING_PANTHEON" then
     for t = turn + 1, ECONPLAN.LAST do
       local dt = plan_of(t)
@@ -483,8 +604,14 @@ local function on_update()
         phase, ended_at, end_tries = "ending", frames, end_tries + 1
         UI.RequestAction(ActionTypes.ACTION_ENDTURN, { REASON = "UserForced" })
       end
-    elseif resolve(b, turn) then
+    elseif resolve(b, turn) and frames - ended_at <= FORCE_WAIT then
       if frames % (ROUND_FRAMES * 10) == 0 then log("resolving", { blocker = b }) end
+    elseif frames - ended_at > 40 then
+      -- a blocker the plan does not decide (envoys, governor titles the plan keeps, great people): the simulator
+      -- does not act on it either, so the turn ends as Shift+Enter does (ActionPanel.lua)
+      log("end_turn_forced", { blocker = b })
+      phase, ended_at, end_tries = "ending", frames, end_tries + 1
+      UI.RequestAction(ActionTypes.ACTION_ENDTURN, { REASON = "UserForced" })
     end
     if phase == "unblocking" and frames - ended_at > END_WAIT then
       log("end_turn_blocked", { blocker = b })

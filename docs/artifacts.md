@@ -76,6 +76,7 @@ cd optimizer && cargo build --release
 | `france_20261014.json` | 10/14 のフランスのマルチ戦 |
 | `persia_20261017.json` | 10/17 のペルシャのマルチ戦 |
 | `france_20261018.json` | 10/18 のフランスのマルチ戦 |
+| `econrun_rome2.json` | 計画をゲームで流すときの出発点にする、単独プレイの開始セーブ `EconPlanStart_rome2_T002`（ローマ、T2） |
 
 # データの配置
 

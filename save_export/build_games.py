@@ -29,6 +29,8 @@ GAMES = [
     ("20261019", "gran_colombia_20261019", 0, 55, 8, []),
     ("20261021", "rome_20261021", 2, 65, 8, []),
     ("20261024", "france_20261024", 12, 45, 8, []),
+    # the single-player start EconPlanStart_rome2_T002, from which plans are played in the game (docs/plan.md)
+    ("econrun_rome2", "econrun_rome2", 0, 65, 8, []),
 ]
 
 

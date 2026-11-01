@@ -76,6 +76,8 @@ local function find_new_unit(kind, x, y)
   return best
 end
 
+local builder_from = {}  -- planned builder id -> the plot it is made on, from the plan's first order for it
+
 -- where a planned unit is first: a settler's first plot on its way (next to the city that made it), else none
 local function first_plot(kind, id)
   local o = orders[kind][id]
@@ -222,9 +224,12 @@ local function act(kind, id, o, turn)
         if w[3] <= turn then tx, ty = w[1], w[2] end
       end
     end
-    if u:GetMovesRemaining() > 0 and (u:GetX() ~= tx or u:GetY() ~= ty) then
+    -- one move order a turn: a move asked for every round stays queued and the unit cannot start its action at the
+    -- plot (UnitOperations.log, 11/02 run: the build improvement operation added after 26 moves, then "Can't Start")
+    if u:GetMovesRemaining() > 0 and (u:GetX() ~= tx or u:GetY() ~= ty) and o.move_turn ~= turn then
       UnitManager.RequestOperation(u, UnitOperationTypes.MOVE_TO, { [UnitOperationTypes.PARAM_X] = tx,
         [UnitOperationTypes.PARAM_Y] = ty })
+      o.move_turn = turn
     end
     if o.op and turn >= o.turn and not o.late_logged then
       log("unit_late", { unit = kind, id = id, op = o.op, plan_turn = o.turn, at = { u:GetX(), u:GetY() }, to = { o.x, o.y } })
@@ -240,6 +245,12 @@ local function act(kind, id, o, turn)
     return true
   end
   if u:GetMovesRemaining() <= 0 then return true end
+  -- at the plot: the orders still queued (a move) are cancelled first, as the unit panel's cancel does
+  if o.cancel_turn ~= turn then
+    UnitManager.RequestCommand(u, UnitCommandTypes.CANCEL)
+    o.cancel_turn = turn
+    return false
+  end
   if not again("unit " .. kind .. id) then return true end
   local p = { [UnitOperationTypes.PARAM_X] = o.x, [UnitOperationTypes.PARAM_Y] = o.y }
   local op
@@ -565,12 +576,13 @@ local function start_turn(turn)
   if d == nil then return end
   for _, b in ipairs(d.builders or {}) do
     if b.op == "new" then
+      builder_from[b.id] = { b.x, b.y }
       local u = find_new_unit("builder", b.x, b.y)
       if u then units.builder[b.id] = u:GetID() else log("unit_not_found", { unit = "builder", id = b.id }) end
     elseif b.op == "go" then
       orders.builder[b.id] = { x = b.x, y = b.y }
     else
-      orders.builder[b.id] = { x = b.x, y = b.y, op = b.op, what = b.what, turn = b.at or turn }
+      orders.builder[b.id] = { x = b.x, y = b.y, op = b.op, what = b.what, turn = b.at or turn, from = builder_from[b.id] }
     end
   end
   for _, s in ipairs(d.settlers or {}) do

@@ -2309,7 +2309,7 @@ impl<'a> Planner<'a> {
                     st.cities[ci].owned[pi].resource = None;
                 }
                 if crate::envcfg::trace_city(&cname.as_string()) {
-                    eprintln!("HARVEST {cname} {:?} {:?} {ys:?}", (x, y), what);
+                    eprintln!("HARVEST T{} {cname} {:?} {:?} {ys:?}", st.turn, (x, y), what);
                 }
                 // the production counts as far as the item used it
                 let used = self.chop_into(st, ci, get_y(&ys, s!("YIELD_PRODUCTION")), &env);

@@ -2,11 +2,12 @@
 writes: a linear model per turn (ridge regression on standardized features, as optimizer/src/value.rs) and one
 LightGBM model over all turns (the turn as a feature).
 
-  value_compare.py <rows.tsv> [--test-every 5]
+  value_compare.py <rows.tsv> [--test-every 5] [--test-rows other.tsv]
 
-Every fifth play is held out. For each turn bucket it prints R2 (the share of the scores' variance the model explains)
-and the pairwise accuracy: among held-out states of the same turn whose scores differ by more than 1%, the share of
-pairs the model orders right (what a tree search needs: which of two states is better).
+Every fifth play is held out; with --test-rows the models learn on all of rows.tsv and are tested on the other rows
+(states around another plan: how far the models carry). For each turn bucket it prints R2 (the share of the scores' variance the model explains)
+and the pairwise accuracy: among held-out states of the same turn that differ and whose scores differ by more than 1%,
+the share of pairs the model orders right (what a tree search needs: which of two states is better).
 """
 import argparse
 import sys
@@ -37,11 +38,12 @@ def ridge_per_turn(turns, X, y, tr, alpha=0.01):
     return models, predict
 
 
-def pair_accuracy(pred, y, rng, n=4000):
+def pair_accuracy(pred, y, X, rng, n=4000):
     if len(y) < 2:
         return float("nan")
     i, j = rng.integers(0, len(y), n), rng.integers(0, len(y), n)
-    keep = np.abs(y[i] - y[j]) > 0.01 * np.abs(y).mean()
+    # pairs of the same state (before a play's changes every play has it) cannot be told apart by any model
+    keep = (np.abs(y[i] - y[j]) > 0.01 * np.abs(y).mean()) & np.any(X[i] != X[j], axis=1)
     if not keep.any():
         return float("nan")
     return float(np.mean(np.sign(pred[i] - pred[j])[keep] == np.sign(y[i] - y[j])[keep]))
@@ -55,9 +57,15 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("rows")
     ap.add_argument("--test-every", type=int, default=5)
+    ap.add_argument("--test-rows")
     a = ap.parse_args()
     plays, turns, X, y = load(a.rows)
-    te = plays % a.test_every == a.test_every - 1
+    if a.test_rows:
+        p2, t2, X2, y2 = load(a.test_rows)
+        plays, turns, X, y = np.concatenate([plays, p2 + 10**6]), np.concatenate([turns, t2]), np.vstack([X, X2]), np.concatenate([y, y2])
+        te = plays >= 10**6
+    else:
+        te = plays % a.test_every == a.test_every - 1
     tr = ~te
     print(f"{len(np.unique(plays))} plays, {len(y)} rows, {X.shape[1]} features; held out {len(np.unique(plays[te]))} plays")
     _, lin = ridge_per_turn(turns, X, y, tr)
@@ -82,8 +90,8 @@ def main():
         acc_l, acc_g = [], []
         for t in np.unique(turns[m]):
             k = m & (turns == t)
-            acc_l.append(pair_accuracy(lin(t, X[k]), y[k], rng))
-            acc_g.append(pair_accuracy(pg[k], y[k], rng))
+            acc_l.append(pair_accuracy(lin(t, X[k]), y[k], X[k], rng))
+            acc_g.append(pair_accuracy(pg[k], y[k], X[k], rng))
         print(f"T{lo:2d}-{lo + 9:2d} {m.sum():6d}  {r2(pl, ys):9.3f}  {r2(pgs, ys):11.3f}  {np.nanmean(acc_l):12.3f}  {np.nanmean(acc_g):14.3f}")
 
 

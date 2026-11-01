@@ -9,7 +9,7 @@ local me = 0
 local units = { builder = {}, settler = {} }   -- simulator id -> game unit id
 local orders = { builder = {}, settler = {} }  -- simulator id -> {x, y, op, what, turn (when to act)}
 local frames, rounds, phase, ended_at, end_tries = 0, 0, "idle", 0, 0
-local ROUND_FRAMES, MAX_ROUNDS, END_WAIT, FORCE_WAIT = 8, 30, 240, 160
+local ROUND_FRAMES, MAX_ROUNDS, END_WAIT, FORCE_WAIT, FIRST_TURN_WAIT = 8, 30, 240, 160, 240
 
 local function enc(v)
   local t = type(v)
@@ -100,6 +100,11 @@ local function unit_of(kind, id)
 end
 
 -- ---------------------------------------------------------------- player choices
+-- After a change of government the policies kept from the old one stay in their slots but do nothing until they are
+-- confirmed again, as the government screen does after the change (11/01 run: Urban Planning's production gone
+-- from the turn Autocracy came); all slots are then cleared and filled once.
+local reslot = false
+
 local function ensure_player(p)
   local pl = player()
   if p.research then
@@ -128,6 +133,7 @@ local function ensure_player(p)
     local row = GameInfo.Governments[p.government]
     if row and culture:GetCurrentGovernment() ~= row.Index and again("government " .. p.government) then
       if not culture:RequestChangeGovernment(row.Hash) then log("government_failed", { government = p.government }) end
+      reslot = true
       return false
     end
   end
@@ -164,10 +170,20 @@ local function ensure_player(p)
     local left = {}
     for _, pol in ipairs(missing) do if not place(pol, false) then left[#left + 1] = pol end end
     for _, pol in ipairs(left) do if not place(pol, true) then log("policy_no_slot", { policy = pol }) end end
-    -- as GovernmentScreen.lua does, a slot that gets a policy is in the clear list too, empty or not (11/01 run: an
-    -- add to an empty slot left out of the list was refused every turn)
-    for i = 0, n - 1 do
-      if add[i] or (in_slot[i] and not want[in_slot[i]]) then clear[#clear + 1] = i end
+    if reslot then
+      -- the kept policies are not active, so all of them can be slotted again in the same request
+      for i = 0, n - 1 do taken[i], add[i] = nil, nil end
+      local left2 = {}
+      for _, pol in ipairs(p.policies) do if want[pol] and not place(pol, false) then left2[#left2 + 1] = pol end end
+      for _, pol in ipairs(left2) do if not place(pol, true) then log("policy_no_slot", { policy = pol }) end end
+      for i = 0, n - 1 do clear[#clear + 1] = i end
+      reslot = false
+    else
+      -- as GovernmentScreen.lua does, a slot that gets a policy is in the clear list too, empty or not (11/01 run:
+      -- an add to an empty slot left out of the list was refused every turn)
+      for i = 0, n - 1 do
+        if add[i] or (in_slot[i] and not want[in_slot[i]]) then clear[#clear + 1] = i end
+      end
     end
     if (#clear > 0 or next(add) ~= nil) and again("policies") then
       local adds = {}
@@ -697,6 +713,9 @@ local function on_update()
   local turn = Game.GetCurrentGameTurn()
   if phase == "acting" then
     if frames % ROUND_FRAMES ~= 0 then return end
+    -- right after the save is loaded the city screen does not take orders yet: in the first turn the citizens the plan
+    -- placed were not worked (11/01 runs, turn 2, a turn of growth lost), so the first turn starts later
+    if turn == ECONPLAN.START and frames < FIRST_TURN_WAIT then return end
     rounds = rounds + 1
     local ok = round(turn)
     local key = yields_key()

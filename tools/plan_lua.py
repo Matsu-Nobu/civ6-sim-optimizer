@@ -1,7 +1,7 @@
 """Writes a plan of the simulator as the plan file of the game mod (game_mods/Civ6EconAutoplay/Civ6EconPlan.lua), for
 the mod to play it in the game, and the simulator's turns of that plan for tools/plan_diff.py.
 
-  plan_lua.py <game data .json> <plan.json> <turns out .jsonl> [civ6opt options]
+  plan_lua.py <game data .json> <plan.json> <turns out .jsonl> [--from-turn T] [civ6opt options]
 
 Game turn t plays the simulator's turn t. A save is written at the start of a turn, before the game has processed the
 last turn's growth and production, so the simulator's state after its turn t is the game's save of turn t + 2 (11/01
@@ -61,7 +61,14 @@ def main():
     if len(sys.argv) < 4:
         sys.exit(__doc__)
     game, plan, turns_out = sys.argv[1], sys.argv[2], Path(sys.argv[3])
-    opts = sys.argv[4:] or ["--turn", "65", "--ext", "0"]
+    rest = sys.argv[4:]
+    # --from-turn T: the plan file starts at turn T (a game resumed from a save made at the end of turn T - 1)
+    from_turn = None
+    if "--from-turn" in rest:
+        i = rest.index("--from-turn")
+        from_turn = int(rest[i + 1])
+        rest = rest[:i] + rest[i + 2:]
+    opts = rest or ["--turn", "65", "--ext", "0"]
     snaps = {s["turn"]: s for s in lines(["run", game, *opts, "--genome", plan]) if "cities" in s}
     decisions = [d for d in lines(["decisions", game, *opts, "--genome", plan]) if "key" in d]
     turns_out.write_text("".join(json.dumps(snaps[t]) + "\n" for t in sorted(snaps)))
@@ -146,7 +153,8 @@ def main():
         for st in d["settlers"]:
             st["arrive"] += OFFSET
             st["way"] = [[w[0], w[1], w[2] + OFFSET] for w in st["way"]]
-    game_turns = {t + OFFSET: d for t, d in turns.items()}
+    game_turns = {t + OFFSET: d for t, d in turns.items() if from_turn is None or t + OFFSET >= from_turn}
+    first = min(game_turns) - OFFSET
     text = (f"-- Written by tools/plan_lua.py from {Path(game).name} and {Path(plan).name}. Do not edit.\n"
             f"ECONPLAN = {{ START = {first + OFFSET}, LAST = {last + OFFSET}, OFFSET = {OFFSET}, TURNS = {lua(game_turns)} }}\n")
     PLAN_FILE.write_text(text)

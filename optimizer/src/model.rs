@@ -580,7 +580,7 @@ pub fn state_from(v: &Value) -> State {
             charges: oi64(&b["charges"]).unwrap_or(3),
             at: (b["at"][0].as_i64().unwrap() as i32, b["at"][1].as_i64().unwrap() as i32),
             ready: oi64(&b["ready"]).unwrap_or(0),
-            id: None,
+            id: oi64(&b["id"]),
             pending: None,
             idle: None,
         }).collect(),

@@ -364,11 +364,20 @@ pub fn start_state(d: &Value, db: &Connection) -> Value {
             None => units.push((ty.to_string(), Value::from(1.0))),
         }
     }
-    let builders: Vec<Value> = units_in.iter().filter(|u| u["type"].as_str() == Some("UNIT_BUILDER")).map(|u| Value::obj(vec![
-        ("charges", Value::from(u["charges"].as_f64().filter(|c| *c != 0.0).unwrap_or(3.0))),
-        ("at", Value::Arr(vec![u["x"].clone(), u["y"].clone()])),
-        ("ready", Value::from(t)),
-    ])).collect();
+    // each builder of the save gets its own decision id, made as the planner makes those of new builders (turn, x,
+    // y, a number): without one they all shared id 0, so a plan from a save mixed their actions
+    let mut seen: Vec<(i64, i64)> = vec![];
+    let builders: Vec<Value> = units_in.iter().filter(|u| u["type"].as_str() == Some("UNIT_BUILDER")).map(|u| {
+        let (x, y) = (u["x"].as_i64().unwrap_or(0), u["y"].as_i64().unwrap_or(0));
+        let k = seen.iter().filter(|p| **p == (x, y)).count() as i64;
+        seen.push((x, y));
+        Value::obj(vec![
+            ("charges", Value::from(u["charges"].as_f64().filter(|c| *c != 0.0).unwrap_or(3.0))),
+            ("at", Value::Arr(vec![u["x"].clone(), u["y"].clone()])),
+            ("ready", Value::from(t)),
+            ("id", Value::from(t * 10_000_000 + x * 10_000 + y * 10 + k)),
+        ])
+    }).collect();
     let civics: BTreeSet<String> = str_list(&p["civics"]).into_iter().collect();
     let mut q = db.prepare("select GovernmentType, PrereqCivic from Governments").unwrap();
     let mut known: Vec<String> = q.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, Option<String>>(1)?))).unwrap()

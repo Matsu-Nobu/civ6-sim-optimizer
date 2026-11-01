@@ -303,7 +303,11 @@ local function act(kind, id, o, turn)
     o.why_logged = true
   end
   o.requested = turn
+  -- requested with the unit selected, as the unit panel does: without a selection the game added the build improvement
+  -- operation and then could not start it (UnitOperations.log, 11/02 runs)
+  UI.SelectUnit(u)
   UnitManager.RequestOperation(u, op, p)
+  UI.DeselectAllUnits()
   log("unit_op", { unit = kind, id = id, op = o.op, what = o.what, at = { o.x, o.y }, plan_turn = o.turn })
   if kind == "settler" then o.op = nil end
   return false
@@ -719,6 +723,8 @@ local function resolve(b, turn)
 end
 
 local settle_key, settle_count, unblock_tried = nil, 0, false
+local save_done = false
+Events.SaveComplete.Add(function() save_done = true end)
 local function on_update()
   frames = frames + 1
   if frames == 1 then log("tick", {}) end
@@ -736,6 +742,20 @@ local function on_update()
     if (ok and settle_count >= 3) or rounds >= MAX_ROUNDS then
       if not ok then log("round_limit", {}) end
       report(turn)
+      if ECONRUN.RESUME_SAVES and ECONRUN_SAVE_NAMED then
+        -- a save with this turn's orders given and the turn not yet ended, to resume from with a new plan: the saves
+        -- made as a turn begins hold the state before the last turn's growth and production, so a game loaded from
+        -- one loses a turn of them
+        save_done = false
+        ECONRUN_SAVE_NAMED(string.format("EconRun_%s_R%03d", ECONRUN.RUN_ID, turn))
+        phase, ended_at = "saving", frames
+      else
+        phase, ended_at, unblock_tried = "unblocking", frames, false
+      end
+    end
+  elseif phase == "saving" then
+    if save_done or frames - ended_at > 300 then
+      if not save_done then log("resume_save_slow", {}) end
       phase, ended_at, unblock_tried = "unblocking", frames, false
     end
   elseif phase == "unblocking" then

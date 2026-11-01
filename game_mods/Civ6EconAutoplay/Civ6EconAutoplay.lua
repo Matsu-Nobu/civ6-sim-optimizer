@@ -14,6 +14,9 @@ local function save_named(name)
   Network.SaveGame(s)
 end
 
+-- the plan runner's resume saves (Civ6EconPlanRunner.lua)
+ECONRUN_SAVE_NAMED = save_named
+
 local function save_turn()
   -- "newstart" writes only its start save
   if ECONRUN.MODE == "off" or ECONRUN.MODE == "newstart" then return end

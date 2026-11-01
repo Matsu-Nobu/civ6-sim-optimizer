@@ -148,6 +148,11 @@ local function ensure_player(p)
       local left = {}
       for _, pol in ipairs(p.policies) do if not place(pol, false) then left[#left + 1] = pol end end
       for _, pol in ipairs(left) do if not place(pol, true) then log("policy_no_slot", { policy = pol }) end end
+      local slots, adds = {}, {}
+      for i = 0, n - 1 do slots[#slots + 1] = GameInfo.GovernmentSlots[culture:GetSlotType(i)].GovernmentSlotType end
+      for i, h in pairs(add) do adds[#adds + 1] = { i, GameInfo.Policies[h] and GameInfo.Policies[h].PolicyType or tostring(h) } end
+      log("policy_request", { slots = slots, add = adds, want = p.policies,
+                              government = GameInfo.Governments[culture:GetCurrentGovernment()].GovernmentType })
       culture:RequestPolicyChanges(clear, add)
       return false
     end
@@ -210,7 +215,9 @@ local function act(kind, id, o, turn)
     check_p = { [UnitOperationTypes.PARAM_X] = o.x, [UnitOperationTypes.PARAM_Y] = o.y,
                 [UnitOperationTypes.PARAM_IMPROVEMENT_TYPE] = GameInfo.Improvements[o.what].Index }
   end
-  if not can(u, op, check_p) then
+  -- UnitPanel.lua requests a listed improvement without checking it again; the check by index answered "no" with
+  -- no reason for improvements the game listed as allowed (11/01 run), so only other operations are checked
+  if o.op ~= "improve" and not can(u, op, check_p) then
     -- the game's reasons and the improvements it allows here, asked as UnitPanel.lua does (results wanted: true)
     local valid, reasons = {}, {}
     pcall(function()

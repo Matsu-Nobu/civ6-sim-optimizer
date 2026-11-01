@@ -152,7 +152,7 @@ impl Milestones {
 const REWARD_KEY: u32 = 1 << 16;
 
 /// How many of `what` the plan has: districts of a type placed, cities with a building (or wonder), ("military") idle units trained, units of a type
-/// trained, ("civics") civics completed, ("cities") cities, ("gold") whole gold in the treasury, or the whole food
+/// trained, ("civics") civics completed, ("harvests") harvests done, (IMPROVEMENT_*) plots with it, ("cities") cities, ("gold") whole gold in the treasury, or the whole food
 /// ("food"), production ("production") or the smaller of the two ("fp_min") of the last turn played.
 pub fn have(st: &State, what: &str) -> i64 {
     if what == "cities" {
@@ -170,6 +170,13 @@ pub fn have(st: &State, what: &str) -> i64 {
     }
     if what == "civics" {
         return st.acc.civics.len() as i64;
+    }
+    // harvests (chops and resource harvests) done, and improved plots of one kind
+    if what == "harvests" {
+        return st.acc.cities.0.iter().map(|(_, c)| c.harvests as i64).sum();
+    }
+    if what.starts_with("IMPROVEMENT_") {
+        return st.cities.iter().flat_map(|c| c.owned.iter()).filter(|p| p.improvement.is_some_and(|i| i.as_string() == what)).count() as i64;
     }
     if what.starts_with("TECH_") {
         return st.acc.techs.iter().any(|x| x.as_string() == what) as i64;

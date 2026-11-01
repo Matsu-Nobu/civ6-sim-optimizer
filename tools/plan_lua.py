@@ -3,9 +3,9 @@ the mod to play it in the game, and the simulator's turns of that plan for tools
 
   plan_lua.py <game data .json> <plan.json> <turns out .jsonl> [civ6opt options]
 
-Game turn t + 1 plays the simulator's turn t: a save loaded at the start of turn t gives the local player's cities
-nothing in that turn (measured on the 11/01 run from EconPlanStart_mp1_T002: the simulator's state after its turn t
-is the game's save of turn t + 2). In that turn the plan has the research, civic,
+Game turn t plays the simulator's turn t. A save is written at the start of a turn, before the game has processed the
+last turn's growth and production, so the simulator's state after its turn t is the game's save of turn t + 2 (11/01
+runs from EconPlanStart_mp1_T002: equal at turns 2 and 4). In that turn the plan has the research, civic,
 government and policies in effect in that turn, each city's item (with a district's plot) and worked plots, the
 builders' orders, the settlers' moves, and the purchases, trade routes, governors, pantheon and dedication chosen in
 that turn. A builder acts on the turn its charge is used in the simulator; a settler moves from the turn after the
@@ -18,7 +18,7 @@ from pathlib import Path
 import civ6opt
 
 PLAN_FILE = civ6opt.ROOT / "game_mods" / "Civ6EconAutoplay" / "Civ6EconPlan.lua"
-OFFSET = 1
+OFFSET = 0
 
 
 def lua(v):

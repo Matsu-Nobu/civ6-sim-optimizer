@@ -39,11 +39,14 @@ local function player() return Players[me] end
 local OP_SKIP = GameInfo.UnitOperations["UNITOPERATION_SKIP_TURN"].Hash
 local OP_SLEEP = GameInfo.UnitOperations["UNITOPERATION_SLEEP"].Hash
 
-local tries = {}  -- per turn: requests made for one thing; the game may refuse (e.g. policies outside a change window)
+-- per turn: requests made for one thing; the game may refuse (e.g. policies outside a change window). The game
+-- processes the last turn's growth and production some frames into a turn, so a request can fail only for a while.
+local MAX_TRIES = 10
+local tries = {}
 local function again(key)
   tries[key] = (tries[key] or 0) + 1
-  if tries[key] == 4 then log("refused", { what = key }) end
-  return tries[key] <= 3
+  if tries[key] == MAX_TRIES + 1 then log("refused", { what = key }) end
+  return tries[key] <= MAX_TRIES
 end
 
 local function can(u, op, p)
@@ -271,8 +274,8 @@ local function ensure_production(c, pc)
   local p = build_params(pc.item, pc.sx, pc.sy)
   if p == nil then log("unknown_item", { item = pc.item }); return true end
   pc.tries = (pc.tries or 0) + 1
-  if pc.tries > 3 then
-    if pc.tries == 4 then log("production_failed", { city = { pc.x, pc.y }, item = pc.item, current = cur }) end
+  if pc.tries > MAX_TRIES then
+    if pc.tries == MAX_TRIES + 1 then log("production_failed", { city = { pc.x, pc.y }, item = pc.item, current = cur }) end
     return true
   end
   CityManager.RequestOperation(c, CityOperationTypes.BUILD, p)
@@ -282,6 +285,9 @@ end
 -- Citizens are managed as the city panel does (CityPanel.lua, PlotInfo.lua): with the city selected and the
 -- interface in CITY_MANAGEMENT mode, whose PARAM_MANAGE_CITIZEN parameter the MANAGE command needs (outside that mode
 -- the parameter is empty and the command does nothing). The worked plots are read from the same command's targets.
+-- logs what the citizen management reads in the first turns (a check of the API, read in Lua.log)
+local PROBE_CITIZENS = false
+
 local function with_city_screen(c, f)
   UI.SelectCity(c)
   UI.SetInterfaceMode(InterfaceModeTypes.CITY_MANAGEMENT)
@@ -293,23 +299,41 @@ local function with_city_screen(c, f)
   return r
 end
 
--- plot index -> citizens working it, the city centre left out
+-- plot index -> citizens working it, and plot index -> those of them locked there; the city centre left out
 local function worked_plots(c, param)
-  local out = {}
+  local out, locked = {}, {}
   local t = CityManager.GetCommandTargets(c, CityCommandTypes.MANAGE, { [CityCommandTypes.PARAM_MANAGE_CITIZEN] = param })
-  local plots, units = t and t[CityCommandResults.PLOTS], t and t[CityCommandResults.CITIZENS]
+  local plots, units, locks = t and t[CityCommandResults.PLOTS], t and t[CityCommandResults.CITIZENS], t and t[CityCommandResults.LOCKED_CITIZENS]
   for i, id in pairs(plots or {}) do
     local p = Map.GetPlotByIndex(id)
-    if (units[i] or 0) > 0 and not (p:GetX() == c:GetX() and p:GetY() == c:GetY()) then out[id] = units[i] end
+    if (units[i] or 0) > 0 and not (p:GetX() == c:GetX() and p:GetY() == c:GetY()) then
+      out[id] = units[i]
+      locked[id] = locks and locks[i] or 0
+    end
   end
-  return out
+  return out, locked
 end
 
--- A click on a plot moves a citizen to it (and locks it) or, on a worked plot, takes the citizen off. Citizens on plots
--- the plan does not work are taken off first; one click per round, then the plots are read again.
+-- A click on an unworked plot moves an unlocked citizen to it and locks it there; a click on a worked plot does not
+-- take the citizen off (11/01 run: the plot stayed worked) but releases its lock. Citizens locked on plots the plan
+-- does not work are released first, then the plan's plots are clicked; one click per round, then the plots are read
+-- again.
 local function ensure_citizens(c, pc)
   return with_city_screen(c, function(param)
-    local have = worked_plots(c, param)
+    local have, locked = worked_plots(c, param)
+    if PROBE_CITIZENS and Game.GetCurrentGameTurn() <= 5 then
+      local h, plots = {}, {}
+      for id, n in pairs(have) do local p = Map.GetPlotByIndex(id); h[#h + 1] = { p:GetX(), p:GetY(), n } end
+      local cx, cy = c:GetX(), c:GetY()
+      for dx = -1, 1 do for dy = -1, 1 do
+        local p = Map.GetPlotXYWithRangeCheck(cx, cy, dx, dy, 1)
+        if p then plots[#plots + 1] = { p:GetX(), p:GetY(), p:GetWorkerCount() } end
+      end end
+      local l = {}
+      for id, n in pairs(locked) do local p = Map.GetPlotByIndex(id); l[#l + 1] = { p:GetX(), p:GetY(), n } end
+      log("citizens_probe", { param = tostring(param), have = h, locked = l, plot_workers = plots,
+                              food = c:GetYield(GameInfo.Yields["YIELD_FOOD"].Index) })
+    end
     local want = {}
     for _, w in ipairs(pc.worked) do
       local pl = Map.GetPlot(w[1], w[2])
@@ -323,7 +347,7 @@ local function ensure_citizens(c, pc)
       return false
     end
     for id in pairs(have) do
-      if want[id] == nil then return click(id, "off") end
+      if want[id] == nil and (locked[id] or 0) > 0 then return click(id, "unlock") end
     end
     for id, n in pairs(want) do
       if (have[id] or 0) < n then return click(id, "on") end
@@ -490,6 +514,18 @@ end
 local function round(turn)
   local d = plan_of(turn)
   if d == nil then return true end
+  if PROBE_CITIZENS and turn <= 8 then
+    local c = player():GetCities():GetCapitalCity()
+    if c then
+      local q, item = c:GetBuildQueue(), current_item(c)
+      local progress = nil
+      if item and GameInfo.Units[item] then progress = q:GetUnitProgress(GameInfo.Units[item].Index)
+      elseif item and GameInfo.Buildings[item] then progress = q:GetBuildingProgress(GameInfo.Buildings[item].Index)
+      elseif item and GameInfo.Districts[item] then progress = q:GetDistrictProgress(GameInfo.Districts[item].Index) end
+      log("turn_probe", { round = rounds, frames = frames, pop = c:GetPopulation(), food_store = c:GetGrowth():GetFood(),
+                          item = item, progress = progress })
+    end
+  end
   local ok = ensure_player(d)
   ok = ensure_pantheon() and ok
   ok = ensure_units(turn) and ok

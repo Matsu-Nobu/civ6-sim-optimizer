@@ -545,13 +545,18 @@ impl Chooser for RecordedChooser<'_> {
             }
         } else if k == s!("builder") {
             let mut done = self.done_acts.borrow_mut();
-            for (i, a) in rec.acts.iter().enumerate() {
-                if a.0 > t || done.contains(&i) {
-                    continue;
-                }
-                if let Some(o) = options.iter().find(|o| matches!(o, Choice::Act(kk, _, x, y, w) if *kk == a.1 && (*x, *y) == a.2 && *w == a.3)) {
-                    done.insert(i);
-                    return Some(o.clone());
+            // first an act on the plot the builder stands on: another builder, made during the turn, did the acts
+            // elsewhere (10/14 T41: Marseille's builder harvested its stone; Paris's new builder its woods)
+            let at = match &key.ent { Ent::I(id) => st.builders.iter().find(|b| b.id == Some(*id)).map(|b| b.at), _ => None };
+            for here in [true, false] {
+                for (i, a) in rec.acts.iter().enumerate() {
+                    if a.0 > t || done.contains(&i) || (here && Some(a.2) != at) {
+                        continue;
+                    }
+                    if let Some(o) = options.iter().find(|o| matches!(o, Choice::Act(kk, _, x, y, w) if *kk == a.1 && (*x, *y) == a.2 && *w == a.3)) {
+                        done.insert(i);
+                        return Some(o.clone());
+                    }
                 }
             }
             return Some(Choice::Wait).filter(has).or_else(|| options.last().cloned());

@@ -1152,6 +1152,20 @@ impl<'a> Planner<'a> {
     }
 
     /// [(kind, yields)] a builder could harvest on p: "feature" (chop) or "resource".
+    /// The numbers of techs and civics the player has once this turn's research and civic complete, which a harvest's
+    /// yields count (the records: 10/14 Marseille T41's stone gave 26, not the 24 of the save's civics; 10/24 Nantes
+    /// T50's woods and marsh). Replay: the next save's; else the current research or civic completes when the last
+    /// turn's science or culture reaches what it lacks.
+    fn counts_after_turn(&self, st: &State) -> (usize, usize) {
+        let (techs, civics) = (st.acc.techs.len(), st.acc.civics.len());
+        if let Some(next) = self.rec.as_ref().or(self.tiles_rec.as_ref()).and_then(|r| r.turn(st.turn + 1)) {
+            return (techs.max(next.techs.len()), civics.max(next.civics.len()));
+        }
+        let era = self.sc.game_era(st.turn);
+        let done = |item: Option<Sym>, prog: &OMap<Sym, f64>, rate: f64| item.map(|x| prog.get(&x).copied().unwrap_or(0.0) + rate >= research_cost(self.r, x, self.speed, era)).unwrap_or(false);
+        (techs + done(st.research, &st.acc.tech_progress, st.last_output[3]) as usize, civics + done(st.civic, &st.acc.civic_progress, st.last_output[4]) as usize)
+    }
+
     fn harvest_yields(&self, e: &Engine, p: &Plot, st: &State, city: Option<Sym>) -> Vec<(Sym, Vec<(Sym, f64)>)> {
         let r = self.r;
         let mut out = vec![];
@@ -1160,13 +1174,14 @@ impl<'a> Planner<'a> {
         // replay: the record removed a feature during the turn its tech completed (10/19 Cumana T41, rainforest with
         // Bronze Working); its next save has the tech
         let next: Vec<Sym> = self.rec.as_ref().or(self.tiles_rec.as_ref()).and_then(|r| r.turn(st.turn + 1)).map(|rt| rt.techs.clone()).unwrap_or_default();
+        let (n_techs, n_civics) = self.counts_after_turn(st);
         if let Some(f) = p.feature {
             let tech_row = r.lookup("Features", "FeatureType", f, "RemoveTech");
             let rows = r.tab("Feature_Removes").find("FeatureType", f);
             if !rows.is_empty() && tech_row.is_some() {
                 let tech = tech_row.unwrap().sym().filter(|x| !x.is_empty());
                 if tech.map(|t| techs.contains(&t) || next.contains(&t)).unwrap_or(true) && p.improvement.is_none() {
-                    out.push((s!("feature"), harvest_yield(r, Some(&e), true, f, techs.len(), n_civics, city, self.speed)));
+                    out.push((s!("feature"), harvest_yield(r, Some(&e), true, f, n_techs, n_civics, city, self.speed)));
                 }
             }
         }
@@ -1176,7 +1191,7 @@ impl<'a> Planner<'a> {
                 let t = r.tab("Resource_Harvests");
                 let rows = t.find("ResourceType", res);
                 if !rows.is_empty() && rows.iter().all(|&i| t.v(i, "PrereqTech").sym().filter(|x| !x.is_empty()).map(|x| techs.contains(&x)).unwrap_or(true)) && p.improvement.is_none() {
-                    out.push((s!("resource"), harvest_yield(r, Some(&e), false, res, techs.len(), n_civics, city, self.speed)));
+                    out.push((s!("resource"), harvest_yield(r, Some(&e), false, res, n_techs, n_civics, city, self.speed)));
                 }
             }
         }
@@ -1258,11 +1273,22 @@ impl<'a> Planner<'a> {
         // replay: the record's improvements, also those not among the best candidates, those of a plot its city
         // acquired the same turn (the replay acquires recorded plots after the builders) and those of a city founded
         // during the turn (the replay founds it at the next turn's start); the improvement waits for the plot
-        // (State::improving)
+        // (State::improving). The record's harvests of a plot of the player's cities, also those not among the best
+        // candidates (10/14 Marseille T41: stone, which finished its campus)
         if let Some(rec) = self.rec.as_ref().or(self.tiles_rec.as_ref()) {
             for &(t, kind, xy, what) in &rec.acts {
-                if t > t_now || kind != s!("improve") || st.improving.iter().any(|i| i.1 == xy)
-                    || out.iter().any(|o| matches!(o, Choice::Act(k, _, x, y, w) if *k == kind && (*x, *y) == xy && *w == what)) {
+                if t > t_now || out.iter().any(|o| matches!(o, Choice::Act(k, _, x, y, w) if *k == kind && (*x, *y) == xy && *w == what)) {
+                    continue;
+                }
+                if kind == s!("harvest") {
+                    let Some(c) = st.cities.iter().find(|c| c.owned.iter().any(|p| p.xy() == xy)) else { continue };
+                    let p = c.owned.iter().find(|p| p.xy() == xy).unwrap();
+                    if self.harvest_yields(&e, p, st, Some(c.name)).iter().any(|(k, _)| *k == what) {
+                        out.push(Choice::Act(kind, c.name, xy.0, xy.1, what));
+                    }
+                    continue;
+                }
+                if kind != s!("improve") || st.improving.iter().any(|i| i.1 == xy) {
                     continue;
                 }
                 let owner = st.cities.iter().find(|c| c.owned.iter().any(|p| p.xy() == xy));
@@ -2285,6 +2311,9 @@ impl<'a> Planner<'a> {
                 }
                 st.builders[bi].idle = None;
                 let opts = self.builder_options(st, &env, st.builders[bi].at);
+                if crate::envcfg::trace() == Some("builderopts") {
+                    eprintln!("BOPTS T{t_now} builder {bi} at {:?} charges {} {:?}", st.builders[bi].at, st.builders[bi].charges, opts);
+                }
                 // a builder's decisions are numbered per builder (one builder's change does not shift the others')
                 let bid = st.builders[bi].id.unwrap_or(0);
                 let act = { let _g = crate::prof::start(29); self.decide(st, "builder", Ent::I(bid), opts, ch) };

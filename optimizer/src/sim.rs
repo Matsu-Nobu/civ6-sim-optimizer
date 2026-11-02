@@ -116,7 +116,7 @@ pub fn current_cost(r: &Rules, acc: &PlayerAcc, cities: &[City], env: &Env, city
 /// `after_settler`: a city's worked tiles once a settler has taken one of its citizens, given the city, its engine,
 /// its yields before (with all its citizens) and the food a set of worked tiles adds this turn.
 #[allow(clippy::too_many_arguments)]
-pub fn step<'a>(r: &'a Rules, ec: &mut EngineCache<'a>, acc: &mut PlayerAcc, cities: &[City], env: &Env, units: &OMap<Sym, i64>, speed: Sym,
+pub fn step<'a>(r: &'a Rules, ec: &mut EngineCache<'a>, acc: &mut PlayerAcc, cities: &[City], env: &Env, env_research: &Env, units: &OMap<Sym, i64>, speed: Sym,
                 research: Option<Sym>, civic: Option<Sym>, boosts: &[Sym], routes: &[Route],
                 after_settler: &dyn Fn(&City, &Engine, &Y, &dyn Fn(&City) -> f64) -> City) -> Vec<Event> {
     let mut log = vec![];
@@ -134,7 +134,8 @@ pub fn step<'a>(r: &'a Rules, ec: &mut EngineCache<'a>, acc: &mut PlayerAcc, cit
     let early_empire_before = acc.civics.contains(&s!("CIVIC_EARLY_EMPIRE"));
     let env_new;
     let env = {
-        let e0 = ec.get(r, env, cities);
+        // (the governors established this turn are not in its science and culture: Planner::governor_step)
+        let e0 = ec.get(r, env_research, cities);
         let mut pre: Y = [0.0; 6];
         for c in cities {
             let score = scores.iter().find(|(n, _)| *n == c.name).map(|x| x.1).unwrap_or(0.0);

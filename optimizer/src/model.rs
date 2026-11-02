@@ -352,6 +352,8 @@ pub struct State {
     pub gov_plaza: bool,
     pub score: f64,
     pub last_output: [f64; 6],
+    /// the governors established this turn: not yet in the turn's science and culture (Planner::governor_step)
+    pub governors_new: Vec<Sym>,
     /// each city's part of last_output
     pub city_output: Vec<(Sym, [f64; 6])>,
     pub log: Vec<(Key, i64, Option<Choice>)>,
@@ -599,6 +601,7 @@ pub fn state_from(v: &Value) -> State {
         gov_plaza: obool(&v["gov_plaza"]),
         score: 0.0,
         last_output: [0.0; 6],
+        governors_new: vec![],
         city_output: vec![],
         log: vec![],
         counters: OMap::new(),
@@ -710,6 +713,7 @@ pub fn state_from_row(d: &Value) -> State {
         past_govs: BTreeSet::new(),
         score: 0.0,
         last_output: [0.0; 6],
+        governors_new: vec![],
         city_output: vec![],
         log: vec![],
         counters: OMap::new(),

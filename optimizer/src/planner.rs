@@ -241,15 +241,21 @@ impl<'a> Planner<'a> {
         let turn = st.turn;
         // replay: established as the next save shows (a governor establishes at the end of a turn, and counts for that
         // turn's yields: 10/17 Ray's food from the Audience Chamber at T39; a governor read from a save has no
-        // establishment turn)
+        // establishment turn), but not for the turn's science and culture, which come first (10/24 T27 and 10/17
+        // T24: Moksha's culture in the capital counted from the next turn)
         let rec_est = self.rec.as_ref().or(self.tiles_rec.as_ref()).and_then(|r| r.turn(turn + 1)).map(|rt| rt.governors_established.clone());
+        st.governors_new.clear();
         for g in st.player.governors.as_mut().unwrap().iter_mut() {
+            let was = g.established;
             if let Some(est) = &rec_est {
                 if est.contains(&g.gtype) {
                     g.established = true;
                 }
             } else if !g.established && turn >= g.ready {
                 g.established = true;
+            }
+            if g.established && !was {
+                st.governors_new.push(g.gtype);
             }
         }
         let spent: i64 = st.player.governors.as_ref().unwrap().iter().map(|g| g.promotions.len() as i64).sum();
@@ -2630,7 +2636,13 @@ impl<'a> Planner<'a> {
                 }
                 out
             };
-            step(r, &mut cache, &mut st.acc, &cities_now, &env, &st.units, self.speed, st.research, st.civic, &uniq, &routes, &after_settler)
+            let mut env_research = env.clone();
+            if let Some(gs) = env_research.p.governors.as_mut() {
+                for g in gs.iter_mut().filter(|g| st.governors_new.contains(&g.gtype)) {
+                    g.established = false;
+                }
+            }
+            step(r, &mut cache, &mut st.acc, &cities_now, &env, &env_research, &st.units, self.speed, st.research, st.civic, &uniq, &routes, &after_settler)
         };
         let mut events = events;
         // replay: a tribal village's survivors (a citizen for a city) found during the turn, in the city whose

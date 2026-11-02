@@ -257,7 +257,11 @@ impl Record {
             let raw = rows.iter().find(|d| d["turn"].as_i64() == Some(t));
             let current = |key: &str, done_a: &Vec<Sym>, done_b: &Vec<Sym>, pa: &HashMap<Sym, f64>, pb: &HashMap<Sym, f64>| -> Option<Sym> {
                 let x = raw.and_then(|d| osym(&d["player"][key]))?;
-                let grew = pb.get(&x).copied().unwrap_or(0.0) > pa.get(&x).copied().unwrap_or(0.0) + 1e-9;
+                let up = |k: &Sym| pb.get(k).copied().unwrap_or(0.0) > pa.get(k).copied().unwrap_or(0.0) + 1e-9;
+                // (one that grew only by its boost while another grew by research is not it: 10/24 T26, horseback
+                // riding's boost to 30 with archery researched)
+                let other = pb.keys().any(|k| *k != x && up(k) && !boosted_now.contains(k));
+                let grew = up(&x) && !(boosted_now.contains(&x) && other);
                 ((done_b.contains(&x) && !done_a.contains(&x)) || grew).then_some(x)
             };
             if let Some(x) = current("currentResearch", &a.techs, &b.techs, &a.tech_progress, &b.tech_progress)

@@ -34,6 +34,9 @@ pub fn city_turn_yields(r: &Rules, e: &Engine, city: &City, pop: i32, routes: &[
     c.population = pop;
     let y = city_yields(r, e, &c, routes);
     let extra = city_yield_percents(r, e, &c, amenity_score);
+    if crate::envcfg::trace().map(|t| t == format!("{}:pct", c.name)).unwrap_or(false) {
+        eprintln!("PCT {} amenity {amenity_pct} score {amenity_score:?} extra {extra:?}", c.name);
+    }
     let mut out = [0.0; 6];
     for i in 0..6 {
         let am = if i == 0 { 0.0 } else { amenity_pct };

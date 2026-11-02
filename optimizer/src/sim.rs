@@ -173,7 +173,10 @@ pub fn step<'a>(r: &'a Rules, ec: &mut EngineCache<'a>, acc: &mut PlayerAcc, cit
         }
         research_step(r, &e0, acc, &pre, speed, research, civic, boosts, env.game_era, completed, &mut log);
         let mut x = env.clone();
-        x.techs = acc.techs.clone();
+        // a tech a boost finished this turn does not yet count in the cities' processing (10/21 T45: Apprenticeship,
+        // boosted by a new mine, left that mine at 2 production); a civic does (T40: Feudalism, boosted, ended Agoge)
+        let by_boost: Vec<Sym> = log.iter().filter_map(|ev| match ev { Event::Researched(t) if t.starts_with("TECH_") && boosts.contains(t) && Some(*t) != research => Some(*t), _ => None }).collect();
+        x.techs = acc.techs.iter().copied().filter(|t| !by_boost.contains(t)).collect();
         x.civics = acc.civics.clone();
         // a policy a civic finished now made obsolete no longer counts in the cities' processing (10/21 T40:
         // Feudalism ended Agoge's +50% for Mediolanum's scout)

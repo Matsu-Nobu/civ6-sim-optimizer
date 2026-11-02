@@ -1469,6 +1469,52 @@ impl<'a> Planner<'a> {
     }
 
     // ---------------------------------------------------------------- one-time grants
+    /// `n` units of type `u` given to city `ci` (a building's, a tech's or a trait's grant); the game counts them
+    /// among the units trained. A builder acts in the turn.
+    fn grant_unit(&self, st: &mut State, ci: usize, u: Sym, n: i64, env: &Env, ch: &mut dyn Chooser) {
+        let cname = st.cities[ci].name;
+        for _ in 0..n {
+            if u == s!("UNIT_BUILDER") {
+                let eng = self.engine(env, &st.cities);
+                let charges = builder_charges(self.r, &eng, u, cname);
+                st.builders.push(Builder { charges, at: st.cities[ci].center, ready: st.turn, id: None, pending: None, idle: None });
+            } else if u == s!("UNIT_TRADER") {
+                let t = self.start_route(st, cname, ch);
+                st.traders.push(t);
+            } else {
+                *st.units.entry_or(u, 0) += 1;
+            }
+            *st.acc.units_trained.entry_or(u, 0) += 1;
+        }
+    }
+
+    /// The units the civilization's and leader's traits give in the capital once tech or civic `done` is done (BBG
+    /// France: a spy with Castles; 10/14 T45).
+    fn trait_unit_grants(&self, st: &mut State, done: Sym, env: &Env, ch: &mut dyn Chooser) {
+        let r = self.r;
+        let Some(ci) = st.cities.iter().position(|c| c.capital) else { return };
+        let tm = r.tab("TraitModifiers");
+        let rsr = r.tab("RequirementSetRequirements");
+        for tr in r.traits_of(st.player.civilization, st.player.leader).iter() {
+            for &i in tm.find("TraitType", *tr) {
+                let Some(mid) = tm.v(i, "ModifierId").sym() else { continue };
+                let Some(m) = r.modifier(mid) else { continue };
+                if m.effect != Some(s!("EFFECT_GRANT_UNIT_IN_CITY")) {
+                    continue;
+                }
+                let Some(rs) = m.owner_rs else { continue };
+                let needs = rsr.find("RequirementSetId", rs).iter().filter_map(|&j| rsr.v(j, "RequirementId").sym()).any(|req| {
+                    let a = r.args_of("RequirementArguments", "RequirementId", req);
+                    a.get("TechnologyType") == Some(done) || a.get("CivicType") == Some(done)
+                });
+                if let (true, Some(u)) = (needs, m.args.get("UnitType")) {
+                    let n = m.args.get("Amount").map(|_| m.args.f("Amount") as i64).unwrap_or(1).max(1);
+                    self.grant_unit(st, ci, u, n, env, ch);
+                }
+            }
+        }
+    }
+
     fn apply_grants(&self, st: &mut State, table: &str, col: &str, key: Sym, city: Option<Sym>, env: &Env, ch: &mut dyn Chooser) {
         let _g = crate::prof::start(10);
         let r = self.r;
@@ -1492,18 +1538,8 @@ impl<'a> Planner<'a> {
             let n = a.get("Amount").filter(|x| !x.is_empty()).map(|x| x.with(|s| s.parse::<f64>().unwrap_or(1.0)) as i64).unwrap_or(1);
             match e_s.as_str() {
                 "EFFECT_GRANT_UNIT_IN_CITY" => {
-                    let u = a.get("UnitType");
-                    for _ in 0..n {
-                        if u == Some(s!("UNIT_BUILDER")) {
-                            let eng = self.engine(env, &st.cities);
-                            let charges = builder_charges(r, &eng, s!("UNIT_BUILDER"), cname);
-                            st.builders.push(Builder { charges, at: st.cities[ci].center, ready: st.turn + 1, id: None, pending: None, idle: None });
-                        } else if u == Some(s!("UNIT_TRADER")) {
-                            let t = self.start_route(st, cname, ch);
-                            st.traders.push(t);
-                        } else if let Some(u) = u.filter(|x| !x.is_empty()) {
-                            *st.units.entry_or(u, 0) += 1;
-                        }
+                    if let Some(u) = a.get("UnitType").filter(|x| !x.is_empty()) {
+                        self.grant_unit(st, ci, u, n, env, ch);
                     }
                 }
                 "EFFECT_ADJUST_CITY_POPULATION" => {
@@ -1941,6 +1977,7 @@ impl<'a> Planner<'a> {
                 Event::Researched(t) => {
                     let (table, col) = if t.starts_with("TECH_") { ("TechnologyModifiers", "TechnologyType") } else { ("CivicModifiers", "CivicType") };
                     self.apply_grants(st, table, col, *t, None, env, ch);
+                    self.trait_unit_grants(st, *t, env, ch);
                 }
                 _ => {}
             }
@@ -2413,6 +2450,9 @@ impl<'a> Planner<'a> {
                     st.tiles_bought += 1;
                 }
                 Some(Choice::BuyItem(name, item, price, cur)) => {
+                    if crate::envcfg::trace() == Some("buys") {
+                        eprintln!("BUY T{t_now} {name} {item} {} {cur}", f64::from_bits(price));
+                    }
                     if cur == s!("YIELD_FAITH") {
                         st.acc.faith -= f64::from_bits(price);
                     } else {
@@ -2721,6 +2761,18 @@ impl<'a> Planner<'a> {
         // and a harvest counts the techs and civics finished this turn. A city that finished its item goes on with
         // the next one first.
         let env = self.player_env(st);
+        // replay: a city the record switched to another item during the turn without finishing the one it had (the
+        // next save holds that one's progress): the harvests go into the new one (10/14 La Rochelle T44: from a
+        // builder to the encampment project, woods into the project), or are lost with none (Marseille T44)
+        if let Some(next) = self.rec.as_ref().and_then(|r| r.turn(t_now + 1)) {
+            for ci in 0..st.cities.len() {
+                let n = st.cities[ci].name;
+                let (Some(cur), Some(rc)) = (st.cities[ci].current, next.city(n)) else { continue };
+                if rc.current != Some(cur) && rc.progress_of.get(&cur).copied().unwrap_or(0.0) > 0.0 {
+                    self.start_item(st, ci, rc.current);
+                }
+            }
+        }
         for ci in 0..st.cities.len() {
             if st.cities[ci].current.is_none() {
                 let n = st.cities[ci].name;

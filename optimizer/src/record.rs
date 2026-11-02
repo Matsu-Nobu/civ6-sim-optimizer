@@ -34,6 +34,8 @@ pub struct RecCity {
     /// the current item's progress
     pub progress: f64,
     /// production made while the city had no item, waiting for the next one (the save's heldOverflow)
+    /// the progress the save holds for each item (also items it switched away from)
+    pub progress_of: HashMap<Sym, f64>,
     pub held: f64,
     pub worked: Vec<XY>,
     pub owned: Vec<XY>,
@@ -153,6 +155,7 @@ impl Record {
                 current: osym(&c["production"]["current"]),
                 progress: osym(&c["production"]["current"]).and_then(|k| c["production"]["progress"][k.as_string().as_str()].as_f64()).unwrap_or(0.0),
                 held: c["production"]["heldOverflow"].as_f64().unwrap_or(0.0),
+                progress_of: c["production"]["progress"].as_object().map(|o| o.iter().filter_map(|(k, v)| Some((sym(k), v.as_f64()?))).collect()).unwrap_or_default(),
                 worked: c["worked"].as_array().map(|w| w.iter().map(xy_of).collect()).unwrap_or_default(),
                 owned: c["owned"].as_array().map(|w| w.iter().map(xy_of).collect()).unwrap_or_default(),
                 buildings: syms(&c["buildings"]),
@@ -352,10 +355,10 @@ impl Record {
                 let finished = a.cities.iter().filter(|ca| ca.current == Some(*u)
                     && b.city(ca.name).map(|cb| cb.current != Some(*u) || cb.progress < ca.progress).unwrap_or(false)).count() as i64;
                 let given = gifts.get(&t).map(|g| g.iter().filter(|x| *x == u).count() as i64).unwrap_or(0);
-                // a city making it that harvested this turn can have finished another with the harvest (10/14 Paris
-                // T41: two builders; the treasury fell by 31, less than a builder's price)
-                let harvested = a.cities.iter().filter(|ca| ca.current == Some(*u)
-                    && self.acts.iter().any(|x| x.0 == t && x.1 == s!("harvest") && ca.owned.contains(&x.2))).count() as i64;
+                // a city making it can have finished another with each harvest of this turn (10/14 Paris T41: two
+                // builders, the treasury 31 lower, less than a builder's price; T44: three horsemen)
+                let harvested = a.cities.iter().filter(|ca| ca.current == Some(*u))
+                    .map(|ca| self.acts.iter().filter(|x| x.0 == t && x.1 == s!("harvest") && ca.owned.contains(&x.2)).count()).sum::<usize>() as i64;
                 for _ in 0..(n - before - finished - given - harvested).max(0) {
                     let city = a.cities.first().map(|c| c.name).unwrap_or(Sym(0));
                     self.purchases.push((t, city, *u));
@@ -569,6 +572,13 @@ impl Chooser for RecordedChooser<'_> {
             // at the next turn's start
             for (i, (pt, city, item)) in rec.purchases.iter().enumerate() {
                 if *pt > t || *pt + 2 < t || self.done_purchases.contains(&i) {
+                    continue;
+                }
+                // a late one the state already holds (a replay begun from a later save: 10/14 T45 began with T44's
+                // horseman)
+                let had = rec.turn(*pt + 1).and_then(|x| x.units_trained.get(item).copied()).unwrap_or(0);
+                if *pt < t && item.starts_with("UNIT_") && st.acc.units_trained.get(item).copied().unwrap_or(0) >= had {
+                    self.done_purchases.insert(i);
                     continue;
                 }
                 let found = options.iter().find(|o| matches!(o, Choice::BuyItem(c, it, _, cur) if c == city && it == item && *cur == s!("YIELD_GOLD")))

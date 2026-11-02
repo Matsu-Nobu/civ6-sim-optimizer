@@ -658,6 +658,10 @@ impl<'a> Engine<'a> {
         let saved = std::mem::take(&mut self.effects);
         let saved_plots = std::mem::take(&mut self.plot_effects);
         for m in self.r.list_sym(table, column, key, "ModifierId") {
+            // a grant to the cities built later (BBG Ancestral Hall's builder) is the founding's, not the completion's
+            if self.r.modifier(m).map(|x| x.collection == Some(s!("COLLECTION_PLAYER_BUILT_CITIES"))).unwrap_or(false) {
+                continue;
+            }
             self.religion = None;
             self.apply(m, owner.clone(), key, 0);
         }

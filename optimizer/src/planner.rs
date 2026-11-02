@@ -1016,11 +1016,22 @@ impl<'a> Planner<'a> {
     /// returns the production the item got. An item it finishes completes at once (the player acts after the
     /// turn's processing), and what is left carries on to the next item, or is held for the item chosen later
     /// (CivFanatics, "Is chopping overflow overcorrected?"; 10/14 Marseille T41: a campus at 43.1 of 58 and stone of
-    /// 26 left 11 held). A harvest while the city has no item is lost (10/21 Velitrae T62: the second woods).
+    /// 26 left 11 held).
     fn chop_into(&self, st: &mut State, ci: usize, amount: f64, env: &Env, ch: &mut dyn Chooser) -> f64 {
         let c = &st.cities[ci];
         let n = c.name;
-        let Some(item) = c.current.filter(|_| amount > 0.0) else { return 0.0 };
+        if amount <= 0.0 {
+            return 0.0;
+        }
+        let Some(item) = c.current else {
+            // a city with no item since the turn began holds it for the next item (10/21 Arpinum T42: woods of 26
+            // and the turn's 6 held); one that just finished its item loses it (Velitrae T62)
+            if !st.finished_now.contains(&n) {
+                st.cacc_mut(n).overflow += amount;
+                return amount;
+            }
+            return 0.0;
+        };
         let e = self.eng(st);
         let pct = item_production_percent(self.r, &e, c, item);
         let Some(cost) = crate::sim::current_cost(self.r, &st.acc, &st.cities, env, n, item, self.speed) else {
@@ -1046,6 +1057,7 @@ impl<'a> Planner<'a> {
         // a builder of 35 with nothing left; 10/21 Arretium T43: 37.9 and woods of 27 for 41 left 23.9)
         ca.overflow = (own + amount - cost).max(0.0);
         self.complete_now(st, ci, item, env, ch);
+        st.finished_now.push(n);
         self.choose_next_item(st, ci, Some(item), ch);
         lack
     }
@@ -2696,6 +2708,7 @@ impl<'a> Planner<'a> {
         // and a harvest counts the techs and civics finished this turn. A city that finished its item goes on with
         // the next one first.
         let env = self.player_env(st);
+        st.finished_now = events.iter().filter_map(|ev| match ev { Event::Completed(c, _) => Some(*c), _ => None }).collect();
         // replay: a city the record switched to another item during the turn without finishing the one it had (the
         // next save holds that one's progress): the harvests go into the new one (10/14 La Rochelle T44: from a
         // builder to the encampment project, woods into the project), or are lost with none (Marseille T44)

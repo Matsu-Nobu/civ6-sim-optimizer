@@ -354,6 +354,8 @@ pub struct State {
     pub last_output: [f64; 6],
     /// the governors established this turn: not yet in the turn's science and culture (Planner::governor_step)
     pub governors_new: Vec<Sym>,
+    /// the cities that finished an item this turn (the processing's or a harvest's)
+    pub finished_now: Vec<Sym>,
     /// each city's part of last_output
     pub city_output: Vec<(Sym, [f64; 6])>,
     pub log: Vec<(Key, i64, Option<Choice>)>,
@@ -602,6 +604,7 @@ pub fn state_from(v: &Value) -> State {
         score: 0.0,
         last_output: [0.0; 6],
         governors_new: vec![],
+        finished_now: vec![],
         city_output: vec![],
         log: vec![],
         counters: OMap::new(),
@@ -714,6 +717,7 @@ pub fn state_from_row(d: &Value) -> State {
         score: 0.0,
         last_output: [0.0; 6],
         governors_new: vec![],
+        finished_now: vec![],
         city_output: vec![],
         log: vec![],
         counters: OMap::new(),

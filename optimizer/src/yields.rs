@@ -1105,6 +1105,10 @@ pub fn route_yields(r: &Rules, e: &Engine, route: &Route, origin: &City) -> Vec<
             }
         }
     }
+    // routes to an ally's city: the origin's yields of policies such as Wisselbanken (+2 food, +2 production)
+    if !domestic && dest.player_id.map(|d| e.env.allies.contains(&d)).unwrap_or(false) {
+        addf(&mut y, "EFFECT_ADJUST_PLAYER_TRADE_ROUTE_ORIGIN_YIELD_FOR_ALLY_ROUTE", &one, false);
+    }
     // a research alliance with the destination's player (alliances need Civil Service): its level-1 route yields
     // for the origin (BBG: +2 science); the alliance's later levels are not modelled
     if !domestic && dest.player_id.map(|d| e.env.allies.contains(&d)).unwrap_or(false) && e.env.civics.contains(&s!("CIVIC_CIVIL_SERVICE")) {

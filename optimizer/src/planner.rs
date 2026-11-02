@@ -2604,6 +2604,11 @@ impl<'a> Planner<'a> {
         }
         // the turn's output: the yields growth and production used (techs finished this turn count)
         let used: Vec<(Sym, Y)> = events.iter().filter_map(|ev| if let Event::Yields(n, y) = ev { Some((*n, *y)) } else { None }).collect();
+        if crate::envcfg::trace() == Some("cityyields") {
+            for (n, y) in &used {
+                eprintln!("CY T{} {n} {:?}", st.turn, y);
+            }
+        }
         if !used.is_empty() {
             let mut out: Y = [0.0; 6];
             for (_, y) in &used {

@@ -736,7 +736,9 @@ fn add_lbl(out: &mut Vec<(Sym, f64)>, k: Sym, v: f64) {
 pub fn modifier_city_yields(r: &Rules, e: &Engine, c: &City) -> Vec<(Sym, f64)> {
     let mut out = vec![];
     let n = c.name;
+    let parts = crate::envcfg::trace().map(|t| t == format!("{}:parts", n)).unwrap_or(false);
     for x in e.city_effects(s!("EFFECT_ADJUST_CITY_YIELD_CHANGE"), n) {
+        if parts { eprintln!("PART {n} mod {} from {} {:?}", x.mid, x.source, x.args.get("YieldType").map(|k| k.as_string())); }
         add_lbl(&mut out, x.args.get("YieldType").unwrap(), x.args.f("Amount"));
     }
     for x in e.city_effects(s!("EFFECT_ADJUST_CITY_ALL_YIELDS_CHANGE"), n) {
@@ -747,11 +749,13 @@ pub fn modifier_city_yields(r: &Rules, e: &Engine, c: &City) -> Vec<(Sym, f64)> 
     for x in e.city_effects(s!("EFFECT_ADJUST_BUILDING_YIELD_CHANGE"), n) {
         if let Some(b) = x.args.get("BuildingType").filter(|b| !b.is_empty()) {
             if r.city_has_building(&c.buildings, b) {
+                if parts { eprintln!("PART {n} building mod {} from {} {:?}", x.mid, x.source, x.args.get("YieldType").map(|k| k.as_string())); }
                 add_lbl(&mut out, x.args.get("YieldType").unwrap(), x.args.f("Amount"));
             }
         }
     }
     for x in e.city_effects(s!("EFFECT_ADJUST_CITY_YIELD_PER_POPULATION"), n) {
+        if parts { eprintln!("PART {n} perpop {} from {}", x.mid, x.source); }
         add_lbl(&mut out, x.args.get("YieldType").unwrap(), x.args.f("Amount") * c.population as f64);
     }
     for x in e.city_effects(s!("EFFECT_ADJUST_CITY_YIELD_PER_DISTRICT"), n) {
@@ -759,6 +763,7 @@ pub fn modifier_city_yields(r: &Rules, e: &Engine, c: &City) -> Vec<(Sym, f64)> 
     }
     for effect in ["EFFECT_ADJUST_DISTRICT_YIELD_CHANGE", "EFFECT_ADJUST_DISTRICT_BASE_YIELD_CHANGE"] {
         for (_, x) in e.district_effects(crate::sym::sym_static(effect), n) {
+            if parts { eprintln!("PART {n} district {} from {} {:?}", x.mid, x.source, x.args.get("YieldType").map(|k| k.as_string())); }
             add_lbl(&mut out, x.args.get("YieldType").unwrap(), x.args.f("Amount"));
         }
     }
@@ -1105,14 +1110,11 @@ pub fn route_yields(r: &Rules, e: &Engine, route: &Route, origin: &City) -> Vec<
             }
         }
     }
-    // routes to an ally's city: the origin's yields of policies such as Wisselbanken (+2 food, +2 production)
-    if !domestic && dest.player_id.map(|d| e.env.allies.contains(&d)).unwrap_or(false) {
+    // routes to an ally's city: the origin's yields of policies such as Wisselbanken (+2 food, +2 production), and
+    // the alliance's own route yields
+    if let Some(&(_, kind)) = e.env.allies.iter().find(|a| !domestic && Some(a.0) == dest.player_id) {
         addf(&mut y, "EFFECT_ADJUST_PLAYER_TRADE_ROUTE_ORIGIN_YIELD_FOR_ALLY_ROUTE", &one, false);
-    }
-    // a research alliance with the destination's player (alliances need Civil Service): its level-1 route yields
-    // for the origin (BBG: +2 science); the alliance's later levels are not modelled
-    if !domestic && dest.player_id.map(|d| e.env.allies.contains(&d)).unwrap_or(false) && e.env.civics.contains(&s!("CIVIC_CIVIL_SERVICE")) {
-        for (k, v) in alliance_origin_route_yields(r) {
+        for (k, v) in alliance_route_yields(r, kind, "AffectOrigin") {
             push_y(&mut y, k, v);
         }
     }
@@ -1140,16 +1142,18 @@ pub fn route_yields(r: &Rules, e: &Engine, route: &Route, origin: &City) -> Vec<
 }
 
 /// The level-1 research alliance's trade route yields for the origin (AllianceEffects -> ModifierArguments with AffectOrigin).
-fn alliance_origin_route_yields(r: &Rules) -> Vec<(Sym, f64)> {
+/// The route yields of an alliance of type `kind` at level 1 for the route's origin (`side` "AffectOrigin") or
+/// destination ("AffectDestination"); the alliance's later levels are not modelled.
+fn alliance_route_yields(r: &Rules, kind: Sym, side: &'static str) -> Vec<(Sym, f64)> {
     let t = r.tab("AllianceEffects");
     let mut y = vec![];
-    for &i in t.find("AllianceType", s!("ALLIANCE_RESEARCH")) {
+    for &i in t.find("AllianceType", kind) {
         if t.v(i, "LevelRequirement").i() != 1 {
             continue;
         }
         let Some(m) = t.v(i, "ModifierID").sym() else { continue };
         let a = r.args_of("ModifierArguments", "ModifierId", m);
-        if is_true(&a, "AffectOrigin") {
+        if is_true(&a, side) {
             if let Some(k) = a.get("YieldType") {
                 push_y(&mut y, k, a.f("Amount"));
             }
@@ -1169,6 +1173,11 @@ pub fn incoming_route_yields(e: &Engine, route: &Route, dest_city: &City) -> Vec
     if !domestic {
         for x in e.city_effects(s!("EFFECT_ADJUST_CITY_YIELD_FROM_FOREIGN_TRADE_ROUTES_PASSING_THROUGH"), dest_city.name) {
             push_y(&mut y, x.args.get("YieldType").unwrap(), x.args.f("Amount"));
+        }
+    }
+    if let Some(&(_, kind)) = e.env.allies.iter().find(|a| !domestic && Some(a.0) == route.origin.player_id) {
+        for (k, v) in alliance_route_yields(e.r, kind, "AffectDestination") {
+            push_y(&mut y, k, v);
         }
     }
     if route.origin.player_id == e.env.p.player_id {
@@ -1219,7 +1228,13 @@ pub fn city_yields(r: &Rules, e: &Engine, c: &City, routes: &[Route]) -> Y {
     let mut total: Vec<(Sym, f64)> = vec![];
     let plots = &e.plots;
     let amods = appeal_modifiers(e, c.name);
-    let mut add_all = |v: Vec<(Sym, f64)>| for (k, x) in v { push_y(&mut total, k, x) };
+    let parts = crate::envcfg::trace().map(|t| t == format!("{}:parts", c.name)).unwrap_or(false);
+    let mut add_all = |v: Vec<(Sym, f64)>| {
+        if parts && !v.is_empty() {
+            eprintln!("PART {} {:?}", c.name, v.iter().map(|(k, x)| format!("{}={x}", k.as_string().replace("YIELD_", ""))).collect::<Vec<_>>());
+        }
+        for (k, x) in v { push_y(&mut total, k, x) }
+    };
     for w in &c.worked {
         let is_center = w.xy() == c.center;
         let mut wp = w.clone();
@@ -1232,6 +1247,7 @@ pub fn city_yields(r: &Rules, e: &Engine, c: &City, routes: &[Route]) -> Y {
         }
         add_all(plot_yields(r, e, c, w, &amods));
     }
+    if parts { eprintln!("PART {} -- buildings", c.name); }
     for &b in &c.buildings {
         add_all(r.yield_rows("Building_YieldChanges", "BuildingType", b, "YieldType", "YieldChange"));
     }
@@ -1248,6 +1264,7 @@ pub fn city_yields(r: &Rules, e: &Engine, c: &City, routes: &[Route]) -> Y {
         let v = &mut district_pct.iter_mut().find(|(a, _)| *a == k).unwrap().1;
         push_y(v, x.args.get("YieldType").unwrap(), x.args.f("Amount"));
     }
+    if parts { eprintln!("PART {} -- districts", c.name); }
     let excluded = excluded_adjacencies(r, &e.env.p);
     for d in &c.districts {
         let adj = district_adjacency(r, d, techs, civics, Some(plots), &modifier_adjacency_rows(e, c.name, d.dtype), &excluded);
@@ -1304,17 +1321,25 @@ pub fn city_yields(r: &Rules, e: &Engine, c: &City, routes: &[Route]) -> Y {
             }
         }
     }
+    if parts { eprintln!("PART {} -- modifiers", c.name); }
     add_all(modifier_city_yields(r, e, c));
+    if parts { eprintln!("PART {} -- routes", c.name); }
+    let tr = crate::envcfg::trace() == Some("routeyields");
     for route in routes {
         if route.origin.name == c.name {
-            add_all(route_yields(r, e, route, c));
+            let y = route_yields(r, e, route, c);
+            if tr { eprintln!("ROUTE out {} -> {} {:?}", c.name, route.dest.name, y); }
+            add_all(y);
         }
     }
     for route in routes {
         if route.dest.name == c.name {
-            add_all(incoming_route_yields(e, route, c));
+            let y = incoming_route_yields(e, route, c);
+            if tr { eprintln!("ROUTE in {} <- {} {:?}", c.name, route.origin.name, y); }
+            add_all(y);
         }
     }
+    if parts { eprintln!("PART {} -- pop", c.name); }
     let pop = c.population as f64;
     let fixed = |v: f64| (v * 256.0).floor() / 256.0;
     add_all(vec![(s!("YIELD_SCIENCE"), fixed(pop * r.param("SCIENCE_PERCENTAGE_YIELD_PER_POP") / 100.0)),

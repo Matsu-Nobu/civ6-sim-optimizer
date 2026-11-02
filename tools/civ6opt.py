@@ -11,8 +11,10 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def binary():
-    """The executable `cargo build --release` makes in optimizer/ for the machine it runs on."""
+    """The executable `cargo build --release` makes in optimizer/ for the machine it runs on (CIV6OPT_BIN: another
+    one, e.g. an older build to compare with)."""
     exe = ROOT / "optimizer" / "target" / "release" / ("civ6opt.exe" if os.name == "nt" else "civ6opt")
+    exe = Path(os.environ.get("CIV6OPT_BIN", exe))
     if not exe.exists():
         sys.exit(f"{exe} is missing: run `cargo build --release` in optimizer/")
     return exe

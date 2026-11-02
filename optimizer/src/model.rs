@@ -216,8 +216,8 @@ pub struct Env {
     /// replay, on a turn the record founded a city: the same at the turn's end (the next save's table), which the
     /// growth counts (the new city takes copies from the others; 10/19 Maracaibo T43)
     pub luxuries_next: Option<Vec<(Sym, f64)>>,
-    /// allied players (Scenario.allies)
-    pub allies: Vec<i64>,
+    /// the alliances in force: (other player, alliance type) (Scenario.alliances)
+    pub allies: Vec<(i64, Sym)>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]

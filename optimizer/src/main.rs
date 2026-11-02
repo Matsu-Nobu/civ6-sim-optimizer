@@ -82,10 +82,10 @@ fn planner(p: &Problem) -> (Planner<'static>, State) {
     if TEAM_LUX.get().copied().unwrap_or(false) {
         pl.sc.extra_luxuries = infer_extra_luxuries(p, &pl);
         if civ6opt::envcfg::trace() == Some("amen") { let mut v: Vec<_> = pl.sc.extra_luxuries.iter().collect(); v.sort(); eprintln!("EXTRA {v:?}"); }
-        pl.sc.allies = infer_allies(p, start.player.player_id);
     }
+    pl.sc.alliances = record_alliances(p);
     if let Some(a) = ALLIES.get().cloned().flatten() {
-        pl.sc.allies = a;
+        pl.sc.alliances = a.into_iter().map(|x| (x, sym("ALLIANCE_RESEARCH"), 0, None)).collect();
     }
     if GOLD_OUT.get().copied().unwrap_or(false) {
         // --gold-out: the gold the recorded player gave to allies is gone from every plan too
@@ -430,7 +430,7 @@ static ALLOW_MILITARY: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
 static NO_HARVEST_BEFORE: std::sync::OnceLock<i64> = std::sync::OnceLock::new();
 static GOLD_OUT: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
 static TEAM_LUX: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-/// --allies 1,3: the allied players (default with --team: the major players the record's trade routes went to)
+/// --allies 1,3: research alliances with these players from the start, in place of the record's alliances
 static ALLIES: std::sync::OnceLock<Option<Vec<i64>>> = std::sync::OnceLock::new();
 static MILESTONES: std::sync::OnceLock<Option<std::sync::Arc<civ6opt::milestones::Milestones>>> = std::sync::OnceLock::new();
 
@@ -605,22 +605,27 @@ fn user_play_setup(p: &Problem, pl: &mut Planner, which: Option<&str>) {
     }
 }
 
-/// The major players the record's trade routes went to (in team games, routes go to allies).
-fn infer_allies(p: &Problem, me: Option<i64>) -> Vec<i64> {
-    let mut out: Vec<i64> = vec![];
-    for row in p.v["rows"].as_array().unwrap() {
-        for tr in row["tradeRoutes"].as_array().cloned().unwrap_or_default() {
-            let (o, d) = (tr["origin"]["playerId"].as_i64(), tr["destination"]["playerId"].as_i64());
-            let civ = tr["destination"]["civilization"].as_str().map(sym);
-            let cs = civ.and_then(|c| p.rules.lookup_sym("Civilizations", "CivilizationType", c, "StartingCivilizationLevelType")) == Some(sym("CIVILIZATION_LEVEL_CITY_STATE"));
-            if o == me && d != me && !cs {
-                if let Some(d) = d.filter(|d| !out.contains(d)) {
-                    out.push(d);
-                }
+/// The recorded player's alliances, from the rows' alliances: (other player, type, first turn, last turn; None when in
+/// force in the last row).
+fn record_alliances(p: &Problem) -> Vec<(i64, Sym, i64, Option<i64>)> {
+    let rows = p.v["rows"].as_array().unwrap();
+    let last = rows.iter().filter_map(|r| r["turn"].as_i64()).max().unwrap_or(0);
+    let mut out: Vec<(i64, Sym, i64, Option<i64>)> = vec![];
+    for row in rows {
+        let t = row["turn"].as_i64().unwrap();
+        for a in row["player"]["alliances"].as_array().cloned().unwrap_or_default() {
+            let (who, kind) = (a["player"].as_i64().unwrap(), sym(a["type"].as_str().unwrap()));
+            match out.iter_mut().find(|x| x.0 == who && x.1 == kind && x.3.map(|l| l + 1 >= t).unwrap_or(false)) {
+                Some(x) => x.3 = Some(t),
+                None => out.push((who, kind, t, Some(t))),
             }
         }
     }
-    eprintln!("allies (record's routes): {out:?}");
+    for x in out.iter_mut() {
+        if x.3 == Some(last) {
+            x.3 = None;
+        }
+    }
     out
 }
 
@@ -882,6 +887,20 @@ fn main() {
     // civ6opt body <save> <out>: the save's decompressed data, for looking into the format
     if cmd == "body" {
         std::fs::write(&args[3], civ6opt::save::decompress(&std::fs::read(&args[2]).unwrap_or_else(|e| panic!("{}: {e}", args[2])))).unwrap();
+        return;
+    }
+    // civ6opt header <save> <rules.sqlite>: each player slot's header entries (team, civilization, ...), one line per slot
+    if cmd == "header" {
+        let rules = civ6opt::gamedata::open(&args[3]);
+        let dict = civ6opt::save::Dict::new(&civ6opt::save::export::rules_types(&rules));
+        let h = civ6opt::save::header::parse(&std::fs::read(&args[2]).unwrap_or_else(|e| panic!("{}: {e}", args[2])), &dict);
+        let mut ids: Vec<_> = h.slots.keys().copied().collect();
+        ids.sort();
+        for id in ids {
+            let mut e: Vec<_> = h.slots[&id].iter().map(|(k, v)| format!("{k}={v}")).collect();
+            e.sort();
+            println!("{id} {}", e.join(" "));
+        }
         return;
     }
     // civ6opt export <save dir> <player id> <rules.sqlite>: one JSON line per save (the export rows), in file order;

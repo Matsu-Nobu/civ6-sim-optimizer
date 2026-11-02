@@ -390,6 +390,25 @@ fn prefix_matches(s: &str, prefixes: &[&str]) -> bool {
 
 /// One export row: the player's state, its cities with their plots, units, religions, the world's cities and
 /// wonders, and the trade routes, from one save.
+/// The alliances of player `pid` in force: (other player, alliance type). Each alliance is a record that starts with
+/// a fixed 16 bytes, then the two player ids and the alliance type's hash.
+fn alliances(p: &Bytes, pid: i64) -> Vec<(i64, &'static str)> {
+    const START: [u8; 16] = [0x56, 0x7c, 0xd9, 0x4b, 0xb1, 0x0a, 0x72, 0x9d, 0x2b, 0x75, 0x66, 0x9d, 1, 0, 0, 0];
+    const TYPES: [&str; 5] = ["ALLIANCE_RESEARCH", "ALLIANCE_ECONOMIC", "ALLIANCE_MILITARY", "ALLIANCE_CULTURAL", "ALLIANCE_RELIGIOUS"];
+    let mut out = vec![];
+    let mut o = p.index_of(&START, 0);
+    while o >= 0 {
+        let (a, b, h) = (p.i32(o + 16) as i64, p.i32(o + 20) as i64, p.u32(o + 24));
+        if let Some(t) = TYPES.iter().find(|t| super::civ6_hash(t) == h) {
+            if a == pid || b == pid {
+                out.push((if a == pid { b } else { a }, *t));
+            }
+        }
+        o = p.index_of(&START, o + 1);
+    }
+    out
+}
+
 pub fn row_json(g: &Save, d: &Dict, n: &Names, file: &str, pid: i64) -> Value {
     let p = Bytes(&g.payload);
     let plot_id: HashMap<(i64, i64), u32> = g.map.plots.iter().filter_map(|q| q.owner.as_ref().and_then(|o| o.district_instance_id).map(|id| ((q.x, q.y), id))).collect();
@@ -512,6 +531,7 @@ pub fn row_json(g: &Save, d: &Dict, n: &Names, file: &str, pid: i64) -> Value {
         ("prophetRecruitedTurn", gp.iter().find(|x| x.class == "GREAT_PERSON_CLASS_PROPHET" && x.recruited_by == Some(pid)).and_then(|x| x.recruited_turn).map(Value::from).unwrap_or(Value::Null)),
         ("governors", Value::Arr(governors)),
         ("envoys", Value::Arr(envoys)),
+        ("alliances", Value::Arr(alliances(&p, pid).into_iter().map(|(o, t)| Value::obj(vec![("player", Value::from(o)), ("type", s(t))])).collect())),
     ]);
     let city_yields = my_run.filter(|r| r.len() == my_count).map(|r| Value::Arr(r.clone())).unwrap_or(Value::Null);
     let units: Vec<Value> = g.units.iter().filter(|u| u.owner == pid).map(|u| Value::obj(vec![

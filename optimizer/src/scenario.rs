@@ -12,6 +12,8 @@ pub struct TurnRow {
     pub prophet_on_offer: bool,
     /// the player's age of the era ("GOLDEN", ...) as recorded
     pub age: Option<Sym>,
+    /// other players' trade routes to the player's cities: (origin, destination city)
+    pub incoming_routes: Vec<(Endpoint, Sym)>,
 }
 
 pub struct Scenario {
@@ -29,9 +31,9 @@ pub struct Scenario {
     pub extra_luxuries: HashMap<i64, i64>,
     pub scouts_by_turn: HashMap<i64, i64>,
     pub unit_gifts: HashMap<i64, Vec<Sym>>,
-    /// players whose cities count as allied for trade routes (the research alliance's route science; --allies, or
-    /// the major players the record's routes went to)
-    pub allies: Vec<i64>,
+    /// the player's alliances: (other player, alliance type, first turn, last turn; None: still in force at the
+    /// record's end, so in force from then on). From the record's saves; --allies: research alliances from the start
+    pub alliances: Vec<(i64, Sym, i64, Option<i64>)>,
     /// class -> [(individual, first turn, turn taken by others)]
     pub gp_timeline: Vec<(Sym, Vec<(Sym, i64, Option<i64>)>)>,
 }
@@ -43,6 +45,11 @@ fn turn_map<T>(v: &Value, f: impl Fn(&Value) -> T) -> HashMap<i64, T> {
 }
 
 impl Scenario {
+    /// The alliances in force in `turn`: (other player, alliance type).
+    pub fn allies_at(&self, turn: i64) -> Vec<(i64, Sym)> {
+        self.alliances.iter().filter(|a| a.2 <= turn && a.3.map(|l| turn <= l).unwrap_or(true)).map(|a| (a.0, a.1)).collect()
+    }
+
     /// Scouts the record had built (not received as gifts) by the end of turn t: the exploration a plan must match
     /// before the recorded rewards of turn t come.
     pub fn scouts_built_by(&self, t: i64) -> i64 {
@@ -67,6 +74,9 @@ impl Scenario {
                 wonders_taken: d["worldWonders"].as_array().map(|a| a.iter().filter(|w| w["playerId"].as_i64() != me).filter_map(|w| osym(&w["building"])).collect()).unwrap_or_default(),
                 prophet_on_offer: d["player"]["prophetOnOffer"].as_bool().unwrap_or(true),
                 age: osym(&d["player"]["age"]),
+                incoming_routes: d["tradeRoutes"].as_array().map(|a| a.iter()
+                    .filter(|r| r["origin"]["playerId"].as_i64() != me && r["destination"]["playerId"].as_i64() == me)
+                    .filter_map(|r| osym(&r["destination"]["name"]).map(|dn| (endpoint_from(&r["origin"]), dn))).collect()).unwrap_or_default(),
             });
         }
         // the recorded player's own recruits: gone at the next turn for a plan that did not take them (someone
@@ -90,7 +100,7 @@ impl Scenario {
             gold_gift: turn_map(&sc["gold_gift"], |x| x.as_f64().unwrap_or(0.0)),
             gold_out: HashMap::new(),
             extra_luxuries: HashMap::new(),
-            allies: vec![],
+            alliances: vec![],
             scouts_by_turn: turn_map(&sc["scouts_by_turn"], |x| x.as_i64().unwrap_or(0)),
             unit_gifts: turn_map(&sc["unit_gifts"], |x| x.as_array().unwrap().iter().filter_map(osym).collect()),
             gp_timeline: sc["gp_timeline"].as_object().map(|o| o.iter().map(|(cls, v)| (sym(cls), v.as_array().unwrap().iter().map(|e| {
@@ -152,6 +162,9 @@ impl Scenario {
             }
         }
         out
+    }
+    pub fn incoming_routes(&self, turn: i64) -> &Vec<(Endpoint, Sym)> {
+        &self.row(turn).incoming_routes
     }
     pub fn world_cities(&self, turn: i64) -> &Vec<Endpoint> {
         &self.row(turn).world_cities

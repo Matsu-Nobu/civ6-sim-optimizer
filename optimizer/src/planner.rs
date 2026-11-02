@@ -86,7 +86,7 @@ impl<'a> Planner<'a> {
             luxuries_next: self.rec.as_ref().or(self.tiles_rec.as_ref())
                 .filter(|r| r.turn(st.turn + 1).map(|b| b.cities.len()).unwrap_or(0) > r.turn(st.turn).map(|a| a.cities.len()).unwrap_or(usize::MAX))
                 .and_then(|r| r.turn(st.turn + 1)).and_then(|rt| rt.luxuries.clone()),
-            allies: self.sc.allies.clone(),
+            allies: self.sc.allies_at(st.turn),
         }
     }
 
@@ -849,6 +849,12 @@ impl<'a> Planner<'a> {
                 Some(info) => self.sc.world_cities(st.turn).iter().find(|c| c.name == dn).cloned().unwrap_or_else(|| info.clone()),
             };
             out.push(Route { origin: self.route_endpoint(st, oc), dest });
+        }
+        // other players' routes to our cities, as recorded (after the record: as in its last turn)
+        for (origin, dn) in self.sc.incoming_routes(st.turn) {
+            if let Some(dc) = st.city(*dn) {
+                out.push(Route { origin: origin.clone(), dest: self.route_endpoint(st, dc) });
+            }
         }
         out
     }

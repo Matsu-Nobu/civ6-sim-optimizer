@@ -2728,72 +2728,6 @@ impl<'a> Planner<'a> {
                 self.choose_next_item(st, ci, done, ch);
             }
         }
-        // settlers arriving: a city is founded during the player's actions, so the next save shows it
-        let arriving: Vec<Settler> = st.settlers.iter().filter(|s| s.arrive <= t_now + 1).cloned().collect();
-        let mut founding_harvest = [0.0; 3];
-        for s in arriving {
-            st.settlers.retain(|x| x != &s);
-            let Some(target) = s.target else { continue };
-            if self.w.site_score(target, &st.cities, &st.acc.techs, &st.acc.civics) <= 0.0 {
-                continue;
-            }
-            let name = s.name.unwrap_or_else(|| sym(&format!("CITY_{}", st.cities.len() + 1)));
-            let mut c = self.found_city(st, name, target, &env);
-            let mut acc = CityAcc { population: 1, ..Default::default() };
-            // replay: the record's next save shows it; the founding builder's harvests of the turn are done (10/21 Aquileia T44: wheat harvested, population 2 and 11 food)
-            let mut harvested = 0;
-            if let Some(rc) = self.rec.as_ref().or(self.tiles_rec.as_ref()).and_then(|r| r.turn(t_now + 1)).and_then(|rt| rt.city(name)) {
-                acc.population = rc.pop as i32;
-                acc.food_store = rc.food;
-                let rec = self.rec.as_ref().or(self.tiles_rec.as_ref()).unwrap();
-                for &(t, kind, xy, what) in &rec.acts {
-                    if t != t_now || kind != s!("harvest") {
-                        continue;
-                    }
-                    if let Some(p) = c.owned.iter_mut().find(|p| p.xy() == xy) {
-                        // the harvest's yields are in the recorded population and food store; they count in the
-                        // turn's output as every other harvest's do (Planner::advance)
-                        let ys = self.harvest_yields(&self.eng(st), p, st, Some(name)).into_iter().find(|(k, _)| *k == what).map(|(_, y)| y);
-                        for (k, y) in ["YIELD_FOOD", "YIELD_PRODUCTION", "YIELD_GOLD"].iter().enumerate() {
-                            founding_harvest[k] += ys.as_ref().map(|v| get_y(v, sym(y))).unwrap_or(0.0);
-                        }
-                        if what == s!("feature") { p.feature = None } else { p.resource = None }
-                        harvested += 1;
-                    }
-                }
-                c.population = acc.population;
-            }
-            st.cities.push(c);
-            st.acc.cities.insert(name, acc);
-            // a new city's road to the capital (Rome: EFFECT_GRANT_CITY_ROAD_TO_CAPITAL)
-            if !self.eng(st).city_effects(s!("EFFECT_GRANT_CITY_ROAD_TO_CAPITAL"), name).is_empty() {
-                if let Some(cap) = st.cities.iter().find(|x| x.capital).map(|x| x.center) {
-                    self.lay_road(st, target, cap);
-                }
-            }
-            st.border.insert(name, (0.0, 0));
-            st.focus.insert(name, s!("balanced"));
-            // units every new city gets (BBG Ancestral Hall: a builder, which acts on the founding turn)
-            for (u, n) in self.founding_units(st) {
-                for _ in 0..n {
-                    if u == s!("UNIT_BUILDER") {
-                        let e = self.engine(&env, &st.cities);
-                        let charges = builder_charges(r, &e, u, name) - std::mem::take(&mut harvested);
-                        if charges <= 0 {
-                            continue;
-                        }
-                        st.builders.push(Builder { charges, at: target, ready: t_now, id: None, pending: None, idle: None });
-                    } else {
-                        *st.units.entry_or(u, 0) += 1;
-                    }
-                    // the game counts them among the units trained (10/21 Velitrae T43's builder)
-                    *st.acc.units_trained.entry_or(u, 0) += 1;
-                }
-            }
-        }
-        for k in 0..3 {
-            st.harvest_sum[k] += founding_harvest[k];
-        }
         // builders
         let mut bi = 0;
         while bi < st.builders.len() {
@@ -2917,6 +2851,73 @@ impl<'a> Planner<'a> {
             for ci in 0..st.cities.len() {
                 self.assign(st, ci, &env);
             }
+        }
+        // settlers arriving: a city is founded during the player's actions, so the next save shows it, after the
+        // builders' (10/21 T44: Arretium's builder for 45 before Aquileia's free builder raised the cost)
+        let arriving: Vec<Settler> = st.settlers.iter().filter(|s| s.arrive <= t_now + 1).cloned().collect();
+        let mut founding_harvest = [0.0; 3];
+        for s in arriving {
+            st.settlers.retain(|x| x != &s);
+            let Some(target) = s.target else { continue };
+            if self.w.site_score(target, &st.cities, &st.acc.techs, &st.acc.civics) <= 0.0 {
+                continue;
+            }
+            let name = s.name.unwrap_or_else(|| sym(&format!("CITY_{}", st.cities.len() + 1)));
+            let mut c = self.found_city(st, name, target, &env);
+            let mut acc = CityAcc { population: 1, ..Default::default() };
+            // replay: the record's next save shows it; the founding builder's harvests of the turn are done (10/21 Aquileia T44: wheat harvested, population 2 and 11 food)
+            let mut harvested = 0;
+            if let Some(rc) = self.rec.as_ref().or(self.tiles_rec.as_ref()).and_then(|r| r.turn(t_now + 1)).and_then(|rt| rt.city(name)) {
+                acc.population = rc.pop as i32;
+                acc.food_store = rc.food;
+                let rec = self.rec.as_ref().or(self.tiles_rec.as_ref()).unwrap();
+                for &(t, kind, xy, what) in &rec.acts {
+                    if t != t_now || kind != s!("harvest") {
+                        continue;
+                    }
+                    if let Some(p) = c.owned.iter_mut().find(|p| p.xy() == xy) {
+                        // the harvest's yields are in the recorded population and food store; they count in the
+                        // turn's output as every other harvest's do (Planner::advance)
+                        let ys = self.harvest_yields(&self.eng(st), p, st, Some(name)).into_iter().find(|(k, _)| *k == what).map(|(_, y)| y);
+                        for (k, y) in ["YIELD_FOOD", "YIELD_PRODUCTION", "YIELD_GOLD"].iter().enumerate() {
+                            founding_harvest[k] += ys.as_ref().map(|v| get_y(v, sym(y))).unwrap_or(0.0);
+                        }
+                        if what == s!("feature") { p.feature = None } else { p.resource = None }
+                        harvested += 1;
+                    }
+                }
+                c.population = acc.population;
+            }
+            st.cities.push(c);
+            st.acc.cities.insert(name, acc);
+            // a new city's road to the capital (Rome: EFFECT_GRANT_CITY_ROAD_TO_CAPITAL)
+            if !self.eng(st).city_effects(s!("EFFECT_GRANT_CITY_ROAD_TO_CAPITAL"), name).is_empty() {
+                if let Some(cap) = st.cities.iter().find(|x| x.capital).map(|x| x.center) {
+                    self.lay_road(st, target, cap);
+                }
+            }
+            st.border.insert(name, (0.0, 0));
+            st.focus.insert(name, s!("balanced"));
+            // units every new city gets (BBG Ancestral Hall: a builder, which acts on the founding turn)
+            for (u, n) in self.founding_units(st) {
+                for _ in 0..n {
+                    if u == s!("UNIT_BUILDER") {
+                        let e = self.engine(&env, &st.cities);
+                        let charges = builder_charges(r, &e, u, name) - std::mem::take(&mut harvested);
+                        if charges <= 0 {
+                            continue;
+                        }
+                        st.builders.push(Builder { charges, at: target, ready: t_now, id: None, pending: None, idle: None });
+                    } else {
+                        *st.units.entry_or(u, 0) += 1;
+                    }
+                    // the game counts them among the units trained (10/21 Velitrae T43's builder)
+                    *st.acc.units_trained.entry_or(u, 0) += 1;
+                }
+            }
+        }
+        for k in 0..3 {
+            st.harvest_sum[k] += founding_harvest[k];
         }
         // purchase: as many as the player chooses in a turn (each item once per city), the options offered again
         // after each (gold, faith and tile prices change)

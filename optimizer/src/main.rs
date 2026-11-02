@@ -2996,10 +2996,12 @@ fn main() {
                         }
                     }
                     if st.acc.techs.len() != r.techs.len() || st.acc.civics.len() != r.civics.len() {
-                        // one behind after a completion last turn: its overflow (not in the save) finished the next one
+                        // one behind after a completion in the last two turns: its overflow (not in the save) finished the
+                        // next one (10/21 T44: Iron Working's overflow from T42 went into Apprenticeship at T43 and
+                        // Mathematics at T44)
                         let n_of = |tt: i64, k: &str| rows.get(&tt).map(|x| x["player"][k].as_array().map(|a| a.len()).unwrap_or(0)).unwrap_or(0);
-                        let carried = (st.acc.techs.len() + 1 == r.techs.len() && n_of(t - 1, "techs") < n_of(t, "techs"))
-                            || (st.acc.civics.len() + 1 == r.civics.len() && n_of(t - 1, "civics") < n_of(t, "civics"));
+                        let carried = (st.acc.techs.len() + 1 == r.techs.len() && n_of(t - 2, "techs") < n_of(t, "techs"))
+                            || (st.acc.civics.len() + 1 == r.civics.len() && n_of(t - 2, "civics") < n_of(t, "civics"));
                         let msg = format!("techs {}/{} civics {}/{}", st.acc.techs.len(), r.techs.len(), st.acc.civics.len(), r.civics.len());
                         if carried {
                             note("research (overflow, not in the save)", msg, &mut diffs);

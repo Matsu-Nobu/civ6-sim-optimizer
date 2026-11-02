@@ -2418,61 +2418,6 @@ impl<'a> Planner<'a> {
         }
         crate::prof::lap(&mut lap, 21);
         crate::prof::lap(&mut lap, 22);
-        // purchase: as many as the player chooses in a turn (each item once per city), the options offered again
-        // after each (gold, faith and tile prices change)
-        let mut bought_now: Vec<(Sym, Sym)> = vec![];
-        // replay: the saves hold the treasury at the start of each turn, so gold an ally gave during a turn and spent
-        // on a purchase the same turn shows only as a smaller fall of the treasury (10/19 T3: a scout for 60, the
-        // treasury 45 lower). The part of the recorded purchases' price beyond that fall came in during the turn.
-        if let Some(rec) = self.rec.as_ref().or(self.tiles_rec.as_ref()) {
-            if let (Some(a), Some(b)) = (rec.turn(t_now), rec.turn(t_now + 1)) {
-                let e = self.engine(&env, &st.cities);
-                let mut env_cost = env.clone();
-                env_cost.units_trained = st.acc.units_trained.clone();
-                let mut price = 0.0;
-                for &(_, city, item) in rec.purchases.iter().filter(|p| p.0 == t_now) {
-                    let Some(c) = st.cities.iter().find(|c| c.name == city) else { continue };
-                    if let Some(cost) = item_cost(r, &env_cost, item, self.speed, None, true) {
-                        price += gold_price(cost, purchase_discount_percent(r, &e, c, item, true));
-                    }
-                }
-                let fall = a.gold + a.gold_income - b.gold;
-                if price > fall + 0.5 {
-                    st.acc.gold += price - fall.max(0.0);
-                }
-            }
-        }
-        for _ in 0..8 {
-            let buys: Vec<Choice> = self.buy_options(st, &env, t_now).into_iter()
-                .filter(|o| !matches!(o, Choice::BuyItem(c, it, _, _) if bought_now.contains(&(*c, *it)))).collect();
-            let buy = if buys.len() > 1 { self.decide(st, "buy", Ent::I(t_now), buys, ch) } else { None };
-            match buy {
-                Some(Choice::BuyTile(name, gold, x, y)) => {
-                    let ci = st.cities.iter().position(|c| c.name == name).unwrap();
-                    let p = self.w.map.plots[&(x, y)].clone();
-                    st.cities[ci].owned.push(p);
-                    self.refresh_near(&mut st.cities[ci]);
-                    st.acc.gold -= f64::from_bits(gold);
-                    st.tiles_bought += 1;
-                }
-                Some(Choice::BuyItem(name, item, price, cur)) => {
-                    if crate::envcfg::trace() == Some("buys") {
-                        eprintln!("BUY T{t_now} {name} {item} {} {cur}", f64::from_bits(price));
-                    }
-                    if cur == s!("YIELD_FAITH") {
-                        st.acc.faith -= f64::from_bits(price);
-                    } else {
-                        st.acc.gold -= f64::from_bits(price);
-                    }
-                    st.bought.push((name, item));
-                    bought_now.push((name, item));
-                    if item_kind(item) == Kind::District {
-                        st.city_mut(name).unwrap().current = None;
-                    }
-                }
-                _ => break,
-            }
-        }
         crate::prof::lap(&mut lap, 23);
         // routes that ran their course
         st.traders.retain(|t| !(t.lost && t.until.map(|u| t_now >= u).unwrap_or(false)));
@@ -2677,15 +2622,6 @@ impl<'a> Planner<'a> {
             }
             st.last_output = out;
             st.city_output = used;
-        }
-        for (name, item) in std::mem::take(&mut st.bought) {
-            if item_kind(item) == Kind::Unit {
-                *st.acc.units_trained.entry_or(item, 0) += 1;
-                crate::strategic::pay(self.r, &mut st.acc, item, self.speed);
-            } else {
-                st.acc.units_trained.entry_or(item, 0);
-            }
-            events.push(Event::CompletedPurchase(name, item));
         }
         if let Some(g) = self.sc.gold_out.get(&t_now) {
             st.acc.gold = (st.acc.gold - g).max(0.0);
@@ -2982,6 +2918,76 @@ impl<'a> Planner<'a> {
                 self.assign(st, ci, &env);
             }
         }
+        // purchase: as many as the player chooses in a turn (each item once per city), the options offered again
+        // after each (gold, faith and tile prices change)
+        let mut bought_now: Vec<(Sym, Sym)> = vec![];
+        // replay: the saves hold the treasury at the start of each turn, so gold an ally gave during a turn and spent
+        // on a purchase the same turn shows only as a smaller fall of the treasury (10/19 T3: a scout for 60, the
+        // treasury 45 lower). The part of the recorded purchases' price beyond that fall came in during the turn.
+        if let Some(rec) = self.rec.as_ref().or(self.tiles_rec.as_ref()) {
+            if let (Some(a), Some(b)) = (rec.turn(t_now), rec.turn(t_now + 1)) {
+                let e = self.engine(&env, &st.cities);
+                let mut env_cost = env.clone();
+                env_cost.units_trained = st.acc.units_trained.clone();
+                let mut price = 0.0;
+                for &(_, city, item) in rec.purchases.iter().filter(|p| p.0 == t_now) {
+                    let Some(c) = st.cities.iter().find(|c| c.name == city) else { continue };
+                    if let Some(cost) = item_cost(r, &env_cost, item, self.speed, None, true) {
+                        price += gold_price(cost, purchase_discount_percent(r, &e, c, item, true));
+                    }
+                }
+                let fall = a.gold + a.gold_income - b.gold;
+                if price > fall + 0.5 {
+                    st.acc.gold += price - fall.max(0.0);
+                }
+            }
+        }
+        for _ in 0..8 {
+            let buys: Vec<Choice> = self.buy_options(st, &env, t_now).into_iter()
+                .filter(|o| !matches!(o, Choice::BuyItem(c, it, _, _) if bought_now.contains(&(*c, *it)))).collect();
+            if crate::envcfg::trace() == Some("buys") {
+                eprintln!("BUYOPTS T{t_now} gold {} {:?}", st.acc.gold, buys);
+            }
+            let buy = if buys.len() > 1 { self.decide(st, "buy", Ent::I(t_now), buys, ch) } else { None };
+            match buy {
+                Some(Choice::BuyTile(name, gold, x, y)) => {
+                    let ci = st.cities.iter().position(|c| c.name == name).unwrap();
+                    let p = self.w.map.plots[&(x, y)].clone();
+                    st.cities[ci].owned.push(p);
+                    self.refresh_near(&mut st.cities[ci]);
+                    st.acc.gold -= f64::from_bits(gold);
+                    st.tiles_bought += 1;
+                }
+                Some(Choice::BuyItem(name, item, price, cur)) => {
+                    if crate::envcfg::trace() == Some("buys") {
+                        eprintln!("BUY T{t_now} {name} {item} {} {cur}", f64::from_bits(price));
+                    }
+                    if cur == s!("YIELD_FAITH") {
+                        st.acc.faith -= f64::from_bits(price);
+                    } else {
+                        st.acc.gold -= f64::from_bits(price);
+                    }
+                    st.bought.push((name, item));
+                    bought_now.push((name, item));
+                    if item_kind(item) == Kind::District {
+                        st.city_mut(name).unwrap().current = None;
+                    }
+                }
+                _ => break,
+            }
+        }
+        // what was bought is there at once
+        let mut bought_events = vec![];
+        for (name, item) in std::mem::take(&mut st.bought) {
+            if item_kind(item) == Kind::Unit {
+                *st.acc.units_trained.entry_or(item, 0) += 1;
+                crate::strategic::pay(self.r, &mut st.acc, item, self.speed);
+            } else {
+                st.acc.units_trained.entry_or(item, 0);
+            }
+            bought_events.push(Event::CompletedPurchase(name, item));
+        }
+        self.apply_completions(st, &bought_events, &env, ch, t_now);
         // replay: buildings and districts the next save shows done are done (bought, rushed, or finished on a
         // carry-over the saves do not hold); noted, so validation tells them from production the model missed
         if let Some(next) = self.rec.as_ref().or(self.tiles_rec.as_ref()).and_then(|r| r.turn(t_now + 1)) {

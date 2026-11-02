@@ -355,9 +355,10 @@ impl Record {
             ut.sort_by_key(|x| x.0.as_string());
             for (u, n) in ut {
                 let before = a.units_trained.get(u).copied().unwrap_or(0);
-                // finished: switched away after it, or its progress fell (finished and begun again)
+                // finished: switched away after it, or its progress did not grow (finished and begun again; a turn's
+                // production would have raised it: 10/14 Paris T25, a slinger from 4 held, 0 before and after)
                 let finished = a.cities.iter().filter(|ca| ca.current == Some(*u)
-                    && b.city(ca.name).map(|cb| cb.current != Some(*u) || cb.progress < ca.progress).unwrap_or(false)).count() as i64;
+                    && b.city(ca.name).map(|cb| cb.current != Some(*u) || cb.progress <= ca.progress).unwrap_or(false)).count() as i64;
                 let given = gifts.get(&t).map(|g| g.iter().filter(|x| *x == u).count() as i64).unwrap_or(0);
                 // a city making it can have finished another with each harvest of this turn (10/14 Paris T41: two
                 // builders, the treasury 31 lower, less than a builder's price; T44: three horsemen)

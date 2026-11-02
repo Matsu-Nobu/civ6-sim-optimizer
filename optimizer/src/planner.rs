@@ -1035,6 +1035,10 @@ impl<'a> Planner<'a> {
             st.cacc_mut(n).raw += amount;
             return amount;
         };
+        if crate::envcfg::trace_city(&n.as_string()) {
+            let ca = st.acc.cities.get(&n).cloned().unwrap_or_default();
+            eprintln!("CHOP T{} {n} {item} amount {amount} pct {pct} progress {:?} overflow {} cost {cost}", st.turn, ca.progress.get(&item), ca.overflow);
+        }
         let ca = st.cacc_mut(n);
         let prog = ca.progress.get(&item).copied().unwrap_or(0.0) + ca.overflow;
         ca.overflow = 0.0;
@@ -1043,6 +1047,10 @@ impl<'a> Planner<'a> {
         if boosted >= lack {
             ca.progress.insert(item, cost);
             ca.chopped = Some(item);
+            // the harvest's own amount beyond what the item lacked carries on to the next item, without the
+            // item's percent bonus (CivFanatics, "Is chopping overflow overcorrected?"; 10/14 Paris T41: a builder
+            // at 24.5 of 33 and woods of 24 left 15.5, which with the turn's 20.5 made a second builder of 35)
+            ca.chop_waiting += (amount - lack).max(0.0);
             lack
         } else {
             ca.progress.insert(item, prog + boosted);
@@ -2400,7 +2408,16 @@ impl<'a> Planner<'a> {
             ca.chopped = None;
             ca.finished_by_chop = Some(done);
             ca.raw += waiting;
+            // replay: the city made the same unit again when the record trained more of it this turn than this city's
+            // first one and the other cities that finished it (10/14 Paris T41: two builders, Rouen's still in progress)
+            let again = item_kind(done) == Kind::Unit && self.rec.as_ref().and_then(|r| Some((r.turn(st.turn)?, r.turn(st.turn + 1)?))).map(|(a, b)| {
+                let delta = b.units_trained.get(&done).copied().unwrap_or(0) - a.units_trained.get(&done).copied().unwrap_or(0);
+                let others = a.cities.iter().filter(|c| c.name != n && c.current == Some(done))
+                    .filter(|c| b.city(c.name).map(|cb| cb.current != Some(done) || cb.progress < c.progress).unwrap_or(false)).count() as i64;
+                delta - others >= 2
+            }).unwrap_or(false);
             let opts = match next {
+                _ if again => vec![Choice::S(done)],
                 Some(rc) => rc.current.map(|x| vec![Choice::S(x)]).unwrap_or_default(),
                 None => self.buildable(st, ci),
             };

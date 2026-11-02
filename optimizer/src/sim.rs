@@ -116,6 +116,23 @@ pub fn current_cost(r: &Rules, acc: &PlayerAcc, cities: &[City], env: &Env, city
 /// `after_settler`: a city's worked tiles once a settler has taken one of its citizens, given the city, its engine,
 /// its yields before (with all its citizens) and the food a set of worked tiles adds this turn.
 #[allow(clippy::too_many_arguments)]
+/// ObsoletePolicies: a policy can no longer be slotted, and stops counting, once the policy replacing it is unlocked
+/// (Ilkum once Feudalism unlocks Serfdom). Rows conditioned on a great person class are not modelled.
+pub fn policy_obsolete(r: &Rules, pol: Sym, civics: &std::collections::BTreeSet<Sym>, techs: &std::collections::BTreeSet<Sym>) -> bool {
+    let o = r.tab("ObsoletePolicies");
+    let p = r.tab("Policies");
+    o.find("PolicyType", pol).iter().any(|&i| {
+        if o.v(i, "RequiresAvailableGreatPersonClass").sym().is_some_and(|x| !x.is_empty()) {
+            return false;
+        }
+        let Some(by) = o.v(i, "ObsoletePolicy").sym().filter(|x| !x.is_empty()) else { return false };
+        let j = p.first("PolicyType", by).unwrap_or_else(|| panic!("ObsoletePolicies: no policy {}", by.as_string()));
+        let pc = p.v(j, "PrereqCivic").sym().filter(|x| !x.is_empty());
+        let pt = p.v(j, "PrereqTech").sym().filter(|x| !x.is_empty());
+        pc.map(|x| civics.contains(&x)).unwrap_or(true) && pt.map(|x| techs.contains(&x)).unwrap_or(true)
+    })
+}
+
 pub fn step<'a>(r: &'a Rules, ec: &mut EngineCache<'a>, acc: &mut PlayerAcc, cities: &[City], env: &Env, env_research: &Env, units: &OMap<Sym, i64>, speed: Sym,
                 research: Option<Sym>, civic: Option<Sym>, boosts: &[Sym], routes: &[Route],
                 after_settler: &dyn Fn(&City, &Engine, &Y, &dyn Fn(&City) -> f64) -> City) -> Vec<Event> {
@@ -153,6 +170,9 @@ pub fn step<'a>(r: &'a Rules, ec: &mut EngineCache<'a>, acc: &mut PlayerAcc, cit
         let mut x = env.clone();
         x.techs = acc.techs.clone();
         x.civics = acc.civics.clone();
+        // a policy a civic finished now made obsolete no longer counts in the cities' processing (10/21 T40:
+        // Feudalism ended Agoge's +50% for Mediolanum's scout)
+        x.p.policies.retain(|p| !policy_obsolete(r, *p, &acc.civics, &acc.techs));
         env_new = x;
         &env_new
     };

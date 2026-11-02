@@ -1546,7 +1546,7 @@ print("ECONRUN front end loaded, mode " .. tostring(ECONRUN and ECONRUN.MODE))
 local econ_requested = false
 local econ_time = 0
 local function EconRunnerLoad()
-  if econ_requested or ECONRUN == nil or (ECONRUN.MODE ~= "experiment" and ECONRUN.MODE ~= "plan") then return end
+  if econ_requested or ECONRUN == nil or (ECONRUN.MODE ~= "experiment" and ECONRUN.MODE ~= "plan" and ECONRUN.MODE ~= "probe") then return end
   econ_requested = true
   local ok, err = pcall(function()
     local g = {}

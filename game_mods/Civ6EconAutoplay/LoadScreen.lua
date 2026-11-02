@@ -521,7 +521,7 @@ Initialize();
 -- ===========================================================================
 include("Civ6EconRunnerConfig")
 Events.LoadGameViewStateDone.Add(function()
-  if ECONRUN ~= nil and (ECONRUN.MODE == "experiment" or ECONRUN.MODE == "plan" or ECONRUN.MODE == "newgame" or ECONRUN.MODE == "newstart") then
+  if ECONRUN ~= nil and (ECONRUN.MODE == "experiment" or ECONRUN.MODE == "plan" or ECONRUN.MODE == "newgame" or ECONRUN.MODE == "newstart" or ECONRUN.MODE == "probe") then
     print("ECONRUN begin game")
     OnActivateButtonClicked()
   end

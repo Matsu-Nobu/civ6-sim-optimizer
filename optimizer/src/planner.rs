@@ -1116,6 +1116,12 @@ impl<'a> Planner<'a> {
             eprintln!("NEXT T{} {n} after {:?} trained {:?}/{:?} options {:?}", st.turn, done, done.map(|d| st.acc.units_trained.get(&d).copied().unwrap_or(0)), rec_n, opts);
         }
         let item = self.decide(st, "prod", Ent::S(n), opts, ch).and_then(|c| c.sym());
+        // a city that a settler left at size 1 cannot make another one: the production left over from the settler is
+        // lost when the player had queued one (10/24 Paris T11 lost 4; 10/21 Rome T9, with nothing queued, held its 3)
+        let low = st.cacc_mut(n).settled_pop.take().map(|p| p < 2).unwrap_or(false);
+        if low && item.map(|x| self.r.lookup_f("Units", "UnitType", x, "PopulationCost") > 0.0).unwrap_or(false) {
+            st.cacc_mut(n).overflow = 0.0;
+        }
         self.start_item(st, ci, item);
     }
 
@@ -2546,6 +2552,18 @@ impl<'a> Planner<'a> {
             }
         }
         let cities_now = st.cities.clone();
+        // the cities' yields of the state the turn begins with, as a save shows them (CIV6OPT_TRACE=staticyields)
+        if crate::envcfg::trace() == Some("staticyields") {
+            let e = self.engine(&env, &st.cities);
+            let sim_cities: Vec<City> = st.cities.iter().map(|c| { let mut x = c.clone(); x.population = st.cacc(c.name).population; x }).collect();
+            let scores = crate::amenities::amenity_scores(r, &sim_cities, &e, env.extra_luxuries);
+            for c in &st.cities {
+                let score = scores.iter().find(|(n, _)| *n == c.name).map(|x| x.1).unwrap_or(0.0);
+                let y = crate::sim::city_turn_yields(r, &e, c, st.cacc(c.name).population, &routes, crate::amenities::happiness(r, score).0, Some(score));
+                let base = crate::yields::city_yields(r, &e, c, &routes);
+                eprintln!("SY T{t_now} {} {:?} base {:?} amenity {score}", c.name, y, base);
+            }
+        }
         if crate::envcfg::trace().is_some() {
             eprintln!("TURN {t_now}");
         }

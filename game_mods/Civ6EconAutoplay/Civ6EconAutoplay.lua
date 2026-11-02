@@ -102,9 +102,107 @@ local function newstart()
   end)
 end
 
+-- MODE "probe": the cities of player ECONRUN.PROBE[i].player as the game computes them right after loading the save
+-- (worked plots' yields, city yields, food surplus, amenities, the item and its production), as ECONPROBE lines in
+-- Lua.log; then the next save of ECONRUN.PROBE is loaded (the saves are in the single-player folder).
+local function json(v)
+  local t = type(v)
+  if t == "table" then
+    local parts, n = {}, #v
+    if n > 0 then
+      for _, x in ipairs(v) do parts[#parts + 1] = json(x) end
+      return "[" .. table.concat(parts, ",") .. "]"
+    end
+    for k, x in pairs(v) do parts[#parts + 1] = string.format("%q:%s", tostring(k), json(x)) end
+    return "{" .. table.concat(parts, ",") .. "}"
+  elseif t == "string" then return string.format("%q", v)
+  elseif t == "nil" then return "null"
+  else return tostring(v) end
+end
+
+local function probe()
+  local turn = Game.GetCurrentGameTurn()
+  local idx = nil
+  for i, p in ipairs(ECONRUN.PROBE) do
+    if p.game_turn == turn and Players[p.player] ~= nil and PlayerConfigurations[p.player]:GetCivilizationTypeName() == p.civ then idx = i end
+  end
+  print("ECONPROBE " .. json({ kind = "loaded", turn = turn, index = idx }))
+  if idx ~= nil then
+    local pid = ECONRUN.PROBE[idx].player
+    -- the player's research and civics: cost and progress of each
+    local ok5, err5 = pcall(function()
+      local pl, techs, civics = Players[pid], {}, {}
+      for row in GameInfo.Technologies() do
+        techs[row.TechnologyType] = { pl:GetTechs():GetResearchCost(row.Index), pl:GetTechs():GetResearchProgress(row.Index) }
+      end
+      for row in GameInfo.Civics() do
+        civics[row.CivicType] = { pl:GetCulture():GetCultureCost(row.Index), pl:GetCulture():GetCulturalProgress(row.Index) }
+      end
+      print("ECONPROBE " .. json({ kind = "player", turn = turn, game = ECONRUN.PROBE[idx].game, techs = techs, civics = civics }))
+    end)
+    if not ok5 then print("ECONPROBE " .. json({ kind = "error", err = tostring(err5) })) end
+    local yields = {}
+    for row in GameInfo.Yields() do yields[#yields + 1] = row.YieldType end
+    for _, city in Players[pid]:GetCities():Members() do
+      local ok, err = pcall(function()
+        local plots = {}
+        for _, i in ipairs(Map.GetCityPlots():GetPurchasedPlots(city)) do
+          local p = Map.GetPlotByIndex(i)
+          if p:GetWorkerCount() > 0 or (p:GetX() == city:GetX() and p:GetY() == city:GetY()) then
+            local y = {}
+            for k = 0, #yields - 1 do y[#y + 1] = p:GetYield(k) end
+            plots[#plots + 1] = { x = p:GetX(), y = p:GetY(), workers = p:GetWorkerCount(), yields = y }
+          end
+        end
+        local cy, tips = {}, {}
+        for k = 0, #yields - 1 do
+          cy[#cy + 1] = city:GetYield(k)
+          local ok2, tip = pcall(function() return city:GetYieldToolTip(k) end)
+          tips[#tips + 1] = ok2 and (tostring(tip):gsub("[\r\n]", "|"):gsub("\\", "/")) or ""
+        end
+        local g, q = city:GetGrowth(), city:GetBuildQueue()
+        -- the costs and progress of the units the city could make, and of its current item
+        local costs = {}
+        for _, u in ipairs({ "UNIT_BUILDER", "UNIT_SETTLER", "UNIT_TRADER", "UNIT_HORSEMAN", "UNIT_HEAVY_CHARIOT" }) do
+          local row = GameInfo.Units[u]
+          if row ~= nil then
+            local ok3, c = pcall(function() return q:GetUnitCost(row.Index) end)
+            local ok4, p = pcall(function() return q:GetUnitProgress(row.Index) end)
+            costs[u] = { ok3 and c or nil, ok4 and p or nil }
+          end
+        end
+        -- (a method this game version lacks gives null)
+        local function try(o, m) local ok, v = pcall(function() return o[m](o) end); if ok then return v end; return nil end
+        print("ECONPROBE " .. json({ kind = "city", turn = turn, game = ECONRUN.PROBE[idx].game, name = city:GetName(),
+          pop = city:GetPopulation(), yields = cy, food_surplus = try(g, "GetFoodSurplus"), amenities = try(g, "GetAmenities"),
+          amenities_needed = try(g, "GetAmenitiesNeeded"), happiness = try(g, "GetHappiness"), item = try(q, "CurrentlyBuilding"),
+          production = try(q, "GetProductionYield"), growth_threshold = try(g, "GetGrowthThreshold"), food = try(g, "GetFood"),
+          plots = plots, tips = tips, costs = costs, held = try(q, "GetOverflow") }))
+      end)
+      if not ok then print("ECONPROBE " .. json({ kind = "error", err = tostring(err) })) end
+    end
+  end
+  local nxt = ECONRUN.PROBE[(idx or 0) + 1]
+  if nxt == nil then print("ECONPROBE " .. json({ kind = "done" })); return end
+  local g = {}
+  g.Location = SaveLocations.LOCAL_STORAGE
+  g.Type = SaveTypes.SINGLE_PLAYER
+  g.IsAutosave = false
+  g.IsQuicksave = false
+  g.Directory = SaveDirectories.DEFAULT
+  g.Name = nxt.name
+  print("ECONPROBE " .. json({ kind = "next", name = nxt.name }))
+  Network.LoadGame(g, ServerType.SERVER_TYPE_NONE)
+end
+
 local function start()
   if started or ECONRUN.MODE == "off" then return end
   started = true
+  if ECONRUN.MODE == "probe" then
+    local ok, err = pcall(probe)
+    if not ok then print("ECONPROBE " .. json({ kind = "error", err = tostring(err) })) end
+    return
+  end
   if ECONRUN.MODE == "newstart" then
     print("ECONRUN start mode newstart, human " .. tostring(Players[Game.GetLocalPlayer()]:IsHuman()))
     newstart()
@@ -130,5 +228,5 @@ local function start()
 end
 
 Events.LoadScreenClose.Add(start)
-Events.TurnBegin.Add(function() if ECONRUN.MODE ~= "off" then save_turn() end end)  -- a save every turn
+Events.TurnBegin.Add(function() if ECONRUN.MODE ~= "off" and ECONRUN.MODE ~= "probe" then save_turn() end end)  -- a save every turn
 LuaEvents.AutoPlayEnd.Add(on_autoplay_end)  -- raised by the engine AutoPlay_Manager

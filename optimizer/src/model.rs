@@ -233,6 +233,8 @@ pub struct CityAcc {
     pub raw: f64,
     /// harvests that gave the city food this turn
     pub harvests: u32,
+    /// the population left right after a unit made this turn took some (a settler)
+    pub settled_pop: Option<i32>,
 }
 
 #[derive(Clone, Debug, Default)]

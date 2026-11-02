@@ -351,7 +351,9 @@ pub fn step<'a>(r: &'a Rules, ec: &mut EngineCache<'a>, acc: &mut PlayerAcc, cit
                             pop_cost = 0;
                         }
                         if pop_cost != 0 {
-                            acc.cities.get_mut(&c.name).unwrap().population -= pop_cost;
+                            let ca = acc.cities.get_mut(&c.name).unwrap();
+                            ca.population -= pop_cost;
+                            ca.settled_pop = Some(ca.population);
                             settled = true;
                         }
                     }

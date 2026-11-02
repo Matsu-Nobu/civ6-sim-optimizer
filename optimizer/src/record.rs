@@ -352,7 +352,11 @@ impl Record {
                 let finished = a.cities.iter().filter(|ca| ca.current == Some(*u)
                     && b.city(ca.name).map(|cb| cb.current != Some(*u) || cb.progress < ca.progress).unwrap_or(false)).count() as i64;
                 let given = gifts.get(&t).map(|g| g.iter().filter(|x| *x == u).count() as i64).unwrap_or(0);
-                for _ in 0..(n - before - finished - given).max(0) {
+                // a city making it that harvested this turn can have finished another with the harvest (10/14 Paris
+                // T41: two builders; the treasury fell by 31, less than a builder's price)
+                let harvested = a.cities.iter().filter(|ca| ca.current == Some(*u)
+                    && self.acts.iter().any(|x| x.0 == t && x.1 == s!("harvest") && ca.owned.contains(&x.2))).count() as i64;
+                for _ in 0..(n - before - finished - given - harvested).max(0) {
                     let city = a.cities.first().map(|c| c.name).unwrap_or(Sym(0));
                     self.purchases.push((t, city, *u));
                 }

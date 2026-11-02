@@ -2931,6 +2931,16 @@ fn main() {
                         // there, such as a new government, show in them; the cities' food and progress are checked below)
                         note("yields (shown at the next turn's start, not in the save)", format!("F {:.1}/{gf} P {:.1}/{gp}", st.last_output[0], st.last_output[1]), &mut diffs);
                     }
+                    // units trained (the game counts bought and given ones too)
+                    let mut kinds: Vec<Sym> = r.units_trained.keys().chain(st.acc.units_trained.keys()).copied().collect();
+                    kinds.sort();
+                    kinds.dedup();
+                    for u in kinds {
+                        let (m, g) = (st.acc.units_trained.get(&u).copied().unwrap_or(0), r.units_trained.get(&u).copied().unwrap_or(0));
+                        if m != g {
+                            note("units trained", format!("{u} trained {m}/{g}"), &mut diffs);
+                        }
+                    }
                     for c in &st.cities {
                         let Some(rc) = r.city(c.name) else { continue };
                         let ca = st.cacc(c.name);

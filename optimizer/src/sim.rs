@@ -231,24 +231,17 @@ pub fn step<'a>(r: &'a Rules, ec: &mut EngineCache<'a>, acc: &mut PlayerAcc, cit
         if item.is_none() {
             ca.raw += y[1];
         }
-        // a harvest finished an item during the turn and the city went on with another (Planner: its next item at
-        // once): the finished one completes first, without the turn's production, which goes to the next one
-        let done_by_chop = ca.finished_by_chop.take();
-        for (k, item) in done_by_chop.into_iter().chain(item).enumerate() {
-            let finished = k == 0 && done_by_chop.is_some();
-            let ca = acc.cities.get_mut(&c.name).unwrap();
+        if let Some(item) = item {
             let pct = item_production_percent(r, &e, c, item);
             let flat = item_production_flat(&e, c, item);
-            // a chop finished it during the turn and the city has no next item yet: the turn's production waits for
-            // the next item (CivFanatics, "Is chopping overflow overcorrected?")
+            // a chop finished it during the turn: the turn's production goes to the next item (CivFanatics, "Is
+            // chopping overflow overcorrected?"), here a turn later
             // the carried-over production goes into the item with the item's percent bonus (10/18 Nantes T29: (4.5 + 9)
             // x 1.5; T18: 5 + 8 + 1)
             let before = ca.progress.get(&item).copied().unwrap_or(0.0);
             let applied = ca.overflow;
             let own = y[1] + flat;
-            let base = if finished {
-                0.0
-            } else if ca.chopped == Some(item) {
+            let base = if ca.chopped == Some(item) {
                 ca.raw += y[1];
                 0.0
             } else {
@@ -257,7 +250,6 @@ pub fn step<'a>(r: &'a Rules, ec: &mut EngineCache<'a>, acc: &mut PlayerAcc, cit
                 x
             };
             ca.chopped = None;
-            ca.chop_waiting = 0.0;
             let into = base * (1.0 + pct / 100.0);
             let applied_pct = if std::env::var("DBGK").is_ok() && item_kind(item) == Kind::District { 0.0 } else { pct };
             *ca.progress.entry_or(item, 0.0) += base * (1.0 + pct / 100.0) + applied * (1.0 + applied_pct / 100.0);
@@ -310,11 +302,11 @@ pub fn step<'a>(r: &'a Rules, ec: &mut EngineCache<'a>, acc: &mut PlayerAcc, cit
                     // the city grows with what it just finished (a building, or a district: e.g. BBG Autocracy's monument
                     // food for a city with a district)
                     if item_kind(item) == Kind::Building {
-                        let mut fc = food_city.clone().unwrap_or_else(|| c.clone());
+                        let mut fc = c.clone();
                         fc.buildings.push(item);
                         food_city = Some(fc);
                     } else if item_kind(item) == Kind::District {
-                        let mut fc = food_city.clone().unwrap_or_else(|| c.clone());
+                        let mut fc = c.clone();
                         for d in fc.districts.iter_mut() {
                             if d.dtype == item {
                                 d.complete = true;

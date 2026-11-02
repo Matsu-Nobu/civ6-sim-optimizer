@@ -1011,24 +1011,15 @@ impl<'a> Planner<'a> {
         out
     }
 
-    /// Chopped (harvested) production goes into the current item with the item's production percent (policies,
-    /// buildings); one it finishes completes and carries over only the plain amount beyond what it lacked
-    /// (CivFanatics, "Is chopping overflow overcorrected?").
-    /// A harvest's production into the city's item; returns the production the item got. What the item does not
-    /// need to finish is lost (the game's rule since Gathering Storm: only the turn's own production overflows).
-    fn chop_into(&self, st: &mut State, ci: usize, amount: f64, env: &Env) -> f64 {
+    /// A harvest's production goes into the city's item with the item's production percent (policies, buildings);
+    /// returns the production the item got. An item it finishes completes at once (the player acts after the
+    /// turn's processing), and what is left carries on to the next item, or is held for the item chosen later
+    /// (CivFanatics, "Is chopping overflow overcorrected?"; 10/14 Marseille T41: a campus at 43.1 of 58 and stone of
+    /// 26 left 11 held). A harvest while the city has no item is lost (10/21 Velitrae T62: the second woods).
+    fn chop_into(&self, st: &mut State, ci: usize, amount: f64, env: &Env, ch: &mut dyn Chooser) -> f64 {
         let c = &st.cities[ci];
         let n = c.name;
-        let item = c.current;
-        let ca = st.acc.cities.get(&n).cloned().unwrap_or_default();
-        if amount > 0.0 && ca.chopped.is_some() {
-            st.cacc_mut(n).chop_waiting += amount;
-            return amount;
-        }
-        let Some(item) = item.filter(|_| amount > 0.0) else {
-            st.cacc_mut(n).raw += amount;
-            return amount;
-        };
+        let Some(item) = c.current.filter(|_| amount > 0.0) else { return 0.0 };
         let e = self.eng(st);
         let pct = item_production_percent(self.r, &e, c, item);
         let Some(cost) = crate::sim::current_cost(self.r, &st.acc, &st.cities, env, n, item, self.speed) else {
@@ -1040,22 +1031,69 @@ impl<'a> Planner<'a> {
             eprintln!("CHOP T{} {n} {item} amount {amount} pct {pct} progress {:?} overflow {} cost {cost}", st.turn, ca.progress.get(&item), ca.overflow);
         }
         let ca = st.cacc_mut(n);
-        let prog = ca.progress.get(&item).copied().unwrap_or(0.0) + ca.overflow;
-        ca.overflow = 0.0;
+        let own = ca.progress.get(&item).copied().unwrap_or(0.0);
+        let prog = own + ca.overflow;
         let lack = (cost - prog).max(0.0);
         let boosted = amount * (1.0 + pct / 100.0);
-        if boosted >= lack {
-            ca.progress.insert(item, cost);
-            ca.chopped = Some(item);
-            // the harvest's own amount beyond what the item lacked carries on to the next item, without the
-            // item's percent bonus (CivFanatics, "Is chopping overflow overcorrected?"; 10/14 Paris T41: a builder
-            // at 24.5 of 33 and woods of 24 left 15.5, which with the turn's 20.5 made a second builder of 35)
-            ca.chop_waiting += (amount - lack).max(0.0);
-            lack
-        } else {
+        if boosted < lack {
             ca.progress.insert(item, prog + boosted);
-            boosted
+            ca.overflow = 0.0;
+            return boosted;
         }
+        // what carries on: the item's own progress and the harvest beyond the cost; production carried over into it
+        // does not carry on again (as sim::step's overflow; 10/14 Paris T41: 10.96 carried over and woods of 26 made
+        // a builder of 35 with nothing left; 10/21 Arretium T43: 37.9 and woods of 27 for 41 left 23.9)
+        ca.overflow = (own + amount - cost).max(0.0);
+        self.complete_now(st, ci, item, env, ch);
+        self.choose_next_item(st, ci, Some(item), ch);
+        lack
+    }
+
+    /// The city finishes `item` now (a harvest finished it during the player's actions): as the turn's processing
+    /// finishes one (sim::step), with its unit, building or district.
+    fn complete_now(&self, st: &mut State, ci: usize, item: Sym, env: &Env, ch: &mut dyn Chooser) {
+        let n = st.cities[ci].name;
+        let ca = st.cacc_mut(n);
+        ca.progress.insert(item, 0.0);
+        ca.locked_cost.remove(&item);
+        if item_kind(item) == Kind::Unit {
+            *st.acc.units_trained.entry_or(item, 0) += 1;
+            crate::strategic::pay(self.r, &mut st.acc, item, self.speed);
+            let e = self.eng(st);
+            let mut pop_cost = self.r.lookup_f("Units", "UnitType", item, "PopulationCost") as i32;
+            if e.city_effects(s!("EFFECT_ADJUST_CITY_SETTLER_CONSUME_POP"), n).iter().any(|x| x.args.is("Enabled", &["0", "false"])) {
+                pop_cost = 0;
+            }
+            st.cacc_mut(n).population -= pop_cost;
+        }
+        self.apply_completions(st, &[Event::Completed(n, item)], env, ch, st.turn);
+    }
+
+    /// The item a city goes on with after finishing `done` (during the turn's processing or the player's actions). Replay: the same unit again while the record trained more of it this turn than the
+    /// replay has (10/14 Paris T41: two builders), else the item of the record's next save, unless that save holds
+    /// production apart for it (the player chose it only after the turn; 10/14 Marseille T41).
+    fn choose_next_item(&self, st: &mut State, ci: usize, done: Option<Sym>, ch: &mut dyn Chooser) {
+        let n = st.cities[ci].name;
+        st.cities[ci].current = None;
+        let opts = match self.rec.as_ref().and_then(|r| r.turn(st.turn + 1)) {
+            Some(next) => {
+                let again = done.filter(|d| item_kind(*d) == Kind::Unit
+                    && st.acc.units_trained.get(d).copied().unwrap_or(0) < next.units_trained.get(d).copied().unwrap_or(0));
+                match (again, next.city(n)) {
+                    (Some(d), _) => vec![Choice::S(d)],
+                    (None, Some(rc)) if rc.held > 0.0 && rc.progress == 0.0 => vec![],
+                    (None, Some(rc)) => rc.current.map(|x| vec![Choice::S(x)]).unwrap_or_default(),
+                    (None, None) => vec![],
+                }
+            }
+            None => self.buildable(st, ci),
+        };
+        if crate::envcfg::trace_city(&n.as_string()) {
+            let rec_n = self.rec.as_ref().and_then(|r| r.turn(st.turn + 1)).and_then(|x| done.map(|d| x.units_trained.get(&d).copied().unwrap_or(0)));
+            eprintln!("NEXT T{} {n} after {:?} trained {:?}/{:?} options {:?}", st.turn, done, done.map(|d| st.acc.units_trained.get(&d).copied().unwrap_or(0)), rec_n, opts);
+        }
+        let item = self.decide(st, "prod", Ent::S(n), opts, ch).and_then(|c| c.sym());
+        self.start_item(st, ci, item);
     }
 
     /// What the player could buy now: items with gold or faith, the district a city is making, the best plots
@@ -1152,20 +1190,6 @@ impl<'a> Planner<'a> {
     }
 
     /// [(kind, yields)] a builder could harvest on p: "feature" (chop) or "resource".
-    /// The numbers of techs and civics the player has once this turn's research and civic complete, which a harvest's
-    /// yields count (the records: 10/14 Marseille T41's stone gave 26, not the 24 of the save's civics; 10/24 Nantes
-    /// T50's woods and marsh). Replay: the next save's; else the current research or civic completes when the last
-    /// turn's science or culture reaches what it lacks.
-    fn counts_after_turn(&self, st: &State) -> (usize, usize) {
-        let (techs, civics) = (st.acc.techs.len(), st.acc.civics.len());
-        if let Some(next) = self.rec.as_ref().or(self.tiles_rec.as_ref()).and_then(|r| r.turn(st.turn + 1)) {
-            return (techs.max(next.techs.len()), civics.max(next.civics.len()));
-        }
-        let era = self.sc.game_era(st.turn);
-        let done = |item: Option<Sym>, prog: &OMap<Sym, f64>, rate: f64| item.map(|x| prog.get(&x).copied().unwrap_or(0.0) + rate >= research_cost(self.r, x, self.speed, era)).unwrap_or(false);
-        (techs + done(st.research, &st.acc.tech_progress, st.last_output[3]) as usize, civics + done(st.civic, &st.acc.civic_progress, st.last_output[4]) as usize)
-    }
-
     fn harvest_yields(&self, e: &Engine, p: &Plot, st: &State, city: Option<Sym>) -> Vec<(Sym, Vec<(Sym, f64)>)> {
         let r = self.r;
         let mut out = vec![];
@@ -1173,7 +1197,7 @@ impl<'a> Planner<'a> {
         // replay: the record removed a feature during the turn its tech completed (10/19 Cumana T41, rainforest with
         // Bronze Working); its next save has the tech
         let next: Vec<Sym> = self.rec.as_ref().or(self.tiles_rec.as_ref()).and_then(|r| r.turn(st.turn + 1)).map(|rt| rt.techs.clone()).unwrap_or_default();
-        let (n_techs, n_civics) = self.counts_after_turn(st);
+        let (n_techs, n_civics) = (techs.len(), st.acc.civics.len());
         if let Some(f) = p.feature {
             let tech_row = r.lookup("Features", "FeatureType", f, "RemoveTech");
             let rows = r.tab("Feature_Removes").find("FeatureType", f);
@@ -1788,7 +1812,7 @@ impl<'a> Planner<'a> {
 
     /// Plot `pi` of city `ci` harvested (its feature or resource, `what`): the yields go to the city (the production
     /// into its item, Planner::chop_into). False when the plot has nothing of that kind to harvest.
-    fn harvest_at(&self, st: &mut State, ci: usize, pi: usize, what: Sym, env: &Env) -> bool {
+    fn harvest_at(&self, st: &mut State, ci: usize, pi: usize, what: Sym, env: &Env, ch: &mut dyn Chooser) -> bool {
         let cname = st.cities[ci].name;
         let p = st.cities[ci].owned[pi].clone();
         let _g = crate::prof::start(31);
@@ -1802,7 +1826,7 @@ impl<'a> Planner<'a> {
             eprintln!("HARVEST T{} {cname} {:?} {:?} {ys:?}", st.turn, p.xy(), what);
         }
         // the production counts as far as the item used it
-        let used = self.chop_into(st, ci, get_y(&ys, s!("YIELD_PRODUCTION")), env);
+        let used = self.chop_into(st, ci, get_y(&ys, s!("YIELD_PRODUCTION")), env, ch);
         st.harvest_sum[0] += get_y(&ys, s!("YIELD_FOOD"));
         st.harvest_sum[1] += used;
         st.harvest_sum[2] += get_y(&ys, s!("YIELD_GOLD"));
@@ -1811,8 +1835,108 @@ impl<'a> Planner<'a> {
         if get_y(&ys, s!("YIELD_FOOD")) > 0.0 {
             ca.harvests += 1;
         }
+        // the city grows at once when the harvest fills its store (10/19 Quito T42: 44 food, population 7 to 8 with
+        // 6 left)
+        loop {
+            let ca = st.cacc_mut(cname);
+            let need = crate::growth::growth_threshold(self.r, ca.population, self.speed);
+            if ca.food_store < need {
+                break;
+            }
+            ca.food_store -= need;
+            ca.population += 1;
+        }
         st.acc.gold += get_y(&ys, s!("YIELD_GOLD"));
         true
+    }
+
+    /// The state after the items `events` tells done: units made (a builder acts in the turn, a settler gets its
+    /// site, a trader its route), buildings and districts added with their grants.
+    fn apply_completions(&self, st: &mut State, events: &[Event], env: &Env, ch: &mut dyn Chooser, t_now: i64) {
+        let r = self.r;
+        for ev in events {
+            if let Event::Researched(t) = ev {
+                if t.starts_with("CIVIC_") {
+                    st.policy_dirty = true;
+                }
+            }
+            let (name, item, completed) = match ev {
+                Event::Completed(n, i) => (*n, *i, true),
+                Event::CompletedPurchase(n, i) => (*n, *i, false),
+                _ => continue,
+            };
+            let ci = st.cities.iter().position(|c| c.name == name).unwrap();
+            if completed {
+                st.cities[ci].current = None;
+            }
+            if item == s!("UNIT_BUILDER") {
+                let eng = self.engine(env, &st.cities);
+                let charges = builder_charges(r, &eng, s!("UNIT_BUILDER"), name);
+                st.builders.push(Builder { charges, at: st.cities[ci].center, ready: t_now, id: None, pending: None, idle: None });
+            } else if item == s!("UNIT_SETTLER") {
+                let origin = st.cities[ci].center;
+                let opts = self.settle_sites(st, origin);
+                // a settler's site is numbered per city that made it, so one more settler elsewhere keeps the others'
+                st.settle_origins.push(name);
+                let ent = if LEGACY_IDS.load(std::sync::atomic::Ordering::Relaxed) { Ent::S(Sym(0)) } else { Ent::S(name) };
+                let target = self.decide(st, "settle", ent, opts, ch);
+                let target = match target { Some(Choice::Xy(x, y)) => Some((x, y)), _ => None };
+                let mut label = target.and_then(|t| self.s.site_names.iter().find(|(xy, _)| *xy == t).map(|(_, n)| *n));
+                if let Some(l) = label {
+                    if st.cities.iter().any(|c| c.name == l) {
+                        label = None;
+                    }
+                }
+                if let Some(t) = target {
+                    if let Some(k) = self.travel(st, origin, t, "UNIT_SETTLER") {
+                        st.settler_counter += 1;
+                        // replay (validation, or the recorded player's choices replayed): the city is founded on the
+                        // recorded turn (the settler's actual path is not recorded)
+                        let arrive = match self.rec.as_ref().or(self.tiles_rec.as_ref()).and_then(|r| r.sites.iter().find(|x| x.2 == t)) {
+                            Some(x) => (x.0 + 1).max(t_now + 1),
+                            None => t_now + 1 + k,
+                        };
+                        st.settlers.push(Settler { from: name, target: Some(t), name: label, arrive, id: st.settler_counter });
+                    }
+                }
+            } else if item == s!("UNIT_TRADER") {
+                let t = self.start_route(st, name, ch);
+                st.traders.push(t);
+            } else if item_kind(item) == Kind::Unit {
+                *st.units.entry_or(item, 0) += 1;
+            } else if item_kind(item) == Kind::Building {
+                st.cities[ci].buildings.push(item);
+                for x in st.cities[ci].districts.iter_mut() {
+                    if x.dtype == s!("DISTRICT_WONDER") && x.plot.wonder == Some(item) {
+                        x.complete = true;
+                    }
+                }
+            } else if item_kind(item) == Kind::District {
+                for x in st.cities[ci].districts.iter_mut() {
+                    if x.dtype == item {
+                        x.complete = true;
+                    }
+                }
+                if item == s!("DISTRICT_GOVERNMENT") {
+                    st.gov_plaza = true;
+                }
+            }
+        }
+        for ev in events {
+            match ev {
+                Event::Completed(n, i) | Event::CompletedPurchase(n, i) if matches!(item_kind(*i), Kind::Building | Kind::District) => {
+                    let (table, col) = if item_kind(*i) == Kind::Building { ("BuildingModifiers", "BuildingType") } else { ("DistrictModifiers", "DistrictType") };
+                    self.apply_grants(st, table, col, *i, Some(*n), env, ch);
+                    let ci = st.cities.iter().position(|c| c.name == *n).unwrap();
+                    self.on_completed(st, ci, *i, env);
+                }
+                Event::Researched(t) => {
+                    let (table, col) = if t.starts_with("TECH_") { ("TechnologyModifiers", "TechnologyType") } else { ("CivicModifiers", "CivicType") };
+                    self.apply_grants(st, table, col, *t, None, env, ch);
+                }
+                _ => {}
+            }
+        }
     }
 
     /// The city starts making `item`: a district's or a wonder's plot is chosen (replay: where the recorded city put it).
@@ -2100,71 +2224,6 @@ impl<'a> Planner<'a> {
                 st.acc.faith -= cost;
             }
         }
-        // settlers arriving
-        let arriving: Vec<Settler> = st.settlers.iter().filter(|s| s.arrive <= t_now).cloned().collect();
-        let mut founding_harvest = [0.0; 3];
-        for s in arriving {
-            st.settlers.retain(|x| x != &s);
-            let Some(target) = s.target else { continue };
-            if self.w.site_score(target, &st.cities, &st.acc.techs, &st.acc.civics) <= 0.0 {
-                continue;
-            }
-            let name = s.name.unwrap_or_else(|| sym(&format!("CITY_{}", st.cities.len() + 1)));
-            let mut c = self.found_city(st, name, target, &env);
-            let mut acc = CityAcc { population: 1, ..Default::default() };
-            // replay: the record founded it during the last turn and the save of this turn shows it; the founding
-            // builder's harvests of that turn are done (10/21 Aquileia T44: wheat harvested, population 2 and 11 food)
-            let mut harvested = 0;
-            if let Some(rc) = self.rec.as_ref().or(self.tiles_rec.as_ref()).and_then(|r| r.turn(t_now)).and_then(|rt| rt.city(name)) {
-                acc.population = rc.pop as i32;
-                acc.food_store = rc.food;
-                let rec = self.rec.as_ref().or(self.tiles_rec.as_ref()).unwrap();
-                for &(t, kind, xy, what) in &rec.acts {
-                    if t + 1 != t_now || kind != s!("harvest") {
-                        continue;
-                    }
-                    if let Some(p) = c.owned.iter_mut().find(|p| p.xy() == xy) {
-                        // the harvest's yields are in the recorded population and food store; they count in the
-                        // turn's output as every other harvest's do (Planner::advance)
-                        let ys = self.harvest_yields(&self.eng(st), p, st, Some(name)).into_iter().find(|(k, _)| *k == what).map(|(_, y)| y);
-                        for (k, y) in ["YIELD_FOOD", "YIELD_PRODUCTION", "YIELD_GOLD"].iter().enumerate() {
-                            founding_harvest[k] += ys.as_ref().map(|v| get_y(v, sym(y))).unwrap_or(0.0);
-                        }
-                        if what == s!("feature") { p.feature = None } else { p.resource = None }
-                        harvested += 1;
-                    }
-                }
-                c.population = acc.population;
-            }
-            st.cities.push(c);
-            st.acc.cities.insert(name, acc);
-            // a new city's road to the capital (Rome: EFFECT_GRANT_CITY_ROAD_TO_CAPITAL)
-            if !self.eng(st).city_effects(s!("EFFECT_GRANT_CITY_ROAD_TO_CAPITAL"), name).is_empty() {
-                if let Some(cap) = st.cities.iter().find(|x| x.capital).map(|x| x.center) {
-                    self.lay_road(st, target, cap);
-                }
-            }
-            st.border.insert(name, (0.0, 0));
-            st.focus.insert(name, s!("balanced"));
-            // units every new city gets (BBG Ancestral Hall: a builder, which acts on the founding turn)
-            for (u, n) in self.founding_units(st) {
-                for _ in 0..n {
-                    if u == s!("UNIT_BUILDER") {
-                        let e = self.engine(&env, &st.cities);
-                        let charges = builder_charges(r, &e, u, name) - std::mem::take(&mut harvested);
-                        if charges <= 0 {
-                            continue;
-                        }
-                        st.builders.push(Builder { charges, at: target, ready: t_now, id: None, pending: None, idle: None });
-                    } else {
-                        *st.units.entry_or(u, 0) += 1;
-                    }
-                }
-            }
-        }
-        for k in 0..3 {
-            st.harvest_sum[k] += founding_harvest[k];
-        }
         // replay: the cities the record took from other players, as its save of this turn shows them
         if self.rec.is_some() || self.tiles_rec.is_some() {
             for (c, acc) in self.sc.captured.get(&t_now).cloned().unwrap_or_default() {
@@ -2307,179 +2366,6 @@ impl<'a> Planner<'a> {
             self.start_item(st, ci, item);
         }
         crate::prof::lap(&mut lap, 21);
-        // builders
-        let mut bi = 0;
-        while bi < st.builders.len() {
-            if st.builders[bi].id.is_none() {
-                // a builder's id comes from the turn it can act and where it was made (a city center, a new city's
-                // site), not from how many builders came before it: a plan that makes one more builder keeps the
-                // ids, and so the planned actions, of the others
-                st.builder_counter += 1;
-                let b = &st.builders[bi];
-                let base = b.ready * 1_000_000 + b.at.0 as i64 * 1000 + b.at.1 as i64;
-                let k = st.builder_bases.get(&base).copied().unwrap_or(0);
-                st.builder_bases.insert(base, k + 1);
-                let stable = base * 10 + k;
-                st.builder_ids.push((st.builder_counter, stable));
-                st.builders[bi].id = Some(if LEGACY_IDS.load(std::sync::atomic::Ordering::Relaxed) { st.builder_counter } else { stable });
-            }
-            if st.builders[bi].ready > t_now {
-                bi += 1;
-                continue;
-            }
-            let act = if let Some(p) = st.builders[bi].pending.take() {
-                p
-            } else {
-                // a builder that chose to wait decides again once something it could use changes
-                let mark = { let _g = crate::prof::start(28); self.idle_mark(st) };
-                // (a replay follows the record's actions, whose turns do not depend on such changes)
-                if self.rec.is_none() && self.tiles_rec.is_none() && st.builders[bi].idle.as_ref() == Some(&mark) {
-                    bi += 1;
-                    continue;
-                }
-                st.builders[bi].idle = None;
-                let opts = self.builder_options(st, &env, st.builders[bi].at);
-                if crate::envcfg::trace() == Some("builderopts") {
-                    eprintln!("BOPTS T{t_now} builder {bi} at {:?} charges {} {:?}", st.builders[bi].at, st.builders[bi].charges, opts);
-                }
-                // a builder's decisions are numbered per builder (one builder's change does not shift the others')
-                let bid = st.builders[bi].id.unwrap_or(0);
-                let act = { let _g = crate::prof::start(29); self.decide(st, "builder", Ent::I(bid), opts, ch) };
-                if act.is_none() || act == Some(Choice::Wait) {
-                    st.builders[bi].idle = Some(mark);
-                    bi += 1;
-                    continue;
-                }
-                let act = act.unwrap();
-                let Choice::Act(_, _, x, y, _) = act else { bi += 1; continue };
-                // replay: the recorded builder did it on that turn (its walk is not in the saves)
-                let k = if self.rec.is_some() || self.tiles_rec.is_some() { Some(0) } else { let _g = crate::prof::start(30); self.travel(st, st.builders[bi].at, (x, y), "UNIT_BUILDER") };
-                let Some(k) = k else { bi += 1; continue };
-                if k > 0 {
-                    st.builders[bi].ready = t_now + k;
-                    st.builders[bi].at = (x, y);
-                    st.builders[bi].pending = Some(act);
-                    bi += 1;
-                    continue;
-                }
-                act
-            };
-            let Choice::Act(kind, cname, x, y, what) = act.clone() else { bi += 1; continue };
-            if crate::envcfg::trace_city(&cname.as_string()) {
-                eprintln!("ACT T{t_now} {kind} {cname} {:?} {what} builder {bi} charges {}", (x, y), st.builders[bi].charges);
-            }
-            st.builders[bi].at = (x, y);
-            let ci = st.cities.iter().position(|c| c.name == cname);
-            if kind == s!("rush") {
-                if ci.is_none() || st.cities[ci.unwrap()].current != Some(what) {
-                    bi += 1;
-                    continue;
-                }
-                let mut env_cost = env.clone();
-                env_cost.units_trained = st.acc.units_trained.clone();
-                if let Some(cost) = item_cost(r, &env_cost, what, self.speed, None, false) {
-                    if cost != 0.0 {
-                        let pct = self.rush_percent(&self.engine(&env, &st.cities), Some(what));
-                        st.cacc_mut(cname).overflow += cost * pct / 100.0;
-                    }
-                }
-                st.builders[bi].charges -= 1;
-                bi += 1;
-                continue;
-            }
-            let Some(ci) = ci else {
-                if kind == s!("improve") && (self.rec.is_some() || self.tiles_rec.is_some()) && !st.improving.iter().any(|i| i.1 == (x, y)) {
-                    st.improving.push((cname, (x, y), what));
-                    st.builders[bi].charges -= 1;
-                }
-                bi += 1;
-                continue;
-            };
-            let Some(pi) = st.cities[ci].owned.iter().position(|p| p.xy() == (x, y)) else {
-                if kind == s!("improve") && !st.improving.iter().any(|i| i.1 == (x, y)) {
-                    st.improving.push((cname, (x, y), what));
-                    st.builders[bi].charges -= 1;
-                }
-                bi += 1;
-                continue;
-            };
-            {
-                let p = &st.cities[ci].owned[pi];
-                let improving = st.improving.iter().any(|i| i.1 == (x, y));
-                if (kind == s!("improve") || kind == s!("plant")) && (p.improvement.is_some() || improving || (kind == s!("plant") && p.feature.is_some())) {
-                    bi += 1;
-                    continue;
-                }
-            }
-            if kind == s!("improve") {
-                st.improving.push((cname, (x, y), what));
-            } else if kind == s!("plant") {
-                st.cities[ci].owned[pi].feature = Some(what);
-            } else {
-                if !self.harvest_at(st, ci, pi, what, &env) {
-                    bi += 1;
-                    continue;
-                }
-            }
-            st.builders[bi].charges -= 1;
-            bi += 1;
-        }
-        st.builders.retain(|b| b.charges > 0);
-        // replay: the record's harvests of this turn that no builder of the turn's start did were done by a builder
-        // made during the turn (10/14 Paris T41: its new builder harvested woods, which finished a second builder)
-        if let Some(rec) = self.rec.as_ref() {
-            for &(t, kind, xy, what) in &rec.acts {
-                if t != t_now || kind != s!("harvest") {
-                    continue;
-                }
-                let Some(ci) = st.cities.iter().position(|c| c.owned.iter().any(|p| p.xy() == xy)) else { continue };
-                let pi = st.cities[ci].owned.iter().position(|p| p.xy() == xy).unwrap();
-                self.harvest_at(st, ci, pi, what, &env);
-            }
-        }
-        // a harvest finished the city's item during the turn: the city goes on with its next item at once, which gets
-        // the later harvests and the turn's production (the saves: 10/21 Arretium T43 finished two builders, with
-        // woods and stone; Antium T47 a bath and a builder); replay: the item the record's next save has, unless that
-        // save holds production for it, made while the city had no item (10/21 Velitrae T62: the second woods' 42
-        // lost, the turn's 15 held)
-        for ci in 0..st.cities.len() {
-            let n = st.cities[ci].name;
-            let Some(done) = st.acc.cities.get(&n).and_then(|ca| ca.chopped) else { continue };
-            if st.cities[ci].current != Some(done) {
-                continue;
-            }
-            let next = self.rec.as_ref().and_then(|r| r.turn(st.turn + 1)).and_then(|rt| rt.city(n));
-            let waiting = std::mem::take(&mut st.cacc_mut(n).chop_waiting);
-            if next.map(|rc| rc.held > 0.0).unwrap_or(false) {
-                continue;
-            }
-            st.cities[ci].current = None;
-            let ca = st.cacc_mut(n);
-            ca.chopped = None;
-            ca.finished_by_chop = Some(done);
-            ca.raw += waiting;
-            // replay: the city made the same unit again when the record trained more of it this turn than this city's
-            // first one and the other cities that finished it (10/14 Paris T41: two builders, Rouen's still in progress)
-            let again = item_kind(done) == Kind::Unit && self.rec.as_ref().and_then(|r| Some((r.turn(st.turn)?, r.turn(st.turn + 1)?))).map(|(a, b)| {
-                let delta = b.units_trained.get(&done).copied().unwrap_or(0) - a.units_trained.get(&done).copied().unwrap_or(0);
-                let others = a.cities.iter().filter(|c| c.name != n && c.current == Some(done))
-                    .filter(|c| b.city(c.name).map(|cb| cb.current != Some(done) || cb.progress < c.progress).unwrap_or(false)).count() as i64;
-                delta - others >= 2
-            }).unwrap_or(false);
-            let opts = match next {
-                _ if again => vec![Choice::S(done)],
-                Some(rc) => rc.current.map(|x| vec![Choice::S(x)]).unwrap_or_default(),
-                None => self.buildable(st, ci),
-            };
-            let item = self.decide(st, "prod", Ent::S(n), opts, ch).and_then(|c| c.sym());
-            self.start_item(st, ci, item);
-        }
-        if !st.builders.is_empty() {
-            let _g = crate::prof::start(32);
-            for ci in 0..st.cities.len() {
-                self.assign(st, ci, &env);
-            }
-        }
         crate::prof::lap(&mut lap, 22);
         // purchase: as many as the player chooses in a turn (each item once per city), the options offered again
         // after each (gold, faith and tile prices change)
@@ -2771,134 +2657,10 @@ impl<'a> Planner<'a> {
                 }
             }
         }
-        for ev in &events {
-            if let Event::Researched(t) = ev {
-                if t.starts_with("CIVIC_") {
-                    st.policy_dirty = true;
-                }
-            }
-            let (name, item, completed) = match ev {
-                Event::Completed(n, i) => (*n, *i, true),
-                Event::CompletedPurchase(n, i) => (*n, *i, false),
-                _ => continue,
-            };
-            let ci = st.cities.iter().position(|c| c.name == name).unwrap();
-            if completed {
-                st.cities[ci].current = None;
-            }
-            if item == s!("UNIT_BUILDER") {
-                let eng = self.engine(&env, &st.cities);
-                let charges = builder_charges(r, &eng, s!("UNIT_BUILDER"), name);
-                st.builders.push(Builder { charges, at: st.cities[ci].center, ready: t_now + 1, id: None, pending: None, idle: None });
-            } else if item == s!("UNIT_SETTLER") {
-                let origin = st.cities[ci].center;
-                let opts = self.settle_sites(st, origin);
-                // a settler's site is numbered per city that made it, so one more settler elsewhere keeps the others'
-                st.settle_origins.push(name);
-                let ent = if LEGACY_IDS.load(std::sync::atomic::Ordering::Relaxed) { Ent::S(Sym(0)) } else { Ent::S(name) };
-                let target = self.decide(st, "settle", ent, opts, ch);
-                let target = match target { Some(Choice::Xy(x, y)) => Some((x, y)), _ => None };
-                let mut label = target.and_then(|t| self.s.site_names.iter().find(|(xy, _)| *xy == t).map(|(_, n)| *n));
-                if let Some(l) = label {
-                    if st.cities.iter().any(|c| c.name == l) {
-                        label = None;
-                    }
-                }
-                if let Some(t) = target {
-                    if let Some(k) = self.travel(st, origin, t, "UNIT_SETTLER") {
-                        st.settler_counter += 1;
-                        // replay (validation, or the recorded player's choices replayed): the city is founded on the
-                        // recorded turn (the settler's actual path is not recorded)
-                        let arrive = match self.rec.as_ref().or(self.tiles_rec.as_ref()).and_then(|r| r.sites.iter().find(|x| x.2 == t)) {
-                            Some(x) => (x.0 + 1).max(t_now + 1),
-                            None => t_now + 1 + k,
-                        };
-                        st.settlers.push(Settler { from: name, target: Some(t), name: label, arrive, id: st.settler_counter });
-                    }
-                }
-            } else if item == s!("UNIT_TRADER") {
-                let t = self.start_route(st, name, ch);
-                st.traders.push(t);
-            } else if item_kind(item) == Kind::Unit {
-                *st.units.entry_or(item, 0) += 1;
-            } else if item_kind(item) == Kind::Building {
-                st.cities[ci].buildings.push(item);
-                for x in st.cities[ci].districts.iter_mut() {
-                    if x.dtype == s!("DISTRICT_WONDER") && x.plot.wonder == Some(item) {
-                        x.complete = true;
-                    }
-                }
-            } else if item_kind(item) == Kind::District {
-                for x in st.cities[ci].districts.iter_mut() {
-                    if x.dtype == item {
-                        x.complete = true;
-                    }
-                }
-                if item == s!("DISTRICT_GOVERNMENT") {
-                    st.gov_plaza = true;
-                }
-            }
-        }
-        for ev in &events {
-            match ev {
-                Event::Completed(n, i) | Event::CompletedPurchase(n, i) if matches!(item_kind(*i), Kind::Building | Kind::District) => {
-                    let (table, col) = if item_kind(*i) == Kind::Building { ("BuildingModifiers", "BuildingType") } else { ("DistrictModifiers", "DistrictType") };
-                    self.apply_grants(st, table, col, *i, Some(*n), &env, ch);
-                    let ci = st.cities.iter().position(|c| c.name == *n).unwrap();
-                    self.on_completed(st, ci, *i, &env);
-                }
-                Event::Researched(t) => {
-                    let (table, col) = if t.starts_with("TECH_") { ("TechnologyModifiers", "TechnologyType") } else { ("CivicModifiers", "CivicType") };
-                    self.apply_grants(st, table, col, *t, None, &env, ch);
-                }
-                _ => {}
-            }
-        }
+        self.apply_completions(st, &events, &env, ch, t_now);
         crate::prof::lap(&mut lap, 25);
         self.great_people(st, ch);
         self.rome_free_buildings(st);
-        // replay: buildings and districts the next save shows done are done (bought, rushed, or finished on a
-        // carry-over the saves do not hold); noted, so validation tells them from production the model missed
-        if let Some(next) = self.rec.as_ref().or(self.tiles_rec.as_ref()).and_then(|r| r.turn(t_now + 1)) {
-            for ci in 0..st.cities.len() {
-                let name = st.cities[ci].name;
-                let Some(rc) = next.city(name) else { continue };
-                for b in rc.buildings.clone() {
-                    if !st.cities[ci].buildings.contains(&b) {
-                        st.cities[ci].buildings.push(b);
-                        if st.cities[ci].current == Some(b) {
-                            st.cities[ci].current = None;
-                        }
-                        st.cacc_mut(name).progress.remove(&b);
-                        self.rec_notes.borrow_mut().push((t_now, format!("{name} {b}: done by the record (bought or carried over)")));
-                    }
-                }
-                for (dt, xy, done) in rc.districts.clone() {
-                    if !done || dt == s!("DISTRICT_CITY_CENTER") || dt == s!("DISTRICT_WONDER") {
-                        continue;
-                    }
-                    let have = st.cities[ci].districts.iter().position(|d| d.dtype == dt);
-                    match have {
-                        Some(i) if st.cities[ci].districts[i].complete => {}
-                        Some(i) => {
-                            st.cities[ci].districts[i].complete = true;
-                            if st.cities[ci].current == Some(dt) {
-                                st.cities[ci].current = None;
-                            }
-                            st.cacc_mut(name).progress.remove(&dt);
-                            self.rec_notes.borrow_mut().push((t_now, format!("{name} {dt}: done by the record (bought or carried over)")));
-                        }
-                        None => {
-                            if let Some(p) = st.cities[ci].owned_at(xy).cloned() {
-                                let nb = self.neighbours_with_districts(st, xy);
-                                st.cities[ci].districts.push(District { dtype: dt, x: xy.0, y: xy.1, complete: true, plot: p, neighbours: nb });
-                                self.rec_notes.borrow_mut().push((t_now, format!("{name} {dt}: done by the record (bought or carried over)")));
-                            }
-                        }
-                    }
-                }
-            }
-        }
         crate::prof::lap(&mut lap, 26);
         // borders
         let mut owned_all: HashSet<XY> = st.cities.iter().flat_map(|c| c.owned.iter().map(|p| p.xy())).collect();
@@ -2942,6 +2704,251 @@ impl<'a> Planner<'a> {
                     st.cities[ci].owned.push(p);
                     self.refresh_near(&mut st.cities[ci]);
                     owned_all.insert(xy);
+                }
+            }
+        }
+        // the player's actions after the turn's processing: a multiplayer save is made before it, so between two
+        // saves the cities produce first and the builders act after (10/14 Paris T43: a horseman from the turn's
+        // production, a second from a harvest, the third at 39 of 40 from another); a builder made this turn acts,
+        // and a harvest counts the techs and civics finished this turn. A city that finished its item goes on with
+        // the next one first.
+        let env = self.player_env(st);
+        for ci in 0..st.cities.len() {
+            if st.cities[ci].current.is_none() {
+                let n = st.cities[ci].name;
+                let done = events.iter().rev().find_map(|ev| match ev { Event::Completed(c, i) if *c == n => Some(*i), _ => None });
+                self.choose_next_item(st, ci, done, ch);
+            }
+        }
+        // settlers arriving: a city is founded during the player's actions, so the next save shows it
+        let arriving: Vec<Settler> = st.settlers.iter().filter(|s| s.arrive <= t_now + 1).cloned().collect();
+        let mut founding_harvest = [0.0; 3];
+        for s in arriving {
+            st.settlers.retain(|x| x != &s);
+            let Some(target) = s.target else { continue };
+            if self.w.site_score(target, &st.cities, &st.acc.techs, &st.acc.civics) <= 0.0 {
+                continue;
+            }
+            let name = s.name.unwrap_or_else(|| sym(&format!("CITY_{}", st.cities.len() + 1)));
+            let mut c = self.found_city(st, name, target, &env);
+            let mut acc = CityAcc { population: 1, ..Default::default() };
+            // replay: the record's next save shows it; the founding builder's harvests of the turn are done (10/21 Aquileia T44: wheat harvested, population 2 and 11 food)
+            let mut harvested = 0;
+            if let Some(rc) = self.rec.as_ref().or(self.tiles_rec.as_ref()).and_then(|r| r.turn(t_now + 1)).and_then(|rt| rt.city(name)) {
+                acc.population = rc.pop as i32;
+                acc.food_store = rc.food;
+                let rec = self.rec.as_ref().or(self.tiles_rec.as_ref()).unwrap();
+                for &(t, kind, xy, what) in &rec.acts {
+                    if t != t_now || kind != s!("harvest") {
+                        continue;
+                    }
+                    if let Some(p) = c.owned.iter_mut().find(|p| p.xy() == xy) {
+                        // the harvest's yields are in the recorded population and food store; they count in the
+                        // turn's output as every other harvest's do (Planner::advance)
+                        let ys = self.harvest_yields(&self.eng(st), p, st, Some(name)).into_iter().find(|(k, _)| *k == what).map(|(_, y)| y);
+                        for (k, y) in ["YIELD_FOOD", "YIELD_PRODUCTION", "YIELD_GOLD"].iter().enumerate() {
+                            founding_harvest[k] += ys.as_ref().map(|v| get_y(v, sym(y))).unwrap_or(0.0);
+                        }
+                        if what == s!("feature") { p.feature = None } else { p.resource = None }
+                        harvested += 1;
+                    }
+                }
+                c.population = acc.population;
+            }
+            st.cities.push(c);
+            st.acc.cities.insert(name, acc);
+            // a new city's road to the capital (Rome: EFFECT_GRANT_CITY_ROAD_TO_CAPITAL)
+            if !self.eng(st).city_effects(s!("EFFECT_GRANT_CITY_ROAD_TO_CAPITAL"), name).is_empty() {
+                if let Some(cap) = st.cities.iter().find(|x| x.capital).map(|x| x.center) {
+                    self.lay_road(st, target, cap);
+                }
+            }
+            st.border.insert(name, (0.0, 0));
+            st.focus.insert(name, s!("balanced"));
+            // units every new city gets (BBG Ancestral Hall: a builder, which acts on the founding turn)
+            for (u, n) in self.founding_units(st) {
+                for _ in 0..n {
+                    if u == s!("UNIT_BUILDER") {
+                        let e = self.engine(&env, &st.cities);
+                        let charges = builder_charges(r, &e, u, name) - std::mem::take(&mut harvested);
+                        if charges <= 0 {
+                            continue;
+                        }
+                        st.builders.push(Builder { charges, at: target, ready: t_now, id: None, pending: None, idle: None });
+                    } else {
+                        *st.units.entry_or(u, 0) += 1;
+                    }
+                    // the game counts them among the units trained (10/21 Velitrae T43's builder)
+                    *st.acc.units_trained.entry_or(u, 0) += 1;
+                }
+            }
+        }
+        for k in 0..3 {
+            st.harvest_sum[k] += founding_harvest[k];
+        }
+        // builders
+        let mut bi = 0;
+        while bi < st.builders.len() {
+            if st.builders[bi].id.is_none() {
+                // a builder's id comes from the turn it can act and where it was made (a city center, a new city's
+                // site), not from how many builders came before it: a plan that makes one more builder keeps the
+                // ids, and so the planned actions, of the others
+                st.builder_counter += 1;
+                let b = &st.builders[bi];
+                let base = b.ready * 1_000_000 + b.at.0 as i64 * 1000 + b.at.1 as i64;
+                let k = st.builder_bases.get(&base).copied().unwrap_or(0);
+                st.builder_bases.insert(base, k + 1);
+                let stable = base * 10 + k;
+                st.builder_ids.push((st.builder_counter, stable));
+                st.builders[bi].id = Some(if LEGACY_IDS.load(std::sync::atomic::Ordering::Relaxed) { st.builder_counter } else { stable });
+            }
+            if st.builders[bi].ready > t_now {
+                bi += 1;
+                continue;
+            }
+            let act = if let Some(p) = st.builders[bi].pending.take() {
+                p
+            } else {
+                // a builder that chose to wait decides again once something it could use changes
+                let mark = { let _g = crate::prof::start(28); self.idle_mark(st) };
+                // (a replay follows the record's actions, whose turns do not depend on such changes)
+                if self.rec.is_none() && self.tiles_rec.is_none() && st.builders[bi].idle.as_ref() == Some(&mark) {
+                    bi += 1;
+                    continue;
+                }
+                st.builders[bi].idle = None;
+                let opts = self.builder_options(st, &env, st.builders[bi].at);
+                if crate::envcfg::trace() == Some("builderopts") {
+                    eprintln!("BOPTS T{t_now} builder {bi} at {:?} charges {} {:?}", st.builders[bi].at, st.builders[bi].charges, opts);
+                }
+                // a builder's decisions are numbered per builder (one builder's change does not shift the others')
+                let bid = st.builders[bi].id.unwrap_or(0);
+                let act = { let _g = crate::prof::start(29); self.decide(st, "builder", Ent::I(bid), opts, ch) };
+                if act.is_none() || act == Some(Choice::Wait) {
+                    st.builders[bi].idle = Some(mark);
+                    bi += 1;
+                    continue;
+                }
+                let act = act.unwrap();
+                let Choice::Act(_, _, x, y, _) = act else { bi += 1; continue };
+                // replay: the recorded builder did it on that turn (its walk is not in the saves)
+                let k = if self.rec.is_some() || self.tiles_rec.is_some() { Some(0) } else { let _g = crate::prof::start(30); self.travel(st, st.builders[bi].at, (x, y), "UNIT_BUILDER") };
+                let Some(k) = k else { bi += 1; continue };
+                if k > 0 {
+                    st.builders[bi].ready = t_now + k;
+                    st.builders[bi].at = (x, y);
+                    st.builders[bi].pending = Some(act);
+                    bi += 1;
+                    continue;
+                }
+                act
+            };
+            let Choice::Act(kind, cname, x, y, what) = act.clone() else { bi += 1; continue };
+            if crate::envcfg::trace_city(&cname.as_string()) {
+                eprintln!("ACT T{t_now} {kind} {cname} {:?} {what} builder {bi} charges {}", (x, y), st.builders[bi].charges);
+            }
+            st.builders[bi].at = (x, y);
+            let ci = st.cities.iter().position(|c| c.name == cname);
+            if kind == s!("rush") {
+                if ci.is_none() || st.cities[ci.unwrap()].current != Some(what) {
+                    bi += 1;
+                    continue;
+                }
+                let mut env_cost = env.clone();
+                env_cost.units_trained = st.acc.units_trained.clone();
+                if let Some(cost) = item_cost(r, &env_cost, what, self.speed, None, false) {
+                    if cost != 0.0 {
+                        let pct = self.rush_percent(&self.engine(&env, &st.cities), Some(what));
+                        st.cacc_mut(cname).overflow += cost * pct / 100.0;
+                    }
+                }
+                st.builders[bi].charges -= 1;
+                bi += 1;
+                continue;
+            }
+            let Some(ci) = ci else {
+                if kind == s!("improve") && (self.rec.is_some() || self.tiles_rec.is_some()) && !st.improving.iter().any(|i| i.1 == (x, y)) {
+                    st.improving.push((cname, (x, y), what));
+                    st.builders[bi].charges -= 1;
+                }
+                bi += 1;
+                continue;
+            };
+            let Some(pi) = st.cities[ci].owned.iter().position(|p| p.xy() == (x, y)) else {
+                if kind == s!("improve") && !st.improving.iter().any(|i| i.1 == (x, y)) {
+                    st.improving.push((cname, (x, y), what));
+                    st.builders[bi].charges -= 1;
+                }
+                bi += 1;
+                continue;
+            };
+            {
+                let p = &st.cities[ci].owned[pi];
+                let improving = st.improving.iter().any(|i| i.1 == (x, y));
+                if (kind == s!("improve") || kind == s!("plant")) && (p.improvement.is_some() || improving || (kind == s!("plant") && p.feature.is_some())) {
+                    bi += 1;
+                    continue;
+                }
+            }
+            if kind == s!("improve") {
+                st.improving.push((cname, (x, y), what));
+            } else if kind == s!("plant") {
+                st.cities[ci].owned[pi].feature = Some(what);
+            } else {
+                if !self.harvest_at(st, ci, pi, what, &env, ch) {
+                    bi += 1;
+                    continue;
+                }
+            }
+            st.builders[bi].charges -= 1;
+            bi += 1;
+        }
+        st.builders.retain(|b| b.charges > 0);
+        if !st.builders.is_empty() {
+            let _g = crate::prof::start(32);
+            for ci in 0..st.cities.len() {
+                self.assign(st, ci, &env);
+            }
+        }
+        // replay: buildings and districts the next save shows done are done (bought, rushed, or finished on a
+        // carry-over the saves do not hold); noted, so validation tells them from production the model missed
+        if let Some(next) = self.rec.as_ref().or(self.tiles_rec.as_ref()).and_then(|r| r.turn(t_now + 1)) {
+            for ci in 0..st.cities.len() {
+                let name = st.cities[ci].name;
+                let Some(rc) = next.city(name) else { continue };
+                for b in rc.buildings.clone() {
+                    if !st.cities[ci].buildings.contains(&b) {
+                        st.cities[ci].buildings.push(b);
+                        if st.cities[ci].current == Some(b) {
+                            st.cities[ci].current = None;
+                        }
+                        st.cacc_mut(name).progress.remove(&b);
+                        self.rec_notes.borrow_mut().push((t_now, format!("{name} {b}: done by the record (bought or carried over)")));
+                    }
+                }
+                for (dt, xy, done) in rc.districts.clone() {
+                    if !done || dt == s!("DISTRICT_CITY_CENTER") || dt == s!("DISTRICT_WONDER") {
+                        continue;
+                    }
+                    let have = st.cities[ci].districts.iter().position(|d| d.dtype == dt);
+                    match have {
+                        Some(i) if st.cities[ci].districts[i].complete => {}
+                        Some(i) => {
+                            st.cities[ci].districts[i].complete = true;
+                            if st.cities[ci].current == Some(dt) {
+                                st.cities[ci].current = None;
+                            }
+                            st.cacc_mut(name).progress.remove(&dt);
+                            self.rec_notes.borrow_mut().push((t_now, format!("{name} {dt}: done by the record (bought or carried over)")));
+                        }
+                        None => {
+                            if let Some(p) = st.cities[ci].owned_at(xy).cloned() {
+                                let nb = self.neighbours_with_districts(st, xy);
+                                st.cities[ci].districts.push(District { dtype: dt, x: xy.0, y: xy.1, complete: true, plot: p, neighbours: nb });
+                                self.rec_notes.borrow_mut().push((t_now, format!("{name} {dt}: done by the record (bought or carried over)")));
+                            }
+                        }
+                    }
                 }
             }
         }

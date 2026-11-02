@@ -25,7 +25,9 @@ pub fn research_cost(r: &Rules, item: Sym, speed: Sym, game_era: Sym) -> f64 {
 }
 
 pub fn boost_amount(cost: f64, extra_pct: f64) -> f64 {
-    ((0.4 + extra_pct / 100.0) * (cost - 2.5)).floor()
+    // a bonus percent (a cultural golden age's +10% for inspirations) adds its share of the cost, rounded (the
+    // records' inspirations: 9 of a cost of 20, 27 of 55, 29 of 60, 89 of 180, 100 of 204)
+    (0.4 * (cost - 2.5)).floor() + (extra_pct / 100.0 * cost + 0.5).floor()
 }
 
 /// The city's yields this turn with population `pop`, after % modifiers.

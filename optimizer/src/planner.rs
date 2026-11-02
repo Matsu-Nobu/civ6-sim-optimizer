@@ -1090,8 +1090,18 @@ impl<'a> Planner<'a> {
         st.cities[ci].current = None;
         let opts = match self.rec.as_ref().and_then(|r| r.turn(st.turn + 1)) {
             Some(next) => {
+                // (less the other cities that finish one later this turn, by the record, and the purchases still to
+                // come: 10/19 T44, Bogota's woods went into its commercial hub, the second builder was another city's)
+                let now = self.rec.as_ref().and_then(|r| r.turn(st.turn));
+                let pending = |d: Sym| -> i64 {
+                    let Some(now) = now else { return 0 };
+                    let later = now.cities.iter().filter(|c| c.name != n && c.current == Some(d) && !st.finished_now.contains(&c.name)
+                        && next.city(c.name).map(|cb| cb.current != Some(d) || cb.progress <= c.progress).unwrap_or(false)).count() as i64;
+                    let bought = self.rec.as_ref().map(|r| r.purchases.iter().filter(|p| p.0 == st.turn && p.2 == d).count() as i64).unwrap_or(0);
+                    later + bought
+                };
                 let again = done.filter(|d| item_kind(*d) == Kind::Unit
-                    && st.acc.units_trained.get(d).copied().unwrap_or(0) < next.units_trained.get(d).copied().unwrap_or(0));
+                    && st.acc.units_trained.get(d).copied().unwrap_or(0) + pending(*d) < next.units_trained.get(d).copied().unwrap_or(0));
                 match (again, next.city(n)) {
                     (Some(d), _) => vec![Choice::S(d)],
                     (None, Some(rc)) if rc.held > 0.0 && rc.progress == 0.0 => vec![],

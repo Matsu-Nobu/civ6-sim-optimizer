@@ -1170,7 +1170,6 @@ impl<'a> Planner<'a> {
         let r = self.r;
         let mut out = vec![];
         let techs = &st.acc.techs;
-        let n_civics = st.acc.civics.len();
         // replay: the record removed a feature during the turn its tech completed (10/19 Cumana T41, rainforest with
         // Bronze Working); its next save has the tech
         let next: Vec<Sym> = self.rec.as_ref().or(self.tiles_rec.as_ref()).and_then(|r| r.turn(st.turn + 1)).map(|rt| rt.techs.clone()).unwrap_or_default();
@@ -1787,6 +1786,35 @@ impl<'a> Planner<'a> {
         c.near = near;
     }
 
+    /// Plot `pi` of city `ci` harvested (its feature or resource, `what`): the yields go to the city (the production
+    /// into its item, Planner::chop_into). False when the plot has nothing of that kind to harvest.
+    fn harvest_at(&self, st: &mut State, ci: usize, pi: usize, what: Sym, env: &Env) -> bool {
+        let cname = st.cities[ci].name;
+        let p = st.cities[ci].owned[pi].clone();
+        let _g = crate::prof::start(31);
+        let Some(ys) = self.harvest_yields(&self.eng(st), &p, st, Some(cname)).into_iter().find(|(k, _)| *k == what).map(|(_, y)| y) else { return false };
+        if what == s!("feature") {
+            st.cities[ci].owned[pi].feature = None;
+        } else {
+            st.cities[ci].owned[pi].resource = None;
+        }
+        if crate::envcfg::trace_city(&cname.as_string()) {
+            eprintln!("HARVEST T{} {cname} {:?} {:?} {ys:?}", st.turn, p.xy(), what);
+        }
+        // the production counts as far as the item used it
+        let used = self.chop_into(st, ci, get_y(&ys, s!("YIELD_PRODUCTION")), env);
+        st.harvest_sum[0] += get_y(&ys, s!("YIELD_FOOD"));
+        st.harvest_sum[1] += used;
+        st.harvest_sum[2] += get_y(&ys, s!("YIELD_GOLD"));
+        let ca = st.cacc_mut(cname);
+        ca.food_store += get_y(&ys, s!("YIELD_FOOD"));
+        if get_y(&ys, s!("YIELD_FOOD")) > 0.0 {
+            ca.harvests += 1;
+        }
+        st.acc.gold += get_y(&ys, s!("YIELD_GOLD"));
+        true
+    }
+
     /// The city starts making `item`: a district's or a wonder's plot is chosen (replay: where the recorded city put it).
     fn start_item(&self, st: &mut State, ci: usize, item: Option<Sym>) {
         let r = self.r;
@@ -2388,34 +2416,27 @@ impl<'a> Planner<'a> {
             } else if kind == s!("plant") {
                 st.cities[ci].owned[pi].feature = Some(what);
             } else {
-                let p = st.cities[ci].owned[pi].clone();
-                let _g = crate::prof::start(31);
-                let ys = self.harvest_yields(&self.eng(st), &p, st, Some(cname)).into_iter().find(|(k, _)| *k == what).map(|(_, y)| y);
-                let Some(ys) = ys else { bi += 1; continue };
-                if what == s!("feature") {
-                    st.cities[ci].owned[pi].feature = None;
-                } else {
-                    st.cities[ci].owned[pi].resource = None;
+                if !self.harvest_at(st, ci, pi, what, &env) {
+                    bi += 1;
+                    continue;
                 }
-                if crate::envcfg::trace_city(&cname.as_string()) {
-                    eprintln!("HARVEST T{} {cname} {:?} {:?} {ys:?}", st.turn, (x, y), what);
-                }
-                // the production counts as far as the item used it
-                let used = self.chop_into(st, ci, get_y(&ys, s!("YIELD_PRODUCTION")), &env);
-                st.harvest_sum[0] += get_y(&ys, s!("YIELD_FOOD"));
-                st.harvest_sum[1] += used;
-                st.harvest_sum[2] += get_y(&ys, s!("YIELD_GOLD"));
-                let ca = st.cacc_mut(cname);
-                ca.food_store += get_y(&ys, s!("YIELD_FOOD"));
-                if get_y(&ys, s!("YIELD_FOOD")) > 0.0 {
-                    ca.harvests += 1;
-                }
-                st.acc.gold += get_y(&ys, s!("YIELD_GOLD"));
             }
             st.builders[bi].charges -= 1;
             bi += 1;
         }
         st.builders.retain(|b| b.charges > 0);
+        // replay: the record's harvests of this turn that no builder of the turn's start did were done by a builder
+        // made during the turn (10/14 Paris T41: its new builder harvested woods, which finished a second builder)
+        if let Some(rec) = self.rec.as_ref() {
+            for &(t, kind, xy, what) in &rec.acts {
+                if t != t_now || kind != s!("harvest") {
+                    continue;
+                }
+                let Some(ci) = st.cities.iter().position(|c| c.owned.iter().any(|p| p.xy() == xy)) else { continue };
+                let pi = st.cities[ci].owned.iter().position(|p| p.xy() == xy).unwrap();
+                self.harvest_at(st, ci, pi, what, &env);
+            }
+        }
         // a harvest finished the city's item during the turn: the city goes on with its next item at once, which gets
         // the later harvests and the turn's production (the saves: 10/21 Arretium T43 finished two builders, with
         // woods and stone; Antium T47 a bath and a builder); replay: the item the record's next save has, unless that

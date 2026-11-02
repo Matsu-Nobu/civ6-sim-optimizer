@@ -33,6 +33,8 @@ pub struct RecCity {
     pub current: Option<Sym>,
     /// the current item's progress
     pub progress: f64,
+    /// production made while the city had no item, waiting for the next one (the save's heldOverflow)
+    pub held: f64,
     pub worked: Vec<XY>,
     pub owned: Vec<XY>,
     pub buildings: Vec<Sym>,
@@ -150,6 +152,7 @@ impl Record {
                 food: c["foodStore"].as_f64().unwrap_or(0.0),
                 current: osym(&c["production"]["current"]),
                 progress: osym(&c["production"]["current"]).and_then(|k| c["production"]["progress"][k.as_string().as_str()].as_f64()).unwrap_or(0.0),
+                held: c["production"]["heldOverflow"].as_f64().unwrap_or(0.0),
                 worked: c["worked"].as_array().map(|w| w.iter().map(xy_of).collect()).unwrap_or_default(),
                 owned: c["owned"].as_array().map(|w| w.iter().map(xy_of).collect()).unwrap_or_default(),
                 buildings: syms(&c["buildings"]),

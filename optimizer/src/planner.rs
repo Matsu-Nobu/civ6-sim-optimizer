@@ -1021,7 +1021,11 @@ impl<'a> Planner<'a> {
         let n = c.name;
         let item = c.current;
         let ca = st.acc.cities.get(&n).cloned().unwrap_or_default();
-        let Some(item) = item.filter(|_| amount > 0.0 && ca.chopped.is_none()) else {
+        if amount > 0.0 && ca.chopped.is_some() {
+            st.cacc_mut(n).chop_waiting += amount;
+            return amount;
+        }
+        let Some(item) = item.filter(|_| amount > 0.0) else {
             st.cacc_mut(n).raw += amount;
             return amount;
         };
@@ -1749,6 +1753,39 @@ impl<'a> Planner<'a> {
         c.near = near;
     }
 
+    /// The city starts making `item`: a district's or a wonder's plot is chosen (replay: where the recorded city put it).
+    fn start_item(&self, st: &mut State, ci: usize, item: Option<Sym>) {
+        let r = self.r;
+        let n = st.cities[ci].name;
+        if let Some(item) = item {
+            let rec_xy = self.rec.as_ref().or(self.tiles_rec.as_ref()).and_then(|r| r.district_at(n, item)).filter(|xy| st.cities[ci].owned_at(*xy).is_some());
+            if item_kind(item) == Kind::District && rec_xy.is_some() {
+                // replay: where the recorded city put it
+                let xy = rec_xy.unwrap();
+                let p = st.cities[ci].owned_at(xy).unwrap().clone();
+                let nb = self.neighbours_with_districts(st, xy);
+                st.cities[ci].districts.push(District { dtype: item, x: xy.0, y: xy.1, complete: false, plot: p, neighbours: nb });
+            } else if item_kind(item) == Kind::District {
+                if let Some((_, _, d)) = self.district_site(st, ci, item) {
+                    let mut d = d;
+                    d.complete = false;
+                    st.cities[ci].districts.push(d);
+                }
+            } else if item_kind(item) == Kind::Building && r.is_wonder(item) {
+                if let Some((_, xy)) = self.wonder_site(st, ci, item) {
+                    if let Some(p) = st.cities[ci].owned_at_mut(xy) {
+                        p.wonder = Some(item);
+                    }
+                    let p = st.cities[ci].owned_at(xy).unwrap().clone();
+                    let nb = self.neighbours_with_districts(st, xy);
+                    st.cities[ci].districts.push(District { dtype: s!("DISTRICT_WONDER"), x: xy.0, y: xy.1, complete: false, plot: p, neighbours: nb });
+                }
+            }
+        }
+        st.cities[ci].current = item;
+
+    }
+
     fn assign(&self, st: &mut State, ci: usize, env: &Env) {
         let rec = self.rec.as_ref().or(self.tiles_rec.as_ref());
         let name = st.cities[ci].name;
@@ -2205,32 +2242,7 @@ impl<'a> Planner<'a> {
             let opts = self.buildable(st, ci);
             let n = st.cities[ci].name;
             let item = self.decide(st, "prod", Ent::S(n), opts, ch).and_then(|c| c.sym());
-            if let Some(item) = item {
-                let rec_xy = self.rec.as_ref().or(self.tiles_rec.as_ref()).and_then(|r| r.district_at(n, item)).filter(|xy| st.cities[ci].owned_at(*xy).is_some());
-                if item_kind(item) == Kind::District && rec_xy.is_some() {
-                    // replay: where the recorded city put it
-                    let xy = rec_xy.unwrap();
-                    let p = st.cities[ci].owned_at(xy).unwrap().clone();
-                    let nb = self.neighbours_with_districts(st, xy);
-                    st.cities[ci].districts.push(District { dtype: item, x: xy.0, y: xy.1, complete: false, plot: p, neighbours: nb });
-                } else if item_kind(item) == Kind::District {
-                    if let Some((_, _, d)) = self.district_site(st, ci, item) {
-                        let mut d = d;
-                        d.complete = false;
-                        st.cities[ci].districts.push(d);
-                    }
-                } else if item_kind(item) == Kind::Building && r.is_wonder(item) {
-                    if let Some((_, xy)) = self.wonder_site(st, ci, item) {
-                        if let Some(p) = st.cities[ci].owned_at_mut(xy) {
-                            p.wonder = Some(item);
-                        }
-                        let p = st.cities[ci].owned_at(xy).unwrap().clone();
-                        let nb = self.neighbours_with_districts(st, xy);
-                        st.cities[ci].districts.push(District { dtype: s!("DISTRICT_WONDER"), x: xy.0, y: xy.1, complete: false, plot: p, neighbours: nb });
-                    }
-                }
-            }
-            st.cities[ci].current = item;
+            self.start_item(st, ci, item);
         }
         crate::prof::lap(&mut lap, 21);
         // builders
@@ -2367,6 +2379,34 @@ impl<'a> Planner<'a> {
             bi += 1;
         }
         st.builders.retain(|b| b.charges > 0);
+        // a harvest finished the city's item during the turn: the city goes on with its next item at once, which gets
+        // the later harvests and the turn's production (the saves: 10/21 Arretium T43 finished two builders, with
+        // woods and stone; Antium T47 a bath and a builder); replay: the item the record's next save has, unless that
+        // save holds production for it, made while the city had no item (10/21 Velitrae T62: the second woods' 42
+        // lost, the turn's 15 held)
+        for ci in 0..st.cities.len() {
+            let n = st.cities[ci].name;
+            let Some(done) = st.acc.cities.get(&n).and_then(|ca| ca.chopped) else { continue };
+            if st.cities[ci].current != Some(done) {
+                continue;
+            }
+            let next = self.rec.as_ref().and_then(|r| r.turn(st.turn + 1)).and_then(|rt| rt.city(n));
+            let waiting = std::mem::take(&mut st.cacc_mut(n).chop_waiting);
+            if next.map(|rc| rc.held > 0.0).unwrap_or(false) {
+                continue;
+            }
+            st.cities[ci].current = None;
+            let ca = st.cacc_mut(n);
+            ca.chopped = None;
+            ca.finished_by_chop = Some(done);
+            ca.raw += waiting;
+            let opts = match next {
+                Some(rc) => rc.current.map(|x| vec![Choice::S(x)]).unwrap_or_default(),
+                None => self.buildable(st, ci),
+            };
+            let item = self.decide(st, "prod", Ent::S(n), opts, ch).and_then(|c| c.sym());
+            self.start_item(st, ci, item);
+        }
         if !st.builders.is_empty() {
             let _g = crate::prof::start(32);
             for ci in 0..st.cities.len() {

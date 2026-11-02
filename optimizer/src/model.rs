@@ -229,6 +229,12 @@ pub struct CityAcc {
     pub locked_cost: OMap<Sym, f64>,
     /// the item a chop finished during this turn (it completes at the step; the turn's production goes to the next)
     pub chopped: Option<Sym>,
+    /// the item a harvest finished this turn after which the city went on with its next item (Planner): it completes
+    /// at the turn's end without the turn's production
+    pub finished_by_chop: Option<Sym>,
+    /// production of harvests after a harvest finished the item this turn: the next item's if the city starts one
+    /// during the turn, else lost
+    pub chop_waiting: f64,
     /// production waiting for the next item, which applies its own percent to it
     pub raw: f64,
     /// harvests that gave the city food this turn

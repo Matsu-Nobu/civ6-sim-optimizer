@@ -404,6 +404,14 @@ impl<'a> Planner<'a> {
             st.traders.push(Trader { origin: o, dest: Some(dn), info, until, start, lost: false });
         }
         if let Some(rec) = self.rec.as_ref() {
+            // the cities the record founded during this turn: their settlers arrive (the save holds the settler unit,
+            // not where it goes)
+            for &(t, name, xy) in &rec.sites {
+                if t == st.turn && !st.cities.iter().any(|c| c.name == name) {
+                    st.settler_counter += 1;
+                    st.settlers.push(Settler { from: name, target: Some(xy), name: Some(name), arrive: t + 1, id: st.settler_counter });
+                }
+            }
             // governments held before this turn (their legacy cards)
             for (_, r) in rec.turns.range(..st.turn) {
                 if let Some(g) = r.gov.filter(|g| Some(*g) != st.player.government) {

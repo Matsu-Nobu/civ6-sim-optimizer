@@ -2052,8 +2052,8 @@ impl<'a> Planner<'a> {
         let mut c = st.cities[ci].clone();
         self.w.assign_citizens(&mut c, &e, &w, 1.0);
         if rec_now.is_some() || rec_next.is_some() {
-            // replay: the tiles the recorded citizens worked during the turn: the next save's (reassignments made
-            // during the turn), those also worked at its start first; then the start's; the rest by the rule
+            // replay: the tiles the recorded citizens worked during the turn: the start's (the turn's processing
+            // comes before the player's reassignments), then the next save's; the rest by the rule
             let now: Vec<XY> = rec_now.map(|r| r.worked.clone()).unwrap_or_default();
             let next: Vec<XY> = rec_next.map(|r| r.worked.clone()).unwrap_or_default();
             let order: Vec<XY> = now.iter().chain(next.iter().filter(|x| !now.contains(x))).copied().collect();

@@ -135,6 +135,13 @@ def main():
 
     # every held-out turn weighs the same
     print("all turns: " + ", ".join(f"{k} {np.nanmean(v):.3f}" for k, v in every.items()))
+    # each held-out file alone (pairs within it, all turns)
+    for g in np.unique(plan[te]):
+        accs = []
+        for t in np.unique(turns[te & (plan == g)]):
+            k = te & (plan == g) & (turns == t)
+            accs.append(pair_accuracy(pg[k], y[k], X[k], rng))
+        print(f"held-out file {g - (len(a.rows) if a.test_rows else 0) + 1}: same plan LightGBM {np.nanmean(accs):.3f}")
 
 
 if __name__ == "__main__":

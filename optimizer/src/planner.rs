@@ -1584,7 +1584,7 @@ impl<'a> Planner<'a> {
                             if st.player.boosted.contains(&t) {
                                 st.acc.techs.insert(t);
                             } else {
-                                let amt = boost_amount(research_cost(r, t, self.speed, era), 0.0);
+                                let amt = boost_amount(t, research_cost(r, t, self.speed, era), 0.0);
                                 *st.acc.tech_progress.entry_or(t, 0.0) += amt;
                                 st.player.boosted.insert(t);
                             }
@@ -1629,7 +1629,7 @@ impl<'a> Planner<'a> {
                         items.truncate(n as usize);
                     }
                     for it in items {
-                        let amt = boost_amount(research_cost(r, it, self.speed, era), 0.0);
+                        let amt = boost_amount(it, research_cost(r, it, self.speed, era), 0.0);
                         let prog = if civic { &mut st.acc.civic_progress } else { &mut st.acc.tech_progress };
                         *prog.entry_or(it, 0.0) += amt;
                         st.player.boosted.insert(it);
@@ -1673,7 +1673,7 @@ impl<'a> Planner<'a> {
         let done = if civic { &st.acc.civics } else { &st.acc.techs };
         let items: Vec<Sym> = r.list_sym(tab, "EraType", era_type, col).into_iter().filter(|t| !done.contains(t) && !st.player.boosted.contains(t) && r.has_boost(*t)).collect();
         let Some(t) = items.into_iter().min_by(|x, y| research_cost(r, *x, self.speed, era).partial_cmp(&research_cost(r, *y, self.speed, era)).unwrap()) else { return };
-        let amt = boost_amount(research_cost(r, t, self.speed, era), 0.0);
+        let amt = boost_amount(t, research_cost(r, t, self.speed, era), 0.0);
         let prog = if civic { &mut st.acc.civic_progress } else { &mut st.acc.tech_progress };
         *prog.entry_or(t, 0.0) += amt;
         st.player.boosted.insert(t);

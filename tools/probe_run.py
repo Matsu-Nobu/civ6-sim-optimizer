@@ -76,8 +76,12 @@ def main():
         sys.exit("Civ6 is already running: not launched")
     if any(x.lower().startswith("firaxisbugreporter") for x in sh("tasklist.exe").stdout.splitlines()):
         sys.exit("the game's bug reporter is open (a closed game's): close it first")
+    args = sys.argv[1:]
+    # --boosts: the boost experiment (Civ6EconBoostTest.lua) on the first save given
+    boosts = "--boosts" in args
+    args = [a for a in args if a != "--boosts"]
     probes = []
-    for arg in sys.argv[1:]:
+    for arg in args:
         name, turn = arg.split(":")
         d, pid, civ = GAMES[name]
         save = f"EconProbe_{name}_T{int(turn):03d}"
@@ -90,6 +94,8 @@ def main():
     text = text.replace('MODE = "off"', 'MODE = "probe"')
     text = re.sub(r'SAVE_NAME = "[^"]*"', f'SAVE_NAME = "{probes[0]["name"]}"', text)
     text = text.rstrip() + f"\nECONRUN.PROBE = {lua(probes)}\n"
+    if boosts:
+        text += "ECONRUN.BOOSTS = true\n"
     (MOD / "Civ6EconRunnerConfig.lua").write_text(text)
     start = LOG.stat().st_size if LOG.exists() else 0
     sh("powershell.exe", "-NoProfile", "-Command", 'Start-Process "steam://rungameid/289070"')
@@ -111,7 +117,8 @@ def main():
             lines = [x for x in body[start:].splitlines() if "ECONPROBE " in x]
             if len(lines) != seen:
                 seen, last = len(lines), time.time()
-            if any('"done"' in x for x in lines) or time.time() - last > 420:
+            boost_done = not boosts or "ECONBOOST {\"done\"" in body[start:]
+            if (any('"done"' in x for x in lines) and boost_done) or time.time() - last > 420:
                 break
     finally:
         if pid is not None:
@@ -130,6 +137,11 @@ def main():
     body = LOG.read_bytes().decode("utf-8", "replace")
     (out / "last_lua.log").write_text(body)
     records = probe_records(body)
+    if boosts:
+        rows = [json.loads(x[x.find("ECONBOOST ") + 10:].replace("\\", "/")) for x in body.splitlines() if "ECONBOOST " in x]
+        rows += [d for d in records if d.get("kind") == "civics"]
+        (out / f"boosts_{probes[0]['game']}_T{probes[0]['turn']}.jsonl").write_text("".join(json.dumps(r) + "\n" for r in rows))
+        print(len(rows) - 1, "boosts")
     for p in probes:
         rows = [d for d in records
                 if d.get("kind") in ("city", "player") and d.get("game") == p["game"] and d.get("turn") == p["game_turn"]]

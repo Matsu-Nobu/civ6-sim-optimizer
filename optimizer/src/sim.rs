@@ -24,10 +24,21 @@ pub fn research_cost(r: &Rules, item: Sym, speed: Sym, game_era: Sym) -> f64 {
     (base.floor() * r.game_speed_cost_multiplier(speed) * (1.0 + pct / 100.0) + 1e-9).floor()
 }
 
-pub fn boost_amount(cost: f64, extra_pct: f64) -> f64 {
-    // a bonus percent (a cultural golden age's +10% for inspirations) adds its share of the cost, rounded (the
-    // records' inspirations: 9 of a cost of 20, 27 of 55, 29 of 60, 89 of 180, 100 of 204)
-    (0.4 * (cost - 2.5)).floor() + (extra_pct / 100.0 * cost + 0.5).floor()
+/// The progress a technology's or civic's boost gives: 40% of the item's effective cost, plus a bonus percent (a
+/// cultural golden age's +10% for inspirations), rounded down. The effective cost is a little below the cost, by an
+/// amount the game does not show; it was measured in the game for the items in boost_effective_costs.tsv
+/// (10/17 T42: Mercantilism, cost 432, gives 170 with 40%, 213 with 50%, 235 with 55%), and is the cost less 2.5
+/// for the others, which fits most of the records.
+pub fn boost_amount(item: Sym, cost: f64, extra_pct: f64) -> f64 {
+    static TABLE: std::sync::OnceLock<std::collections::HashMap<(String, i64), f64>> = std::sync::OnceLock::new();
+    let table = TABLE.get_or_init(|| {
+        include_str!("boost_effective_costs.tsv").lines().filter(|l| !l.starts_with('#') && !l.is_empty()).map(|l| {
+            let f: Vec<&str> = l.split('\t').collect();
+            ((f[0].to_string(), f[1].parse::<f64>().unwrap() as i64), f[2].parse::<f64>().unwrap())
+        }).collect()
+    });
+    let effective = table.get(&(item.as_string(), cost as i64)).copied().unwrap_or(cost - 2.5);
+    ((40.0 + extra_pct) / 100.0 * effective + 1e-9).floor()
 }
 
 /// The city's yields this turn with population `pop`, after % modifiers.
@@ -474,7 +485,7 @@ fn research_step(r: &Rules, e: &Engine, acc: &mut PlayerAcc, totals: &Y, speed: 
             let (prog, done) = if is_tech { (&mut acc.tech_progress, &acc.techs) } else { (&mut acc.civic_progress, &acc.civics) };
             for &b in boosts {
                 if b.starts_with("TECH_") == is_tech && !done.contains(&b) && r.has_boost(b) {
-                    let amt = boost_amount(research_cost(r, b, speed, game_era), if is_tech { extra_t } else { extra_c });
+                    let amt = boost_amount(b, research_cost(r, b, speed, game_era), if is_tech { extra_t } else { extra_c });
                     *prog.entry_or(b, 0.0) += amt;
                 }
             }

@@ -154,6 +154,16 @@ local function probe()
       emit({ kind = "player", turn = turn, game = ECONRUN.PROBE[idx].game, techs = techs, civics = civics })
     end)
     if not ok5 then emit({ kind = "error", err = tostring(err5) }) end
+    -- the boost experiment's civics (Civ6EconBoostTest.lua): every major player's civic costs and progress
+    if ECONRUN.BOOSTS then
+      for _, other in ipairs(PlayerManager.GetAliveMajorIDs()) do
+        local civics, cu = {}, Players[other]:GetCulture()
+        for row in GameInfo.Civics() do
+          civics[row.CivicType] = { cu:GetCultureCost(row.Index), cu:GetCulturalProgress(row.Index) }
+        end
+        emit({ kind = "civics", turn = turn, game = ECONRUN.PROBE[idx].game, player = other, civics = civics })
+      end
+    end
     local yields = {}
     for row in GameInfo.Yields() do yields[#yields + 1] = row.YieldType end
     for _, city in Players[pid]:GetCities():Members() do

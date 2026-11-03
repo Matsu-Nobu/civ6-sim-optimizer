@@ -53,6 +53,9 @@
         <LuaReplace>Civ6Econ_NaturalDisasterPopup.lua</LuaReplace>
       </Properties>
     </ReplaceUIScript>
+    <AddGameplayScripts id="econ_boosttest">
+      <File>Civ6EconBoostTest.lua</File>
+    </AddGameplayScripts>
     <ImportFiles id="econautoplay_files">
       <File>Civ6EconPopupClose.lua</File>
       <File>Civ6EconAutoplay.lua</File>
@@ -76,5 +79,6 @@
     <File>Civ6Econ_EraCompletePopup.lua</File>
     <File>Civ6Econ_NaturalWonderPopup.lua</File>
     <File>Civ6Econ_NaturalDisasterPopup.lua</File>
+    <File>Civ6EconBoostTest.lua</File>
   </Files>
 </Mod>

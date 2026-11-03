@@ -222,7 +222,7 @@ pub fn calibrate(r: &Rules, rows: &crate::json::Value, sc: &crate::scenario::Sce
     let set = |t: i64| -> BTreeSet<Sym> { row(t).map(|d| d["player"][bkey].as_array().map(|a| a.iter().filter_map(|v| v.as_str().map(crate::sym::sym)).collect()).unwrap_or_default()).unwrap_or_default() };
     let end = rows.iter().filter_map(|d| d["turn"].as_i64()).max().unwrap_or(deadline).min(deadline);
     let (b0, b1) = (set(at + 1), set(end));
-    let bonus: f64 = b1.difference(&b0).map(|x| boost_amount(cost(*x), 0.0)).sum();
+    let bonus: f64 = b1.difference(&b0).map(|x| boost_amount(*x, cost(*x), 0.0)).sum();
     let costs = closure(r, target, civic).into_iter().map(|x| (x, cost(x))).collect();
     Milestone { target, civic, deadline, costs, growth: sum / base, bonus }
 }

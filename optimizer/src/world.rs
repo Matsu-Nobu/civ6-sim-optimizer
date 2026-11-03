@@ -151,24 +151,25 @@ pub static ANY_POINTS: std::sync::atomic::AtomicBool = std::sync::atomic::Atomic
 
 pub fn move_cost(r: &Rules, m: &Map, a: XY, b: XY, left: f64, full: f64, road_type: Sym, cities: &HashSet<XY>, roads: &HashSet<XY>, cleared: &HashSet<XY>) -> Option<f64> {
     let p = m.plots.get(&b)?;
-    if p.terrain.ends_with("MOUNTAIN") || p.terrain == s!("TERRAIN_COAST") || p.terrain == s!("TERRAIN_OCEAN") {
+    let mi = r.move_info();
+    // (a terrain not in Terrains: 0 cost, passable, as the lookups gave)
+    let (terrain_cost, blocked) = mi.terrains.get(&p.terrain).copied().unwrap_or((0.0, p.terrain.ends_with("MOUNTAIN")));
+    if blocked {
         return None;
     }
-    if let Some(f) = p.feature {
-        if r.lookup_truthy("Features", "FeatureType", f, "Impassable") {
-            return None;
-        }
+    let feature = p.feature.map(|f| mi.features.get(&f).copied().unwrap_or((0.0, false)));
+    if feature.map(|x| x.1).unwrap_or(false) {
+        return None;
     }
     let pa = &m.plots[&a];
     let road = (pa.route.is_some() || roads.contains(&a)) && (p.route.is_some() || roads.contains(&b));
     // a road between two plots is the poorer of their roads (the save's route index is the row of Routes); a plot
     // whose road type is not known has the era's (road_type)
     let rt = match (pa.route, p.route) {
-        (Some(x), Some(y)) if x >= 0 && y >= 0 => r.tab("Routes").v(x.min(y) as u32, "RouteType").sym().unwrap_or(road_type),
+        (Some(x), Some(y)) if x >= 0 && y >= 0 => mi.route_rows[x.min(y) as usize].unwrap_or(road_type),
         _ => road_type,
     };
-    let road_cost = r.lookup_f("Routes", "RouteType", rt, "MovementCost");
-    let bridges = r.lookup_truthy("Routes", "RouteType", rt, "SupportsBridges");
+    let (road_cost, bridges) = mi.routes.get(&rt).copied().unwrap_or((0.0, false));
     // crossing a river costs max(3, the points left): a unit with fewer than 3 points crosses only with full points
     // (the user's rule), and the crossing ends its moves; RIVER_MIN (civ6opt movecheck --river-min) tries min(3, left)
     let cost = if m.river_between(a, b) && !(road && bridges) && !cities.contains(&a) && !cities.contains(&b) {
@@ -176,14 +177,10 @@ pub fn move_cost(r: &Rules, m: &Map, a: XY, b: XY, left: f64, full: f64, road_ty
     } else if road {
         road_cost
     } else if cities.contains(&b) {
-        r.param("CITY_MOVEMENT_COST")
+        mi.city_cost
     } else {
-        let mut c = r.lookup_f("Terrains", "TerrainType", p.terrain, "MovementCost");
         // cleared: the plots whose feature was removed during the game (harvests)
-        if let Some(f) = p.feature.filter(|_| !cleared.contains(&b)) {
-            c += r.lookup_f("Features", "FeatureType", f, "MovementChange");
-        }
-        c
+        terrain_cost + feature.filter(|_| !cleared.contains(&b)).map(|x| x.0).unwrap_or(0.0)
     };
     if cost <= left || left == full || (ANY_POINTS.load(std::sync::atomic::Ordering::Relaxed) && left > 0.0) {
         Some(cost.min(left))

@@ -1,10 +1,11 @@
 """Sums a samply profile by function: the share of samples a function is running in (self) and is on the stack in
 (total, once a sample).
 
-  profile_summary.py <profile.json.gz> [--top 40] [--match TEXT]
+  profile_summary.py <profile.json.gz> [--top 40] [--match TEXT] [--callers TEXT]
 
 The profile is one `samply record --save-only --unstable-presymbolicate -o <profile.json.gz> ...` writes; its
 symbols are in <profile.json>.syms.json next to it. --match keeps the functions whose name contains TEXT.
+--callers counts, for the samples in a function whose name contains TEXT, the functions that called it.
 """
 import bisect
 import collections
@@ -39,6 +40,8 @@ def main():
             return rows[k][2]
         return f"{lib_name}+{address:#x}"
 
+    callers_of = sys.argv[sys.argv.index("--callers") + 1] if "--callers" in sys.argv else None
+    callers = collections.Counter()
     self_n, total_n = collections.Counter(), collections.Counter()
     samples = 0
     for th in prof["threads"]:
@@ -57,8 +60,14 @@ def main():
             samples += 1
             seen = set()
             first = True
+            found = False
             while stack is not None:
                 n = name_of(st["frame"][stack])
+                if callers_of is not None and found is True and not n.startswith("<core::") and not n.startswith("core::"):
+                    callers[n] += 1
+                    found = None
+                if callers_of is not None and found is False and callers_of in n:
+                    found = True
                 if first:
                     self_n[n] += 1
                     first = False
@@ -67,6 +76,11 @@ def main():
                     seen.add(n)
                 stack = st["prefix"][stack]
     print(f"{samples} samples")
+    if callers_of is not None:
+        print(f"-- callers of {callers_of}")
+        for n, c in callers.most_common(top):
+            print(f"{100 * c / samples:6.1f}%  {n[:160]}")
+        return
     for title, counter in (("total (on the stack)", total_n), ("self (running)", self_n)):
         print(f"-- {title}")
         rows = [(n, c) for n, c in counter.most_common() if match is None or match in n][:top]

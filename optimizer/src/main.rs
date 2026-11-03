@@ -1257,7 +1257,9 @@ fn main() {
             let mut sorted = secs.clone();
             sorted.sort_by(|a, b| a.partial_cmp(b).unwrap());
             println!("{}", Value::obj(vec![("score", Value::from(score)), ("median", Value::from(sorted[n / 2])), ("first", Value::from(secs[0])),
-                ("min", Value::from(sorted[0]))]));
+                ("min", Value::from(sorted[0])),
+                ("engine_lookups", Value::from(civ6opt::engine::LOOKUPS.load(std::sync::atomic::Ordering::Relaxed) as f64 / n as f64)),
+                ("engines_made", Value::from(civ6opt::engine::ENGINES.load(std::sync::atomic::Ordering::Relaxed) as f64 / n as f64))]));
         }
         "search" => {
             let budget: usize = arg(&args, "--budget").map(|x| x.parse().unwrap()).unwrap_or(20000);

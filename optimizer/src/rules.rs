@@ -134,6 +134,15 @@ impl Table {
         if let Some(&i) = self.exact.get(name) {
             return i;
         }
+        // (a name the table spells in another case, as BeliefModifiers' ModifierID: lowered without allocating)
+        let mut buf = [0u8; 64];
+        if name.len() <= buf.len() && name.is_ascii() {
+            for (b, c) in buf.iter_mut().zip(name.bytes()) {
+                *b = c.to_ascii_lowercase();
+            }
+            let lower = std::str::from_utf8(&buf[..name.len()]).unwrap();
+            return *self.cols.get(lower).unwrap_or_else(|| panic!("no column {name}"));
+        }
         *self.cols.get(&name.to_lowercase()).unwrap_or_else(|| panic!("no column {name}"))
     }
     pub fn has_col(&self, name: &str) -> bool {
@@ -216,8 +225,21 @@ pub struct ModRow {
     pub permanent: bool,
 }
 
+/// What move_cost reads of the rules, made once.
+pub struct MoveInfo {
+    /// terrain -> (movement cost, impassable to land units: a mountain or water)
+    pub terrains: crate::fx::FxMap<Sym, (f64, bool)>,
+    /// feature -> (movement change, impassable)
+    pub features: crate::fx::FxMap<Sym, (f64, bool)>,
+    /// route -> (movement cost, supports bridges); and the routes by the save's route index (Routes' rows)
+    pub routes: crate::fx::FxMap<Sym, (f64, bool)>,
+    pub route_rows: Vec<Option<Sym>>,
+    pub city_cost: f64,
+}
+
 pub struct Rules {
     pub imp_cache: OnceLock<Vec<crate::placement::ImpInfo>>,
+    pub move_info: OnceLock<MoveInfo>,
     pub t: crate::fx::FxMap<String, Table>,
     scans: crate::fx::FxMap<String, Vec<u32>>,
     params: crate::fx::FxMap<String, Sym>,
@@ -244,6 +266,7 @@ impl Rules {
         }
         let mut r = Rules {
             imp_cache: OnceLock::new(),
+            move_info: OnceLock::new(),
             t,
             scans,
             params: Default::default(),
@@ -293,6 +316,22 @@ impl Rules {
         }
     }
 
+    pub fn move_info(&self) -> &MoveInfo {
+        self.move_info.get_or_init(|| {
+            let t = self.tab("Terrains");
+            let terrains = (0..t.len() as u32).map(|i| {
+                let k = t.v(i, "TerrainType").sym().unwrap();
+                let blocked = k.ends_with("MOUNTAIN") || k == s!("TERRAIN_COAST") || k == s!("TERRAIN_OCEAN");
+                (k, (t.v(i, "MovementCost").f(), blocked))
+            }).collect();
+            let t = self.tab("Features");
+            let features = (0..t.len() as u32).map(|i| (t.v(i, "FeatureType").sym().unwrap(), (t.v(i, "MovementChange").f(), t.v(i, "Impassable").truthy()))).collect();
+            let t = self.tab("Routes");
+            let routes = (0..t.len() as u32).map(|i| (t.v(i, "RouteType").sym().unwrap(), (t.v(i, "MovementCost").f(), t.v(i, "SupportsBridges").truthy()))).collect();
+            let route_rows = (0..t.len() as u32).map(|i| t.v(i, "RouteType").sym()).collect();
+            MoveInfo { terrains, features, routes, route_rows, city_cost: self.param("CITY_MOVEMENT_COST") }
+        })
+    }
     pub fn tab(&self, name: &str) -> &Table {
         self.t.get(name).unwrap_or_else(|| panic!("no table {name}"))
     }

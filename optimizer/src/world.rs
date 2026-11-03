@@ -361,11 +361,11 @@ impl<'a> World<'a> {
         let r = self.r;
         let center = city.center;
         let dtiles: Vec<XY> = city.districts.iter().map(|d| (d.x, d.y)).collect();
-        let mods = e.plot_effects.get(&city.name).cloned().unwrap_or_default();
+        let mods: &[crate::engine::PlotMod] = e.plot_effects.get(&city.name).map(|v| v.as_slice()).unwrap_or(&[]);
         let pxy: &Plots = &e.plots;
         let amods = crate::yields::appeal_modifiers(e, city.name);
-        let cc = city.clone();
-        let ty = |p: &Plot, c: bool| tile_yields(r, p, &e.env.techs, &e.env.civics, c, &mods, Some(pxy), Some(&cc), Some(&amods));
+        let cc: &City = city;
+        let ty = |p: &Plot, c: bool| tile_yields(r, p, &e.env.techs, &e.env.civics, c, mods, Some(pxy), Some(cc), Some(&amods));
         let mut scored: Vec<(f64, f64, usize)> = vec![];
         for (i, p) in city.owned.iter().enumerate() {
             if p.xy() == center || dtiles.contains(&p.xy()) || !self.workable(p.xy(), center, e) {
@@ -411,7 +411,7 @@ impl<'a> World<'a> {
         }
         let key = {
             use std::hash::{Hash, Hasher};
-            let mut h = std::collections::hash_map::DefaultHasher::new();
+            let mut h = crate::fx::FxHasher::default();
             techs.hash(&mut h);
             civics.hash(&mut h);
             (site, h.finish())

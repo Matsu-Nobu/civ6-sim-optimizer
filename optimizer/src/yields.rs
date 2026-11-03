@@ -591,10 +591,14 @@ pub fn tile_yields_bbcc(r: &Rules, plot: &Plot, techs: &BTreeSet<Sym>, civics: &
     if plot.district.map(|d| d != 0).unwrap_or(false) && !city_center {
         return y;
     }
-    let mut p = plot.clone();
-    if city_center {
-        p.district_type = Some(s!("DISTRICT_CITY_CENTER"));
-    }
+    // (a copy only for a city centre, whose plot counts as the centre district)
+    let p: std::borrow::Cow<Plot> = if city_center {
+        let mut q = plot.clone();
+        q.district_type = Some(s!("DISTRICT_CITY_CENTER"));
+        std::borrow::Cow::Owned(q)
+    } else {
+        std::borrow::Cow::Borrowed(plot)
+    };
     let resource = p.resource.filter(|&res| r.resource_revealed(res, techs));
     // a natural wonder's plot yields only the wonder's own yields, not its terrain's (11/01 run: Pantanal on grassland
     // gives 2 food in the game, the feature's 2 without the grassland's 2); an impassable feature yields nothing of

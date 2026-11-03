@@ -2175,9 +2175,13 @@ impl<'a> Planner<'a> {
             _ => self.engine(env, &st.cities),
         };
         let w = focus_weights(*st.focus.get(&st.cities[ci].name).unwrap());
+        if rec_now.is_none() && rec_next.is_none() {
+            self.w.assign_citizens(&mut st.cities[ci], &e, &w, 1.0);
+            return;
+        }
         let mut c = st.cities[ci].clone();
         self.w.assign_citizens(&mut c, &e, &w, 1.0);
-        if rec_now.is_some() || rec_next.is_some() {
+        {
             // replay: the tiles the recorded citizens worked during the turn: the start's (the turn's processing
             // comes before the player's reassignments), then the next save's; the rest by the rule
             let now: Vec<XY> = rec_now.map(|r| r.worked.clone()).unwrap_or_default();

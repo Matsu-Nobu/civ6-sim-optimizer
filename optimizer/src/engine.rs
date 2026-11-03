@@ -831,12 +831,25 @@ fn engine_key(env: &Env, cities: &[City], pops: &[i32]) -> u64 {
 }
 
 fn hash_plot(q: &Plot, h: &mut Fx) {
-    use std::hash::Hash;
-    (q.x, q.y, q.terrain, q.feature, q.resource, q.improvement, q.river, q.lake, q.pillaged, q.district, q.wonder).hash(h);
+    use std::hash::{Hash, Hasher};
+    // the fields packed into whole words: a None as 0, a value as itself + 1
+    let s = |x: Option<Sym>| x.map(|v| v.0 as u64 + 1).unwrap_or(0);
+    let i = |x: Option<i64>| x.map(|v| v as u64).map(|v| v.wrapping_add(1)).unwrap_or(0);
+    let b = |x: Option<bool>| x.map(|v| v as u64 + 1).unwrap_or(0);
+    h.write_u64((q.x as u32 as u64) | ((q.y as u32 as u64) << 32));
+    h.write_u64(q.terrain.0 as u64 | (s(q.feature) << 32));
+    h.write_u64(s(q.resource) | (s(q.improvement) << 32));
+    h.write_u64(s(q.wonder) | (s(q.district_type) << 32));
+    h.write_u64(i(q.district));
+    h.write_u64(i(q.owner));
+    h.write_u64(i(q.route));
+    h.write_u64(q.river as u64 | (q.lake as u64) << 1 | (q.pillaged as u64) << 2 | (q.river_edges as u64) << 3 | b(q.district_complete) << 11
+        | b(q.wonder_complete) << 13);
+    q.yield_changes.len().hash(h);
     for (k, v) in &q.yield_changes {
-        (k, v.to_bits()).hash(h);
+        h.write_u64(k.0 as u64 | (v.to_bits() as u32 as u64) << 32);
+        h.write_u64(v.to_bits());
     }
-    (q.owner, q.river_edges, q.route, q.district_type, q.district_complete, q.wonder_complete).hash(h);
 }
 
 /// FxHash (rustc's): fast, fine for cache keys.

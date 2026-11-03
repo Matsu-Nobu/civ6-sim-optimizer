@@ -289,9 +289,17 @@ pub fn step<'a>(r: &'a Rules, ec: &mut EngineCache<'a>, acc: &mut PlayerAcc, cit
                 x
             };
             ca.chopped = None;
-            let into = base * (1.0 + pct / 100.0);
-            let applied_pct = if std::env::var("DBGK").is_ok() && item_kind(item) == Kind::District { 0.0 } else { pct };
-            *ca.progress.entry_or(item, 0.0) += base * (1.0 + pct / 100.0) + applied * (1.0 + applied_pct / 100.0);
+            // a "..._PRODUCTION_MODIFIER" percent adds to the city's production percent (amenities, city modifiers),
+            // the others multiply; the carried-over production gets only the others
+            let city_pct = item_production_city_percent(r, &e, c, item);
+            let item_mult = if city_pct == 0.0 {
+                1.0 + pct / 100.0
+            } else {
+                let prod_mult = 1.0 + (nonfood_pct + crate::yields::city_yield_percents(r, &e, c, Some(score))[1]) / 100.0;
+                (1.0 + city_pct / 100.0 / prod_mult) * (1.0 + (pct - city_pct) / 100.0)
+            };
+            let into = base * item_mult;
+            *ca.progress.entry_or(item, 0.0) += into + applied * (1.0 + (pct - city_pct) / 100.0);
             ca.overflow -= applied;
             if item_kind(item) == Kind::Project {
                 for (k, pc) in r.yield_rows("Project_YieldConversions", "ProjectType", item, "YieldType", "PercentOfProductionRate") {

@@ -377,6 +377,26 @@ pub fn item_production_percent(r: &Rules, e: &Engine, c: &City, item: Sym) -> f6
     pct
 }
 
+/// The part of item_production_percent from the "..._PRODUCTION_MODIFIER" effects, which the game adds to the city's
+/// own production percent (amenities) instead of multiplying (10/19 Maracaibo T38: a campus with Patron Goddess's 40%
+/// and 8% from amenities got 6 x 1.48 = 8.88).
+pub fn item_production_city_percent(r: &Rules, e: &Engine, c: &City, item: Sym) -> f64 {
+    let n = c.name;
+    let eff = |x: &'static str| e.city_effects(crate::sym::sym_static(x), n);
+    match item_kind(item) {
+        Kind::Unit => eff("EFFECT_ADJUST_ALL_UNIT_PRODUCTION_MODIFIER").iter().map(|x| x.args.f("Amount")).sum(),
+        Kind::Building => {
+            let wonder = r.is_wonder(item);
+            eff("EFFECT_ADJUST_ALL_BUILDING_PRODUCTION_MODIFIER").iter().filter(|x| match x.args.get("IsWonder") {
+                None => true,
+                Some(v) => v.with(|s| if wonder { s == "1" || s == "true" } else { s == "0" || s == "false" }),
+            }).map(|x| x.args.f("Amount")).sum()
+        }
+        Kind::District => eff("EFFECT_ADJUST_ALL_DISTRICT_PRODUCTION_MODIFIER").iter().map(|x| x.args.f("Amount")).sum(),
+        _ => 0.0,
+    }
+}
+
 pub fn item_production_flat(e: &Engine, c: &City, item: Sym) -> f64 {
     let eff = match item_kind(item) {
         Kind::Unit => "EFFECT_ADJUST_CITY_PRODUCTION_UNIT",

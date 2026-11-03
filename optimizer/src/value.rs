@@ -72,6 +72,59 @@ pub fn features_extra(p: &Planner, st: &State) -> Vec<f64> {
     x
 }
 
+/// Each city's state for valuerows --city-out (a model that reads the cities one by one, tools/value_net.py), in the
+/// order of `st.cities`: capital, population, food stored, housing left over, the last turn's six yields, the item
+/// under way (settler, builder, other unit, building, wonder, district, project, none) and its production put in,
+/// the production put into units, buildings, districts and the rest, the complete districts of six kinds
+/// (campus, theater, holy site, commercial hub, government plaza, encampment) and of others, buildings, plots
+/// owned, improved plots worked, a governor there, the distance to the capital.
+pub fn city_features(p: &Planner, st: &State) -> Vec<Vec<f64>> {
+    use crate::production::{item_kind, Kind};
+    let r = p.r;
+    let kinds = [s!("DISTRICT_CAMPUS"), s!("DISTRICT_THEATER"), s!("DISTRICT_HOLY_SITE"), s!("DISTRICT_COMMERCIAL_HUB"), s!("DISTRICT_GOVERNMENT"),
+                 s!("DISTRICT_ENCAMPMENT")];
+    let capital = st.cities.iter().find(|c| c.capital).map(|c| c.center);
+    st.cities.iter().map(|c| {
+        let acc = st.cacc(c.name);
+        let out = st.city_output.iter().find(|x| x.0 == c.name).map(|x| x.1).unwrap_or([0.0; 6]);
+        let mut item = [0.0; 8];
+        let k = match c.current {
+            None => 7,
+            Some(x) if x == s!("UNIT_SETTLER") => 0,
+            Some(x) if x == s!("UNIT_BUILDER") => 1,
+            Some(x) => match item_kind(x) {
+                Kind::Unit => 2,
+                Kind::Building if r.lookup_truthy("Buildings", "BuildingType", x, "IsWonder") => 4,
+                Kind::Building => 3,
+                Kind::District => 5,
+                _ => 6,
+            },
+        };
+        item[k] = 1.0;
+        let current_put = c.current.and_then(|x| acc.progress.0.iter().find(|y| y.0 == x).map(|y| y.1)).unwrap_or(0.0);
+        let mut put = [0.0; 4];
+        for (x, v) in acc.progress.0.iter() {
+            put[match item_kind(*x) { Kind::Unit => 0, Kind::Building => 1, Kind::District => 2, _ => 3 }] += v;
+        }
+        let mut dist = [0.0; 7];
+        for d in c.districts.iter().filter(|d| d.complete && d.dtype != s!("DISTRICT_CITY_CENTER")) {
+            dist[kinds.iter().position(|k| r.district_is(d.dtype, *k)).unwrap_or(6)] += 1.0;
+        }
+        let governor = st.player.governors.as_ref().map(|g| g.iter().any(|g| g.city_id == Some(c.id))).unwrap_or(false);
+        let mut x = vec![c.capital as u8 as f64, acc.population as f64, acc.food_store,
+                         crate::growth::housing(r, c, None) - acc.population as f64];
+        x.extend(out);
+        x.extend(item);
+        x.push(current_put);
+        x.extend(put);
+        x.extend(dist);
+        x.extend([c.buildings.len() as f64, c.owned.len() as f64,
+                  c.worked.iter().filter(|q| q.improvement.is_some()).count() as f64, governor as u8 as f64,
+                  capital.map(|xy| p.w.map.distance(xy, c.center) as f64).unwrap_or(0.0)]);
+        x
+    }).collect()
+}
+
 /// Weights per turn (the turn the state starts), fitted on standardized features.
 pub struct ValueModel {
     pub turns: HashMap<i64, ([f64; N_FEATURES], [f64; N_FEATURES], [f64; N_FEATURES])>,

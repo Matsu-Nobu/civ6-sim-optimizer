@@ -1051,6 +1051,9 @@ fn main() {
             // Each state from turn C on is one row: play, turn, the value features (crate::value::features), the
             // play's score. From C on the play follows the plan, so the score is a function of the row's state (a
             // change after the state would make it depend on what the state does not show). Written as TSV to --out.
+            // With --city-out, each row's cities (crate::value::city_features) go there as TSV: play, turn, the
+            // city's place in the state's list, its features.
+            let city_out = arg(&args, "--city-out");
             let plays: usize = arg(&args, "--plays").map(|x| x.parse().unwrap()).unwrap_or(2000);
             let threads: usize = arg(&args, "--threads").map(|x| x.parse().unwrap()).unwrap_or(8);
             let changes: u64 = arg(&args, "--changes").map(|x| x.parse().unwrap()).unwrap_or(5);
@@ -1062,9 +1065,10 @@ fn main() {
             opt::play(&pl, &st0, &mut rec, opt::Horizon::plain(turn));
             let cands: Vec<(i64, Key, Vec<Choice>)> = rec.log.iter().filter(|d| d.3.len() > 1).map(|d| (d.0, d.1.clone(), d.3.clone())).collect();
             let lines = std::sync::Mutex::new(Vec::<String>::new());
+            let city_lines = std::sync::Mutex::new(Vec::<String>::new());
             std::thread::scope(|sc| {
                 for w in 0..threads {
-                    let (p, cands, g0, lines) = (&p, &cands, &g0, &lines);
+                    let (p, cands, g0, lines, city_lines, city_out) = (&p, &cands, &g0, &lines, &city_lines, &city_out);
                     sc.spawn(move || {
                         let (mut wpl, wst0) = planner(p);
                         wpl.s.horizon = turn + ext;
@@ -1092,14 +1096,19 @@ fn main() {
                                 if st.turn >= cut {
                                     let mut x = civ6opt::value::features(&wpl, &st).to_vec();
                                     x.extend(civ6opt::value::features_extra(&wpl, &st));
-                                    feats.push((st.turn, x));
+                                    let cs = if city_out.is_some() { civ6opt::value::city_features(&wpl, &st) } else { vec![] };
+                                    feats.push((st.turn, x, cs));
                                 }
                                 wpl.advance(&mut st, &mut GenomeChooser { genome: &g });
                             }
                             let score = opt::play(&wpl, &wst0, &mut GenomeChooser { genome: &g }, horizon).0;
                             let mut l = lines.lock().unwrap();
-                            for (t, f) in feats {
+                            let mut cl = city_lines.lock().unwrap();
+                            for (t, f, cs) in feats {
                                 l.push(format!("{i}\t{t}\t{}\t{score:.2}", f.iter().map(|x| format!("{x:.4}")).collect::<Vec<_>>().join("\t")));
+                                for (k, c) in cs.iter().enumerate() {
+                                    cl.push(format!("{i}\t{t}\t{k}\t{}", c.iter().map(|x| format!("{x:.4}")).collect::<Vec<_>>().join("\t")));
+                                }
                             }
                             i += threads;
                         }
@@ -1107,6 +1116,9 @@ fn main() {
                 }
             });
             std::fs::write(&out, lines.into_inner().unwrap().join("\n") + "\n").unwrap();
+            if let Some(co) = &city_out {
+                std::fs::write(co, city_lines.into_inner().unwrap().join("\n") + "\n").unwrap();
+            }
             eprintln!("wrote {out}");
         }
         "learn" => {

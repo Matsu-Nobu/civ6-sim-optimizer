@@ -1142,6 +1142,19 @@ impl<'a> Planner<'a> {
         if low && item.map(|x| self.r.lookup_f("Units", "UnitType", x, "PopulationCost") > 0.0).unwrap_or(false) {
             st.cacc_mut(n).overflow = 0.0;
         }
+        // replay: the next save shows the leftover gone (the item chosen, no progress and nothing held): it was lost
+        // by a step the save does not hold (10/17 Gordian T44: 10.6 left by its builder, the monument at 0 and 0 held;
+        // the game, loaded at T44, keeps it whatever the item chosen, bought or left idle in single player, so this
+        // is likely a multiplayer turn ending on its timer and the game choosing the item)
+        if let (Some(x), Some(rc)) = (item, self.rec.as_ref().and_then(|r| r.turn(st.turn + 1)).and_then(|rt| rt.city(n))) {
+            // (unless the item is a unit the record makes again this turn, which also leaves it at 0: 10/24
+            // Bordeaux T42, a builder finished by woods)
+            let again = item_kind(x) == Kind::Unit && self.rec.as_ref().and_then(|r| r.turn(st.turn + 1))
+                .map(|nt| nt.units_trained.get(&x).copied().unwrap_or(0) > st.acc.units_trained.get(&x).copied().unwrap_or(0)).unwrap_or(false);
+            if !again && rc.current == Some(x) && rc.held == 0.0 && rc.progress_of.get(&x).copied().unwrap_or(0.0) == 0.0 {
+                st.cacc_mut(n).overflow = 0.0;
+            }
+        }
         self.start_item(st, ci, item);
     }
 

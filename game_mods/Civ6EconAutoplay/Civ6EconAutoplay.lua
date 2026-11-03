@@ -284,7 +284,7 @@ harvest_test = function()
       elseif item and GameInfo.Districts[item] then progress = q:GetDistrictProgress(GameInfo.Districts[item].Index) end
       local m = GameInfo.Buildings["BUILDING_MONUMENT"].Index
       cities[#cities + 1] = { name = c:GetName(), item = item, progress = progress, builder = { q:GetUnitCost(b), q:GetUnitProgress(b) },
-        monument = q:GetBuildingProgress(m) }
+        monument = q:GetBuildingProgress(m), hub = q:GetDistrictProgress(GameInfo.Districts["DISTRICT_COMMERCIAL_HUB"].Index) }
     end
     emit({ kind = "harvest", tag = tag, turn = Game.GetCurrentGameTurn(), units = units, cities = cities })
   end
@@ -345,12 +345,27 @@ harvest_test = function()
       if a.endturn then
         ended = ended + 1
         UI.RequestAction(ActionTypes.ACTION_ENDTURN, { REASON = "UserForced" })
+      elseif a.buy then
+        local c = city_named(a.city)
+        local p = { [CityCommandTypes.PARAM_YIELD_TYPE] = GameInfo.Yields["YIELD_GOLD"].Index }
+        if GameInfo.Units[a.buy] then p[CityCommandTypes.PARAM_UNIT_TYPE] = GameInfo.Units[a.buy].Hash
+        else p[CityCommandTypes.PARAM_BUILDING_TYPE] = GameInfo.Buildings[a.buy].Hash end
+        local can, why = CityManager.CanStartCommand(c, CityCommandTypes.PURCHASE, p, true)
+        emit({ kind = "harvest_can", city = a.city, item = a.buy, can = can, gold = Players[H.player]:GetTreasury():GetGoldBalance() })
+        CityManager.RequestCommand(c, CityCommandTypes.PURCHASE, p)
       elseif a.wait then
         -- (frames counts up to the next step's start)
         frames = -a.wait
       elseif a.choose then
-        local p = { [CityOperationTypes.PARAM_INSERT_MODE] = CityOperationTypes.VALUE_EXCLUSIVE,
-          [CityOperationTypes.PARAM_UNIT_TYPE] = GameInfo.Units[a.choose].Hash }
+        local p = { [CityOperationTypes.PARAM_INSERT_MODE] = CityOperationTypes.VALUE_EXCLUSIVE }
+        if GameInfo.Units[a.choose] then p[CityOperationTypes.PARAM_UNIT_TYPE] = GameInfo.Units[a.choose].Hash
+        elseif GameInfo.Buildings[a.choose] then p[CityOperationTypes.PARAM_BUILDING_TYPE] = GameInfo.Buildings[a.choose].Hash
+        elseif GameInfo.Projects[a.choose] then p[CityOperationTypes.PARAM_PROJECT_TYPE] = GameInfo.Projects[a.choose].Hash
+        elseif GameInfo.Districts[a.choose] then
+          p[CityOperationTypes.PARAM_DISTRICT_TYPE] = GameInfo.Districts[a.choose].Hash
+          p[CityOperationTypes.PARAM_X] = a.x
+          p[CityOperationTypes.PARAM_Y] = a.y
+        end
         local c = city_named(a.city)
         local can, why = CityManager.CanStartOperation(c, CityOperationTypes.BUILD, p, true)
         local reasons = {}

@@ -66,6 +66,11 @@ def main():
     ap.add_argument("--test-rows", nargs="+")
     ap.add_argument("--residual", type=int, help="the feature column (0 = the first after the turn) the score already "
                     "holds: the models learn the score minus it, and add it back")
+    ap.add_argument("--rounds", type=int, default=600, help="LightGBM's boosting rounds")
+    ap.add_argument("--leaves", type=int, default=63, help="LightGBM's leaves per tree")
+    ap.add_argument("--rate", type=float, default=0.05, help="LightGBM's learning rate")
+    ap.add_argument("--on-linear", action="store_true", help="LightGBM learns what the per-turn linear model leaves "
+                    "(the linear model carries the trend beyond the training range, which trees cannot)")
     ap.add_argument("--per-turn", action="store_true", help="LightGBM learns the target standardized within each turn "
                     "(the training rows' mean and spread of the turn), so the late turns' large spread does not drown the early ones")
     a = ap.parse_args()
@@ -81,20 +86,25 @@ def main():
     base = X[:, a.residual] if a.residual is not None else np.zeros(len(y))
     y_full, y = y, y - base
     print(f"{len(np.unique(plays))} plays, {len(y)} rows, {X.shape[1]} features; held out {len(np.unique(plays[te]))} plays")
-    _, lin = ridge_per_turn(turns, X, y, tr)
+    lin_models, lin = ridge_per_turn(turns, X, y, tr)
     try:
         import lightgbm as lgb
     except ImportError:
         sys.exit("lightgbm is needed (pip install -r requirements.txt)")
     F = np.hstack([turns[:, None], X])
-    params = {"objective": "regression", "learning_rate": 0.05, "num_leaves": 63, "min_data_in_leaf": 20, "verbose": -1, "num_threads": 1}
+    params = {"objective": "regression", "learning_rate": a.rate, "num_leaves": a.leaves, "min_data_in_leaf": 20, "verbose": -1, "num_threads": 1}
     mu, sd = np.zeros(len(y)), np.ones(len(y))
+    if a.on_linear:
+        for t in np.unique(turns):
+            k = turns == t
+            if t in lin_models:
+                mu[k] = lin(t, X[k])
     if a.per_turn:
         for t in np.unique(turns):
             k = tr & (turns == t)
             if k.sum() > 1:
                 mu[turns == t], sd[turns == t] = y[k].mean(), y[k].std() + 1e-9
-    gbm = lgb.train(params, lgb.Dataset(F[tr], ((y - mu) / sd)[tr]), num_boost_round=600)
+    gbm = lgb.train(params, lgb.Dataset(F[tr], ((y - mu) / sd)[tr]), num_boost_round=a.rounds)
     pg = gbm.predict(F) * sd + mu + base
     lin0 = lin
     lin = lambda t, x: lin0(t, x) + (x[:, a.residual] if a.residual is not None else 0)

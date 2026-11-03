@@ -16,6 +16,8 @@ pub struct Map {
     pub height: i32,
     pub plots: HashMap<XY, Plot>,
     lake: HashMap<XY, bool>,
+    /// the plots that are land a unit can stand on (not ocean, coast or mountain; the terrain does not change)
+    land: HashSet<XY>,
 }
 
 const RIVER_BIT_OF_NEIGHBOUR: [u8; 6] = [1, 4, 3, 2, 5, 0]; // neighbour index -> bit (from {5: 0, 0: 1, 3: 2, 2: 3, 1: 4, 4: 5})
@@ -28,7 +30,10 @@ impl Map {
             height: v["height"].as_i64().unwrap() as i32,
             plots: v["plots"].as_array().unwrap().iter().map(|p| { let q = plot_from(p); (q.xy(), q) }).collect(),
             lake: HashMap::default(),
+            land: HashSet::default(),
         };
+        m.land = m.plots.iter().filter(|(_, p)| !(p.terrain.ends_with("OCEAN") || p.terrain.ends_with("COAST") || p.terrain.ends_with("MOUNTAIN")))
+            .map(|(xy, _)| *xy).collect();
         let keys: Vec<XY> = m.plots.keys().copied().collect();
         for xy in keys {
             if !m.lake.contains_key(&xy) {
@@ -139,8 +144,8 @@ impl Map {
     }
 
     pub fn is_land(&self, xy: XY) -> bool {
-        let t = self.plots[&xy].terrain;
-        !(t.ends_with("OCEAN") || t.ends_with("COAST") || t.ends_with("MOUNTAIN"))
+        assert!(self.plots.contains_key(&xy), "no plot {xy:?}");
+        self.land.contains(&xy)
     }
 }
 
@@ -153,7 +158,7 @@ pub fn move_cost(r: &Rules, m: &Map, a: XY, b: XY, left: f64, full: f64, road_ty
     let p = m.plots.get(&b)?;
     let mi = r.move_info();
     // (a terrain not in Terrains: 0 cost, passable, as the lookups gave)
-    let (terrain_cost, blocked) = mi.terrains.get(&p.terrain).copied().unwrap_or((0.0, p.terrain.ends_with("MOUNTAIN")));
+    let (terrain_cost, blocked) = mi.terrains.get(&p.terrain).copied().unwrap_or_else(|| (0.0, p.terrain.ends_with("MOUNTAIN")));
     if blocked {
         return None;
     }

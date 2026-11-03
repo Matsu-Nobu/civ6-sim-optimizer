@@ -59,6 +59,17 @@ pub struct Planner<'a> {
     pub milestones: Option<std::sync::Arc<crate::milestones::Milestones>>,
     /// buildable_for's candidates after the tests that do not change during a game (made once)
     static_items: std::cell::OnceCell<StaticItems>,
+    /// builder_options' candidates without the builder's position (BuilderBase), for the state of its key
+    builder_base: RefCell<Option<(u64, Rc<Vec<BuilderBase>>)>>,
+}
+
+/// A candidate action of a builder before its position counts: improve or plant (`v` a turn), harvest or rush (`v`
+/// once), at `xy` (the turns left count from the builder's arrival there).
+struct BuilderBase {
+    v: f64,
+    once: bool,
+    xy: XY,
+    choice: Choice,
 }
 
 /// The units, buildings, districts and projects a city of this player could ever make, with their prerequisites:
@@ -78,7 +89,7 @@ const GP_CLASSES: [&str; 5] = ["GREAT_PERSON_CLASS_ENGINEER", "GREAT_PERSON_CLAS
 
 impl<'a> Planner<'a> {
     pub fn new(r: &'a Rules, w: World<'a>, sc: Scenario, s: Settings, speed: Sym, establish: HashMap<Sym, i64>) -> Planner<'a> {
-        Planner { r, w, sc, s, speed, establish, cache: RefCell::new(EngineCache::new()), rec: None, tiles_rec: None, rec_notes: RefCell::new(vec![]), milestones: None, static_items: std::cell::OnceCell::new() }
+        Planner { r, w, sc, s, speed, establish, cache: RefCell::new(EngineCache::new()), rec: None, tiles_rec: None, rec_notes: RefCell::new(vec![]), milestones: None, static_items: std::cell::OnceCell::new(), builder_base: RefCell::new(None) }
     }
 
     pub fn engine(&self, env: &Env, cities: &[City]) -> Rc<Engine<'a>> {
@@ -1312,54 +1323,41 @@ impl<'a> Planner<'a> {
         let (t_now, end) = (st.turn, self.s.horizon);
         let left = |xy: XY| (end - (t_now + (self.w.map.distance(at, xy) as i64 + 1).div_euclid(2))).max(0);
         let lump = |v: f64, n: i64| 0.7 * v * (n as f64 / 10.0).min(1.0);
-        let mut opts: Vec<(f64, Choice)> = vec![];
-        for c in &st.cities {
-            let worked: Vec<XY> = c.worked.iter().map(|w| w.xy()).collect();
-            let dtiles: Vec<XY> = c.districts.iter().map(|d| (d.x, d.y)).collect();
-            let w = focus_weights(*st.focus.get(&c.name).unwrap_or(&s!("balanced")));
-            let mods: &[crate::engine::PlotMod] = e.plot_effects.get(&c.name).map(|v| v.as_slice()).unwrap_or(&[]);
-            let amods = crate::yields::appeal_modifiers(&e, c.name);
-            let wv = |p: &Plot| weighted(&w, &tile_yields(r, p, &st.acc.techs, &st.acc.civics, false, mods, Some(&e.plots), Some(c), Some(&amods)));
-            let wk: Vec<f64> = c.owned.iter().filter(|p| worked.contains(&p.xy()) && p.xy() != c.center).map(&wv).collect();
-            let vmin = if wk.is_empty() { 0.0 } else { wk.iter().cloned().fold(f64::INFINITY, f64::min) };
-            let gain = |xy: XY, before: f64, after: f64| if worked.contains(&xy) { after - before } else { (after - vmin).max(0.0) };
-            for p in &c.owned {
-                let xy = p.xy();
-                if xy == c.center || dtiles.contains(&xy) || (!self.w.map.is_land(xy) && p.resource.is_none()) {
-                    continue;
-                }
-                let n = left(xy);
-                if p.improvement.is_none() && !st.improving.iter().any(|x| x.1 == xy) {
-                    let base = wv(p);
-                    let lake = |q: XY| self.w.map.is_lake(q);
-                    for imp in improvement_options(r, &e, p, &self.near_with(&nm, xy), &st.acc.techs, &st.acc.civics, Some(c), &lake) {
-                        let mut q = p.clone();
-                        q.improvement = Some(imp);
-                        opts.push((gain(xy, base, wv(&q)) * n as f64, Choice::Act(s!("improve"), c.name, xy.0, xy.1, imp)));
-                    }
-                }
-                if p.feature.is_none() && p.improvement.is_none() && p.resource.is_none() {
-                    for feat in self.plantable(&e, p, &st.acc.civics) {
-                        let mut q = p.clone();
-                        q.feature = Some(feat);
-                        opts.push((gain(xy, wv(p), wv(&q)) * n as f64, Choice::Act(s!("plant"), c.name, xy.0, xy.1, feat)));
-                    }
-                }
-                for (kind, ys) in self.harvest_yields(&e, p, st, Some(c.name)).into_iter().filter(|_| st.turn >= self.s.no_harvest_before) {
-                    let total: f64 = ys.iter().map(|(_, v)| v).sum();
-                    opts.push((lump(total, n), Choice::Act(s!("harvest"), c.name, xy.0, xy.1, kind)));
+        // (off replay, the candidates without the position are kept while the state they read stays the same: the
+        // engine's key covers the techs, civics, policies and plots; the rest is below)
+        let key = if self.rec.is_none() && self.tiles_rec.is_none() && e.key.get() != 0 {
+            use std::hash::{Hash, Hasher};
+            let mut h = crate::fx::FxHasher::default();
+            (e.key.get(), t_now, self.s.no_harvest_before).hash(&mut h);
+            // (a rush's value is the item's cost, which grows with the units made)
+            for (u, k) in st.acc.units_trained.iter() {
+                (u, k).hash(&mut h);
+            }
+            for c in &st.cities {
+                (c.name, c.current, st.focus.get(&c.name)).hash(&mut h);
+                for w in &c.worked {
+                    w.xy().hash(&mut h);
                 }
             }
-        }
-        for c in &st.cities {
-            let pct = self.rush_percent(&e, c.current);
-            if pct != 0.0 {
-                let mut env_cost = env.clone();
-                env_cost.units_trained = st.acc.units_trained.clone();
-                let cost = item_cost(r, &env_cost, c.current.unwrap(), self.speed, None, false).unwrap_or(0.0);
-                opts.push((lump(cost * pct / 100.0, left(c.center)), Choice::Act(s!("rush"), c.name, c.center.0, c.center.1, c.current.unwrap())));
+            for i in &st.improving {
+                (i.0, i.1, i.2).hash(&mut h);
             }
-        }
+            Some(h.finish())
+        } else {
+            None
+        };
+        let cached = key.and_then(|k| self.builder_base.borrow().as_ref().filter(|x| x.0 == k).map(|x| x.1.clone()));
+        let base = match cached {
+            Some(b) => b,
+            None => {
+                let b = Rc::new(self.builder_base_of(st, env, &e));
+                if let Some(k) = key {
+                    *self.builder_base.borrow_mut() = Some((k, b.clone()));
+                }
+                b
+            }
+        };
+        let mut opts: Vec<(f64, Choice)> = base.iter().map(|x| (if x.once { lump(x.v, left(x.xy)) } else { x.v * left(x.xy) as f64 }, x.choice.clone())).collect();
         opts.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap());
         let keep: Vec<Choice> = match self.s.builder_candidates {
             None => opts.iter().map(|o| o.1.clone()).collect(),
@@ -1404,6 +1402,60 @@ impl<'a> Planner<'a> {
             }
         }
         out.push(Choice::Wait);
+        out
+    }
+
+    /// builder_options' candidates before the builder's position counts.
+    fn builder_base_of(&self, st: &State, env: &Env, e: &Engine) -> Vec<BuilderBase> {
+        let r = self.r;
+        let nm = self.near_maps(st);
+        let mut out = vec![];
+        for c in &st.cities {
+            let worked: Vec<XY> = c.worked.iter().map(|w| w.xy()).collect();
+            let dtiles: Vec<XY> = c.districts.iter().map(|d| (d.x, d.y)).collect();
+            let w = focus_weights(*st.focus.get(&c.name).unwrap_or(&s!("balanced")));
+            let mods: &[crate::engine::PlotMod] = e.plot_effects.get(&c.name).map(|v| v.as_slice()).unwrap_or(&[]);
+            let amods = crate::yields::appeal_modifiers(&e, c.name);
+            let wv = |p: &Plot| weighted(&w, &tile_yields(r, p, &st.acc.techs, &st.acc.civics, false, mods, Some(&e.plots), Some(c), Some(&amods)));
+            let wk: Vec<f64> = c.owned.iter().filter(|p| worked.contains(&p.xy()) && p.xy() != c.center).map(&wv).collect();
+            let vmin = if wk.is_empty() { 0.0 } else { wk.iter().cloned().fold(f64::INFINITY, f64::min) };
+            let gain = |xy: XY, before: f64, after: f64| if worked.contains(&xy) { after - before } else { (after - vmin).max(0.0) };
+            for p in &c.owned {
+                let xy = p.xy();
+                if xy == c.center || dtiles.contains(&xy) || (!self.w.map.is_land(xy) && p.resource.is_none()) {
+                    continue;
+                }
+                if p.improvement.is_none() && !st.improving.iter().any(|x| x.1 == xy) {
+                    let base = wv(p);
+                    let lake = |q: XY| self.w.map.is_lake(q);
+                    for imp in improvement_options(r, &e, p, &self.near_with(&nm, xy), &st.acc.techs, &st.acc.civics, Some(c), &lake) {
+                        let mut q = p.clone();
+                        q.improvement = Some(imp);
+                        out.push(BuilderBase { v: gain(xy, base, wv(&q)), once: false, xy, choice: Choice::Act(s!("improve"), c.name, xy.0, xy.1, imp) });
+                    }
+                }
+                if p.feature.is_none() && p.improvement.is_none() && p.resource.is_none() {
+                    for feat in self.plantable(&e, p, &st.acc.civics) {
+                        let mut q = p.clone();
+                        q.feature = Some(feat);
+                        out.push(BuilderBase { v: gain(xy, wv(p), wv(&q)), once: false, xy, choice: Choice::Act(s!("plant"), c.name, xy.0, xy.1, feat) });
+                    }
+                }
+                for (kind, ys) in self.harvest_yields(&e, p, st, Some(c.name)).into_iter().filter(|_| st.turn >= self.s.no_harvest_before) {
+                    let total: f64 = ys.iter().map(|(_, v)| v).sum();
+                    out.push(BuilderBase { v: total, once: true, xy, choice: Choice::Act(s!("harvest"), c.name, xy.0, xy.1, kind) });
+                }
+            }
+        }
+        for c in &st.cities {
+            let pct = self.rush_percent(&e, c.current);
+            if pct != 0.0 {
+                let mut env_cost = env.clone();
+                env_cost.units_trained = st.acc.units_trained.clone();
+                let cost = item_cost(r, &env_cost, c.current.unwrap(), self.speed, None, false).unwrap_or(0.0);
+                out.push(BuilderBase { v: cost * pct / 100.0, once: true, xy: c.center, choice: Choice::Act(s!("rush"), c.name, c.center.0, c.center.1, c.current.unwrap()) });
+            }
+        }
         out
     }
 

@@ -36,6 +36,8 @@ pub struct PlotMod {
 
 pub struct Engine<'a> {
     pub r: &'a Rules,
+    /// EngineCache's key of the env and cities it was made from (0 for one made outside the cache)
+    pub key: std::cell::Cell<u64>,
     pub env: Env,
     pub cities: Vec<City>,
     pub plots: HashMap<XY, Plot>,
@@ -71,6 +73,7 @@ impl<'a> Engine<'a> {
         }
         let mut e = Engine {
             r,
+            key: std::cell::Cell::new(0),
             env: env.clone(),
             cities: cities.to_vec(),
             plots,
@@ -101,7 +104,7 @@ impl<'a> Engine<'a> {
                 plot_city.insert(p.xy(), c.name);
             }
         }
-        Engine { r, env: env.clone(), cities: cities.to_vec(), plots, plot_city, effects: Effects::default(),
+        Engine { r, key: std::cell::Cell::new(0), env: env.clone(), cities: cities.to_vec(), plots, plot_city, effects: Effects::default(),
                  plot_effects: HashMap::default(), religion: None, permanent: false, owner: None, only_consumed: false, attached: HashSet::default() }
     }
 
@@ -743,6 +746,7 @@ impl<'a> EngineCache<'a> {
             self.map.clear();
         }
         let e = std::rc::Rc::new(Engine::new(r, env, cities));
+        e.key.set(key);
         self.map.insert(key, e.clone());
         e
     }

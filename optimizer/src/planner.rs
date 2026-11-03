@@ -1030,6 +1030,19 @@ impl<'a> Planner<'a> {
         if amount <= 0.0 {
             return 0.0;
         }
+        // replay: a city still to choose its next item at the turn's save (production held, none in progress), which
+        // finished an item on an earlier turn, loses a harvest made before the player chooses; the next save tells
+        // the order, by the chosen item's progress without the harvest (10/17 Ray T43, measured in the game: woods
+        // of 40 lost, then the builder chosen got only the 26 held; Susa, the builder chosen first, got its woods)
+        if let (Some(item), Some(rec)) = (c.current, self.rec.as_ref()) {
+            let held_then = rec.turn(st.turn).and_then(|rt| rt.city(n)).map(|rc| rc.held > 0.0 && rc.progress == 0.0).unwrap_or(false);
+            let existed = rec.turn(st.turn - 1).map(|rp| rp.city(n).is_some()).unwrap_or(false);
+            let own = st.acc.cities.get(&n).and_then(|ca| ca.progress.get(&item).copied()).unwrap_or(0.0);
+            let next = rec.turn(st.turn + 1).and_then(|rt| rt.city(n)).filter(|rc| rc.current == Some(item)).map(|rc| rc.progress_of.get(&item).copied().unwrap_or(0.0));
+            if held_then && existed && next.map(|p| (p - own).abs() < 1.5).unwrap_or(false) {
+                return 0.0;
+            }
+        }
         let Some(item) = c.current else {
             // a city with no item since the turn began holds it for the next item (10/21 Arpinum T42: woods of 26
             // and the turn's 6 held); one that just finished its item loses it (Velitrae T62)

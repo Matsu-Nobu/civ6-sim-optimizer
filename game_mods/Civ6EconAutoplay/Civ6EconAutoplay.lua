@@ -218,12 +218,15 @@ local function probe()
   Network.LoadGame(g, ServerType.SERVER_TYPE_NONE)
 end
 
+local harvest_test  -- (below)
+
 local function start()
   if started or ECONRUN.MODE == "off" then return end
   started = true
   if ECONRUN.MODE == "probe" then
     local ok, err = pcall(probe)
     if not ok then emit({ kind = "error", err = tostring(err) }) end
+    if ECONRUN.HARVEST then harvest_test() end
     return
   end
   if ECONRUN.MODE == "newstart" then
@@ -248,6 +251,91 @@ local function start()
   print("ECONRUN start mode " .. ECONRUN.MODE .. " turn " .. Game.GetCurrentGameTurn() .. " " ..
         (ok and ("autoplay " .. turns .. " turns") or ("failed: " .. tostring(err))))
   if ECONRUN.MODE == "autoplay" then save_turn() end
+end
+
+-- The probe's harvest experiment (MODE "probe" with ECONRUN.HARVEST; tools/probe_run.py makes the probed player the
+-- save's only human, so it is the local player): its builders on the listed plots remove the feature (or harvest the
+-- resource) and the listed cities choose their items, in the order given; the cities' state is printed before, after
+-- each step and at the end.
+harvest_test = function()
+  local H = ECONRUN.HARVEST
+  local frames, step = 0, 1
+  local function item_of(c)
+    local h = c:GetBuildQueue():GetCurrentProductionTypeHash()
+    if h == nil or h == 0 then return nil end
+    for _, t in ipairs({ "Units", "Buildings", "Districts", "Projects" }) do
+      local row = GameInfo[t][h]
+      if row then return row.UnitType or row.BuildingType or row.DistrictType or row.ProjectType end
+    end
+    return tostring(h)
+  end
+  local function report(tag)
+    local units = {}
+    for _, u in Players[H.player]:GetUnits():Members() do
+      local k = GameInfo.Units[u:GetType()].UnitType
+      units[k] = (units[k] or 0) + 1
+    end
+    local cities = {}
+    for _, c in Players[H.player]:GetCities():Members() do
+      local q, b = c:GetBuildQueue(), GameInfo.Units["UNIT_BUILDER"].Index
+      cities[#cities + 1] = { name = c:GetName(), item = item_of(c), builder = { q:GetUnitCost(b), q:GetUnitProgress(b) } }
+    end
+    emit({ kind = "harvest", tag = tag, turn = Game.GetCurrentGameTurn(), units = units, cities = cities })
+  end
+  local function city_named(name)
+    for _, c in Players[H.player]:GetCities():Members() do
+      if c:GetName() == "LOC_CITY_NAME_" .. name then return c end
+    end
+  end
+  local start_turn = Game.GetCurrentGameTurn()
+  print("ECONRUN harvest test: player " .. H.player .. " human " .. tostring(Players[H.player]:IsHuman()))
+  ContextPtr:SetHide(false)
+  ContextPtr:SetUpdate(function()
+    frames = frames + 1
+    local me = Game.GetLocalPlayer()
+    -- a multiplayer autosave is written before the turn's processing, which runs right after the load: the player's
+    -- turn begins after it, a turn later than the save's
+    if not Players[H.player]:IsTurnActive() then
+      if Game.GetCurrentGameTurn() > start_turn + 1 then
+        emit({ kind = "harvest_done", error = "no turn of player " .. H.player })
+        ContextPtr:ClearUpdate()
+      end
+      return
+    end
+    if me ~= H.player then
+      emit({ kind = "harvest_done", error = "the local player is " .. tostring(me) .. ", not " .. H.player })
+      ContextPtr:ClearUpdate()
+      return
+    end
+    if frames < 60 then return end
+    frames = 0
+    if step == 1 then report("before") end
+    local a = H.steps[step]
+    if a == nil then
+      report("after")
+      emit({ kind = "harvest_done" })
+      ContextPtr:ClearUpdate()
+      return
+    end
+    local ok, err = pcall(function()
+      if a.choose then
+        local p = { [CityOperationTypes.PARAM_INSERT_MODE] = CityOperationTypes.VALUE_EXCLUSIVE,
+          [CityOperationTypes.PARAM_UNIT_TYPE] = GameInfo.Units[a.choose].Hash }
+        CityManager.RequestOperation(city_named(a.city), CityOperationTypes.BUILD, p)
+      else
+        local plot = Map.GetPlot(a.x, a.y)
+        local unit = nil
+        for _, u in ipairs(Units.GetUnitsInPlot(plot)) do
+          if u:GetOwner() == H.player and GameInfo.Units[u:GetType()].UnitType == "UNIT_BUILDER" then unit = u end
+        end
+        local op = plot:GetFeatureType() >= 0 and UnitOperationTypes.REMOVE_FEATURE or UnitOperationTypes.HARVEST_RESOURCE
+        UnitManager.RequestOperation(unit, op, { [UnitOperationTypes.PARAM_X] = a.x, [UnitOperationTypes.PARAM_Y] = a.y })
+      end
+    end)
+    emit({ kind = "harvest_step", step = step, ok = ok, err = ok and nil or tostring(err) })
+    report("step" .. step)
+    step = step + 1
+  end)
 end
 
 Events.LoadScreenClose.Add(start)

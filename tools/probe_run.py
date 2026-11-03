@@ -50,6 +50,34 @@ def lua(v):
     return json.dumps(v)
 
 
+def only_human(path, player):
+    """Rewrites the slot status in a save's header so that `player` is the only human (taken) slot and the other
+    human slots are computer ones: loaded as a single-player game, the first human slot is the local player."""
+    import struct
+    import zlib
+    b = bytearray(path.read_bytes())
+    key = lambda name: struct.pack("<I", zlib.crc32(name.encode()) ^ 0xFFFFFFFF)
+    def entries(name):
+        # an entry: the key, type 2 (a 32-bit number), 8 bytes, the value
+        out, i = [], b.find(key(name))
+        while i >= 0:
+            if struct.unpack("<I", b[i + 4:i + 8])[0] == 2:
+                out.append((i, struct.unpack("<I", b[i + 16:i + 20])[0]))
+            i = b.find(key(name), i + 1)
+        return out
+    ids = entries("PLAYER_ID")
+    changed = 0
+    for i, status in entries("SLOT_STATUS"):
+        # the slot's PLAYER_ID entry comes shortly before its SLOT_STATUS entry
+        owner = max((p for p in ids if i - 1200 < p[0] < i), default=None)
+        # (SlotStatus: 1 computer, 3 taken by a human)
+        if status == 3 and owner is not None and owner[1] != player:
+            b[i + 16:i + 20] = struct.pack("<I", 1)
+            changed += 1
+    path.write_bytes(bytes(b))
+    return changed
+
+
 def probe_records(body):
     """The probe's records in the log; a long one comes as "ECONPART" pieces before its last "ECONPROBE" piece."""
     out, parts = [], ""
@@ -80,12 +108,21 @@ def main():
     # --boosts: the boost experiment (Civ6EconBoostTest.lua) on the first save given
     boosts = "--boosts" in args
     args = [a for a in args if a != "--boosts"]
+    # --harvest '<json>': the harvest experiment (Civ6EconAutoplay.lua harvest_test), {"steps": [{"x":..,"y":..} or
+    # {"city": NAME, "choose": UNIT}]}, as the probed player of the first save, made its only human
+    harvest = None
+    if "--harvest" in args:
+        k = args.index("--harvest")
+        harvest = json.loads(args[k + 1])
+        args = args[:k] + args[k + 2:]
     probes = []
     for arg in args:
         name, turn = arg.split(":")
         d, pid, civ = GAMES[name]
         save = f"EconProbe_{name}_T{int(turn):03d}"
         shutil.copy(ROOT / "data" / "saves" / d / f"AutoSave_{int(turn):04d}.Civ6Save", SAVES / f"{save}.Civ6Save")
+        if harvest:
+            print("slots made computer:", only_human(SAVES / f"{save}.Civ6Save", pid))
         # (a save's game turn is one less than the record's turn of it)
         probes.append({"name": save, "turn": int(turn), "game_turn": int(turn) - 1, "player": pid, "civ": civ, "game": name})
     for f in MOD_SRC.iterdir():
@@ -96,6 +133,9 @@ def main():
     text = text.rstrip() + f"\nECONRUN.PROBE = {lua(probes)}\n"
     if boosts:
         text += "ECONRUN.BOOSTS = true\n"
+    if harvest:
+        harvest["player"] = probes[0]["player"]
+        text += f"ECONRUN.HARVEST = {lua(harvest)}\n"
     (MOD / "Civ6EconRunnerConfig.lua").write_text(text)
     start = LOG.stat().st_size if LOG.exists() else 0
     sh("powershell.exe", "-NoProfile", "-Command", 'Start-Process "steam://rungameid/289070"')
@@ -117,7 +157,7 @@ def main():
             lines = [x for x in body[start:].splitlines() if "ECONPROBE " in x]
             if len(lines) != seen:
                 seen, last = len(lines), time.time()
-            boost_done = not boosts or "ECONBOOST {\"done\"" in body[start:]
+            boost_done = (not boosts or "ECONBOOST {\"done\"" in body[start:]) and (not harvest or '"harvest_done"' in body[start:])
             if (any('"done"' in x for x in lines) and boost_done) or time.time() - last > 420:
                 break
     finally:
@@ -137,6 +177,10 @@ def main():
     body = LOG.read_bytes().decode("utf-8", "replace")
     (out / "last_lua.log").write_text(body)
     records = probe_records(body)
+    if harvest:
+        rows = [d for d in records if str(d.get("kind", "")).startswith("harvest")]
+        (out / f"harvest_{probes[0]['game']}_T{probes[0]['turn']}.jsonl").write_text("".join(json.dumps(r) + "\n" for r in rows))
+        print(len(rows), "harvest records")
     if boosts:
         rows = [json.loads(x[x.find("ECONBOOST ") + 10:].replace("\\", "/")) for x in body.splitlines() if "ECONBOOST " in x]
         rows += [d for d in records if d.get("kind") == "civics"]

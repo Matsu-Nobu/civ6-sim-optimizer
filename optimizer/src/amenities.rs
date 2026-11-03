@@ -38,6 +38,28 @@ pub fn amenities_needed(r: &Rules, pop: i32) -> f64 {
 /// from outside the player's land (each one's amenities go to the neediest cities, as an own luxury's do).
 pub fn amenity_scores(r: &Rules, cities: &[City], e: &Engine, extra: i64) -> Vec<(Sym, f64)> {
     let _g = crate::prof::start(6);
+    let (mut supply, per_lux, mut types) = supply_before_luxuries(r, cities, e);
+    let need: Vec<f64> = cities.iter().map(|c| amenities_needed(r, c.population)).collect();
+    // replay: the luxury amenities as the save gives them to each city
+    if let Some(given) = &e.env.luxuries_given {
+        for (n, v) in given {
+            if let Some(x) = supply.iter_mut().find(|(a, _)| a == n) {
+                x.1 += v;
+            }
+        }
+        types.clear();
+    }
+    let extra = if e.env.luxuries_given.is_some() { 0 } else { extra };
+    give_luxuries(&mut supply, &need, types.len() + extra.max(0) as usize, per_lux, &vec![false; cities.len()]);
+    if crate::envcfg::trace() == Some("amen") {
+        eprintln!("AMEN lux {:?} extra {extra} {:?}", types.iter().map(|(r, n)| (r.as_string(), *n)).collect::<Vec<_>>(), cities.iter().enumerate().map(|(i, c)| (c.name.as_string(), supply[i].1, need[i])).collect::<Vec<_>>());
+    }
+    cities.iter().enumerate().map(|(i, c)| (c.name, supply[i].1 - need[i])).collect()
+}
+
+/// Each city's amenities other than the luxuries' (name, amount), the copies each luxury gives, and the player's
+/// luxury types with their copies.
+fn supply_before_luxuries(r: &Rules, cities: &[City], e: &Engine) -> (Vec<(Sym, f64)>, i64, Vec<(Sym, i64)>) {
     let mut supply: Vec<(Sym, f64)> = cities.iter().map(|c| (c.name, 0.0)).collect();
     let sup = |supply: &mut Vec<(Sym, f64)>, n: Sym, v: f64| supply.iter_mut().find(|(a, _)| *a == n).unwrap().1 += v;
     for c in cities {
@@ -101,7 +123,6 @@ pub fn amenity_scores(r: &Rules, cities: &[City], e: &Engine, extra: i64) -> Vec
             sup(&mut supply, n, per * k as f64);
         }
     }
-    let need: Vec<f64> = cities.iter().map(|c| amenities_needed(r, c.population)).collect();
     let mut per_lux = 4i64;
     let mut types = improved_luxuries(r, cities, &e.env.p);
     per_lux += e.player_effects(s!("EFFECT_ADJUST_OWNED_LUXURY_EXTRA_AMENITIES")).iter().map(|x| x.args.f("Amount") as i64).sum::<i64>();
@@ -117,28 +138,35 @@ pub fn amenity_scores(r: &Rules, cities: &[City], e: &Engine, extra: i64) -> Vec
             }
         }
     }
-    // replay: the luxury amenities as the save gives them to each city
-    if let Some(given) = &e.env.luxuries_given {
-        for (n, v) in given {
-            if let Some(x) = supply.iter_mut().find(|(a, _)| a == n) {
-                x.1 += v;
-            }
-        }
-        types.clear();
-    }
-    let extra = if e.env.luxuries_given.is_some() { 0 } else { extra };
-    for _ in 0..(types.len() + extra.max(0) as usize) {
-        let mut order: Vec<usize> = (0..cities.len()).collect();
-        // sorted by supply - need (stable, like Python's sort)
+    (supply, per_lux, types)
+}
+
+/// Gives each luxury's copies to the cities with the lowest amenity scores, one copy a city: a stable sort of the
+/// order the previous luxury's copies left (10/19 T44's table: all seven luxuries' cities in that order).
+fn give_luxuries(supply: &mut [(Sym, f64)], need: &[f64], rounds: usize, per_lux: i64, skip: &[bool]) {
+    let mut order: Vec<usize> = (0..supply.len()).filter(|i| !skip[*i]).collect();
+    for _ in 0..rounds {
         order.sort_by(|&a, &b| (supply[a].1 - need[a]).partial_cmp(&(supply[b].1 - need[b])).unwrap());
         for &i in order.iter().take(per_lux as usize) {
             supply[i].1 += 1.0;
         }
     }
-    if crate::envcfg::trace() == Some("amen") {
-        eprintln!("AMEN lux {:?} extra {extra} {:?}", types.iter().map(|(r, n)| (r.as_string(), *n)).collect::<Vec<_>>(), cities.iter().enumerate().map(|(i, c)| (c.name.as_string(), supply[i].1, need[i])).collect::<Vec<_>>());
-    }
-    cities.iter().enumerate().map(|(i, c)| (c.name, supply[i].1 - need[i])).collect()
+}
+
+/// Replay: the luxury copies of the save's table given again from the cities' state at the start of the turn's
+/// processing, which the game does then (10/19 T43: Cumana 7 copies and Quito 6, the save's table 5 and 7). A city
+/// with no copies in the table (founded during the player's last actions) gets none (10/14 Bordeaux T37).
+pub fn luxuries_given_again(r: &Rules, cities: &[City], e: &Engine, given: &[(Sym, f64)]) -> Vec<(Sym, f64)> {
+    let (mut supply, per_lux, _) = supply_before_luxuries(r, cities, e);
+    let need: Vec<f64> = cities.iter().map(|c| amenities_needed(r, c.population)).collect();
+    let had = |n: Sym| given.iter().find(|x| x.0 == n).map(|x| x.1).unwrap_or(0.0);
+    let skip: Vec<bool> = cities.iter().map(|c| had(c.name) <= 0.0).collect();
+    let k = skip.iter().filter(|x| !**x).count() as i64;
+    let per = per_lux.min(k).max(1);
+    let total: f64 = given.iter().map(|x| x.1).sum();
+    let before: Vec<f64> = supply.iter().map(|x| x.1).collect();
+    give_luxuries(&mut supply, &need, (total / per as f64).round() as usize, per, &skip);
+    cities.iter().enumerate().map(|(i, c)| (c.name, supply[i].1 - before[i])).collect()
 }
 
 /// (non-food yield %, growth %) for an amenity score.

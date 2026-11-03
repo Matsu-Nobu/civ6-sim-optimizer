@@ -93,9 +93,6 @@ impl<'a> Planner<'a> {
             districts_completed: None,
             extra_luxuries: self.sc.extra_luxuries.get(&st.turn).copied().unwrap_or(0),
             luxuries_given: self.rec.as_ref().or(self.tiles_rec.as_ref()).and_then(|r| r.turn(st.turn)).and_then(|rt| rt.luxuries.clone()),
-            luxuries_next: self.rec.as_ref().or(self.tiles_rec.as_ref())
-                .filter(|r| r.turn(st.turn + 1).map(|b| b.cities.len()).unwrap_or(0) > r.turn(st.turn).map(|a| a.cities.len()).unwrap_or(usize::MAX))
-                .and_then(|r| r.turn(st.turn + 1)).and_then(|rt| rt.luxuries.clone()),
             allies: self.sc.allies_at(st.turn),
         }
     }
@@ -2624,6 +2621,14 @@ impl<'a> Planner<'a> {
                 for g in gs.iter_mut().filter(|g| st.governors_new.contains(&g.gtype)) {
                     g.established = false;
                 }
+            }
+            // replay: the luxuries given again as the processing starts, before the turn's governors establish
+            // (10/19 T39's table: Quito without its new governor's amenity)
+            let mut env = env.clone();
+            if let Some(given) = env.luxuries_given.clone() {
+                let again = crate::amenities::luxuries_given_again(r, &cities_now, &cache.get(r, &env_research, &cities_now), &given);
+                env.luxuries_given = Some(again.clone());
+                env_research.luxuries_given = Some(again);
             }
             step(r, &mut cache, &mut st.acc, &cities_now, &env, &env_research, &st.units, self.speed, st.research, st.civic, &uniq, &routes, &after_settler)
         };

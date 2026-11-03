@@ -389,41 +389,8 @@ pub fn step<'a>(r: &'a Rules, ec: &mut EngineCache<'a>, acc: &mut PlayerAcc, cit
         pending.push((c, y, food_city, settled, score, nonfood_pct, growth_pct, routes.to_vec(), e.clone(), at));
     }
     let e_end = e;
-    // replay: growth counts the luxuries as the turn ends them
-    // (the city founded during the turn takes its copies from the cities with the most amenities to spare; the next
-    // save's table also has later reshuffles, 10/21 Rome T41: the capital's 4 copies went elsewhere only after a
-    // governor's amenity at T42)
-    let env_g = match (&env.luxuries_given, &env.luxuries_next) {
-        (Some(now), Some(next)) if next != now => {
-            let taken: f64 = next.iter().filter(|(n, _)| !cities.iter().any(|c| c.name == *n)).map(|x| x.1).sum();
-            let mut table = now.clone();
-            let mut x = env.clone();
-            for _ in 0..(taken.round() as i64) {
-                x.luxuries_given = Some(table.clone());
-                let ex = ec.get(r, &x, &sim_cities);
-                let sc = amenity_scores(r, &sim_cities, &ex, env.extra_luxuries);
-                let best = table.iter().enumerate().filter(|(_, (_, v))| *v > 0.0)
-                    .max_by(|(_, a), (_, b)| {
-                        let sa = sc.iter().find(|s| s.0 == a.0).map(|s| s.1).unwrap_or(f64::MIN);
-                        let sb = sc.iter().find(|s| s.0 == b.0).map(|s| s.1).unwrap_or(f64::MIN);
-                        sa.partial_cmp(&sb).unwrap()
-                    }).map(|(i, _)| i);
-                match best {
-                    Some(i) => table[i].1 -= 1.0,
-                    None => break,
-                }
-            }
-            x.luxuries_given = Some(table);
-            x.luxuries_next = x.luxuries_given.clone();
-            Some(x)
-        }
-        _ => None,
-    };
-    let lux_of = |l: &Option<Vec<(Sym, f64)>>, n: Sym| l.as_ref().and_then(|v| v.iter().find(|x| x.0 == n).map(|x| x.1)).unwrap_or(0.0);
     for (c, y, food_city, settled, score, nonfood_pct, growth_pct, routes, e, at) in pending {
         let routes = &routes[..];
-        // (only for a city whose share changed)
-        let env_g = env_g.as_ref().filter(|g| lux_of(&env.luxuries_given, c.name) != lux_of(&g.luxuries_given, c.name));
         let pop = acc.cities.get(&c.name).unwrap().population;
         let mut food = y[0];
         let mut growth_pct = growth_pct;
@@ -433,19 +400,13 @@ pub fn step<'a>(r: &'a Rules, ec: &mut EngineCache<'a>, acc: &mut PlayerAcc, cit
             food = city_turn_yields(r, &ef, fc, pop, routes, nonfood_pct, Some(score))[0];
             // growth counts the amenities after the turn's completions too (10/14 Paris T37: the Audience Chamber's
             // amenity made it happy, +8% growth)
-            let eg = env_g.map(|x| ec.get(r, x, &now)).unwrap_or(ef);
-            let score_now = amenity_scores(r, &now, &eg, env.extra_luxuries).iter().find(|(n, _)| *n == c.name).map(|x| x.1).unwrap_or(0.0);
-            growth_pct = happiness(r, score_now).1;
-        } else if let Some(x) = env_g {
-            let eg = ec.get(r, x, &at);
-            let score_now = amenity_scores(r, &at, &eg, env.extra_luxuries).iter().find(|(n, _)| *n == c.name).map(|x| x.1).unwrap_or(0.0);
+            let score_now = amenity_scores(r, &now, &ef, env.extra_luxuries).iter().find(|(n, _)| *n == c.name).map(|x| x.1).unwrap_or(0.0);
             growth_pct = happiness(r, score_now).1;
         }
         if settled {
             // the city's amenities for growth count the citizens left after the settler
             let now: Vec<City> = sim_cities.iter().map(|x| { let mut x = x.clone(); if x.name == c.name { x.population = pop; } x }).collect();
-            let eg = env_g.map(|x| ec.get(r, x, &sim_cities)).unwrap_or_else(|| e_sim.clone());
-            let score_now = amenity_scores(r, &now, &eg, env.extra_luxuries).iter().find(|(n, _)| *n == c.name).map(|x| x.1).unwrap_or(0.0);
+            let score_now = amenity_scores(r, &now, &e_sim, env.extra_luxuries).iter().find(|(n, _)| *n == c.name).map(|x| x.1).unwrap_or(0.0);
             growth_pct = happiness(r, score_now).1;
             let mut fewer = c.clone();
             fewer.population = pop;

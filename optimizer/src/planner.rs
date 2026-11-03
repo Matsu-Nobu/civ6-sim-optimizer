@@ -2088,6 +2088,12 @@ impl<'a> Planner<'a> {
     }
 
     fn assign(&self, st: &mut State, ci: usize, env: &Env) {
+        self.assign_with(st, ci, env, None)
+    }
+
+    /// assign, with the engine of `env` and the cities when the caller has it (`e`; never on replay, where the
+    /// recorded tiles can move a plot between the cities first)
+    fn assign_with(&self, st: &mut State, ci: usize, env: &Env, e: Option<&Rc<Engine<'a>>>) {
         let rec = self.rec.as_ref().or(self.tiles_rec.as_ref());
         let name = st.cities[ci].name;
         let rec_now = rec.and_then(|r| r.turn(st.turn)).and_then(|rt| rt.city(name));
@@ -2112,7 +2118,10 @@ impl<'a> Planner<'a> {
                 st.cities[ci].owned.push(p);
             }
         }
-        let e = self.engine(env, &st.cities);
+        let e = match e {
+            Some(e) if rec.is_none() => e.clone(),
+            _ => self.engine(env, &st.cities),
+        };
         let w = focus_weights(*st.focus.get(&st.cities[ci].name).unwrap());
         let mut c = st.cities[ci].clone();
         self.w.assign_citizens(&mut c, &e, &w, 1.0);
@@ -2386,6 +2395,10 @@ impl<'a> Planner<'a> {
         }
         crate::prof::lap(&mut lap, 18);
         // citizens
+        // (off replay, one engine for the loop: its key changes only when a city's population crosses one of the
+        // populations the modifiers test, crate::engine::pop_thresholds)
+        let reuse = self.rec.is_none() && self.tiles_rec.is_none();
+        let mut e_pop = if reuse { Some(self.engine(&env, &st.cities)) } else { None };
         for ci in 0..st.cities.len() {
             let n = st.cities[ci].name;
             let pop = st.cacc(n).population;
@@ -2394,8 +2407,15 @@ impl<'a> Planner<'a> {
                 let f = self.decide(st, "focus", Ent::S(n), FOCUS.iter().map(|f| Choice::S(ss(f))).collect(), ch).and_then(|c| c.sym()).unwrap_or(s!("balanced"));
                 st.focus.insert(n, f);
             }
+            let old = st.cities[ci].population;
             st.cities[ci].population = pop;
-            self.assign(st, ci, &env);
+            if reuse {
+                let th = crate::engine::pop_thresholds(r);
+                if th.iter().filter(|&&x| old >= x).count() != th.iter().filter(|&&x| pop >= x).count() {
+                    e_pop = Some(self.engine(&env, &st.cities));
+                }
+            }
+            self.assign_with(st, ci, &env, e_pop.as_ref());
         }
         crate::prof::lap(&mut lap, 19);
         // production before the builders: a chop goes into the item the city works on
@@ -2949,8 +2969,10 @@ impl<'a> Planner<'a> {
         st.builders.retain(|b| b.charges > 0);
         if !st.builders.is_empty() {
             let _g = crate::prof::start(32);
+            // (the cities' engine stays the same over the loop: the assignment changes only the worked tiles)
+            let e = if self.rec.is_none() && self.tiles_rec.is_none() { Some(self.engine(&env, &st.cities)) } else { None };
             for ci in 0..st.cities.len() {
-                self.assign(st, ci, &env);
+                self.assign_with(st, ci, &env, e.as_ref());
             }
         }
         crate::prof::lap(&mut lap, 35);

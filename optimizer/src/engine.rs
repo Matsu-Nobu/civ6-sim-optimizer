@@ -750,7 +750,7 @@ impl<'a> EngineCache<'a> {
 
 /// The populations the modifiers' requirements test (REQUIREMENT_CITY_HAS_X_POPULATION): an engine only depends
 /// on which of them a city has reached.
-fn pop_thresholds(r: &Rules) -> &'static [i32] {
+pub fn pop_thresholds(r: &Rules) -> &'static [i32] {
     static T: std::sync::OnceLock<Vec<i32>> = std::sync::OnceLock::new();
     T.get_or_init(|| {
         let rq = r.tab("Requirements");

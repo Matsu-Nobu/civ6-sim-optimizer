@@ -105,6 +105,8 @@ pub struct TileInfo {
     pub improvements: FxMap<Sym, Vec<(Sym, f64)>>,
     /// improvement -> its Improvement_BonusYieldChanges rows: (tech, civic, yield, change)
     pub improvement_bonus: FxMap<Sym, Vec<(Option<Sym>, Option<Sym>, Sym, f64)>>,
+    /// improvement -> improvement_adjacency_rows
+    pub improvement_adjacency: FxMap<Sym, Vec<AdjRow>>,
     pub food_replace: f64,
     pub production_replace: f64,
 }
@@ -145,7 +147,9 @@ pub fn tile_info(r: &Rules) -> &TileInfo {
             improvement_bonus.entry(i).or_default().push((t.v(row, "PrereqTech").sym().filter(|x| !x.is_empty()),
                 t.v(row, "PrereqCivic").sym().filter(|x| !x.is_empty()), t.v(row, "YieldType").sym().unwrap(), t.v(row, "BonusYieldChange").f()));
         }
-        TileInfo { terrains, features, resources, improvements, improvement_bonus,
+        let improvement_adjacency = keys("Improvement_Adjacencies", "ImprovementType").into_iter()
+            .map(|k| (k, improvement_adjacency_rows(r, k))).collect();
+        TileInfo { terrains, features, resources, improvements, improvement_bonus, improvement_adjacency,
             food_replace: r.param("YIELD_FOOD_CITY_TERRAIN_REPLACE"), production_replace: r.param("YIELD_PRODUCTION_CITY_TERRAIN_REPLACE") }
     })
 }
@@ -549,14 +553,14 @@ pub fn improvement_adjacency(r: &Rules, p: &Plot, plots: Option<&Plots>, techs: 
         return y;
     }
     let neighbours: Vec<&Plot> = neighbour_xy(p.x, p.y).iter().filter_map(|xy| plots.get(xy)).collect();
-    for row in improvement_adjacency_rows(r, imp) {
-        if !row_live(&row, techs, civics) {
+    for row in tile_info(r).improvement_adjacency.get(&imp).map(|x| x.as_slice()).unwrap_or(&[]) {
+        if !row_live(row, techs, civics) {
             continue;
         }
         let n = if row.river {
             p.river as i64
         } else {
-            neighbours.iter().filter(|q| adjacent_match(r, &row, q) && !(row.improvement.is_some() && q.pillaged)).count() as i64
+            neighbours.iter().filter(|q| adjacent_match(r, row, q) && !(row.improvement.is_some() && q.pillaged)).count() as i64
         };
         push_y(&mut y, row.yt, (n / row.tiles_required.max(1)) as f64 * row.change);
     }

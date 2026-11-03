@@ -1091,7 +1091,7 @@ fn main() {
                             while st.turn <= turn {
                                 if st.turn >= cut {
                                     let mut x = civ6opt::value::features(&wpl, &st).to_vec();
-                                    x.extend(value_extra(&wpl, &st));
+                                    x.extend(civ6opt::value::features_extra(&wpl, &st));
                                     feats.push((st.turn, x));
                                 }
                                 wpl.advance(&mut st, &mut GenomeChooser { genome: &g });
@@ -3204,14 +3204,4 @@ fn main() {
         }
         _ => eprintln!("usage: civ6opt run|search <problem.json> ..."),
     }
-}
-
-/// valuerows' columns after crate::value::features: the objective so far (the score's part already made), the gold
-/// debt so far, the research and civics (costs of those done plus progress), the plots owned, the builders and
-/// their charges' total, faith.
-fn value_extra(p: &civ6opt::planner::Planner, st: &civ6opt::model::State) -> [f64; 7] {
-    let (_, research) = civ6opt::learn::score_parts(p, 0.0, st);
-    let owned: usize = st.cities.iter().map(|c| c.owned.len()).sum();
-    [opt::objective(&st.yields_sum), st.debt, research, owned as f64, st.builders.len() as f64,
-     st.builders.iter().map(|b| b.charges as f64).sum(), st.acc.faith]
 }

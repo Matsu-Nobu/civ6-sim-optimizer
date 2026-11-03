@@ -38,10 +38,16 @@ def ridge_per_turn(turns, X, y, tr, alpha=0.01):
     return models, predict
 
 
-def pair_accuracy(pred, y, X, rng, n=4000):
+def pair_accuracy(pred, y, X, rng, n=4000, group=None):
     if len(y) < 2:
         return float("nan")
     i, j = rng.integers(0, len(y), n), rng.integers(0, len(y), n)
+    if group is not None:
+        # pairs within a group (states that go on with the same plan): j drawn among i's group
+        order = np.argsort(group, kind="stable")
+        g = group[order]
+        lo, hi = np.searchsorted(g, group[i], "left"), np.searchsorted(g, group[i], "right")
+        j = order[lo + (rng.random(n) * (hi - lo)).astype(int)]
     # pairs of the same state (before a play's changes every play has it) cannot be told apart by any model
     keep = (np.abs(y[i] - y[j]) > 0.01 * np.abs(y).mean()) & np.any(X[i] != X[j], axis=1)
     if not keep.any():
@@ -86,7 +92,8 @@ def main():
     lin = lambda t, x: lin0(t, x) + (x[:, a.residual] if a.residual is not None else 0)
     y = y_full
     rng = np.random.default_rng(0)
-    print("turns    rows  R2 linear  R2 LightGBM  pairs linear  pairs LightGBM")
+    plan = plays // 10**6
+    print("turns    rows  R2 linear  R2 LightGBM  pairs linear  pairs LightGBM  same plan linear  same plan LightGBM")
     for lo in range(int(turns.min()), int(turns.max()) + 1, 10):
         m = te & (turns >= lo) & (turns < lo + 10)
         if m.sum() < 10:
@@ -95,12 +102,15 @@ def main():
         ys = np.concatenate([y[m & (turns == t)] for t in np.unique(turns[m])])
         pgs = np.concatenate([pg[m & (turns == t)] for t in np.unique(turns[m])])
         # pairs only within a turn
-        acc_l, acc_g = [], []
+        acc_l, acc_g, same_l, same_g = [], [], [], []
         for t in np.unique(turns[m]):
             k = m & (turns == t)
             acc_l.append(pair_accuracy(lin(t, X[k]), y[k], X[k], rng))
             acc_g.append(pair_accuracy(pg[k], y[k], X[k], rng))
-        print(f"T{lo:2d}-{lo + 9:2d} {m.sum():6d}  {r2(pl, ys):9.3f}  {r2(pgs, ys):11.3f}  {np.nanmean(acc_l):12.3f}  {np.nanmean(acc_g):14.3f}")
+            same_l.append(pair_accuracy(lin(t, X[k]), y[k], X[k], rng, group=plan[k]))
+            same_g.append(pair_accuracy(pg[k], y[k], X[k], rng, group=plan[k]))
+        print(f"T{lo:2d}-{lo + 9:2d} {m.sum():6d}  {r2(pl, ys):9.3f}  {r2(pgs, ys):11.3f}  {np.nanmean(acc_l):12.3f}  {np.nanmean(acc_g):14.3f}"
+              f"  {np.nanmean(same_l):16.3f}  {np.nanmean(same_g):18.3f}")
 
 
 if __name__ == "__main__":

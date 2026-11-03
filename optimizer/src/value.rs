@@ -33,6 +33,45 @@ pub fn features(p: &Planner, st: &State) -> [f64; N_FEATURES] {
      st.acc.civics.len() as f64 * 10.0 + civic_progress / 10.0, st.acc.gold, military, shortfall]
 }
 
+/// More of a state for valuerows (tools/value_compare.py), after `features`: the objective so far (the score's part
+/// already made), the gold debt so far, the research and civics (costs of those done plus progress), the plots
+/// owned, the builders, their charges, faith; the production put into units, buildings, districts and the rest; the
+/// complete districts of six kinds (campus, theater, holy site, commercial hub, government plaza, encampment); the
+/// research and civic under way: cost left; the housing left over; governors; policies; boosts had.
+pub fn features_extra(p: &Planner, st: &State) -> Vec<f64> {
+    use crate::production::{item_kind, Kind};
+    let (_, research) = crate::learn::score_parts(p, 0.0, st);
+    let owned: usize = st.cities.iter().map(|c| c.owned.len()).sum();
+    let mut put = [0.0; 4];
+    for c in &st.cities {
+        for (item, v) in st.cacc(c.name).progress.0.iter() {
+            put[match item_kind(*item) { Kind::Unit => 0, Kind::Building => 1, Kind::District => 2, _ => 3 }] += v;
+        }
+    }
+    let kinds = [s!("DISTRICT_CAMPUS"), s!("DISTRICT_THEATER"), s!("DISTRICT_HOLY_SITE"), s!("DISTRICT_COMMERCIAL_HUB"), s!("DISTRICT_GOVERNMENT"),
+                 s!("DISTRICT_ENCAMPMENT")];
+    let mut dist = [0.0; 6];
+    for d in st.cities.iter().flat_map(|c| c.districts.iter()).filter(|d| d.complete) {
+        // a unique district counts as the one it replaces
+        let base = p.r.lookup_sym("DistrictReplaces", "CivUniqueDistrictType", d.dtype, "ReplacesDistrictType").unwrap_or(d.dtype);
+        if let Some(i) = kinds.iter().position(|k| base == *k) {
+            dist[i] += 1.0;
+        }
+    }
+    let era = p.sc.game_era(st.turn);
+    let left = |x: Option<crate::sym::Sym>, prog: &crate::model::OMap<crate::sym::Sym, f64>| x.map(|x| crate::sim::research_cost(p.r, x, p.speed, era)
+        - prog.0.iter().find(|y| y.0 == x).map(|y| y.1).unwrap_or(0.0)).unwrap_or(0.0);
+    let housing: f64 = st.cities.iter().map(|c| crate::growth::housing(p.r, c, None) - st.cacc(c.name).population as f64).sum();
+    let mut x = vec![crate::opt::objective(&st.yields_sum), st.debt, research, owned as f64, st.builders.len() as f64,
+                     st.builders.iter().map(|b| b.charges as f64).sum(), st.acc.faith];
+    x.extend(put);
+    x.extend(dist);
+    x.extend([left(st.research, &st.acc.tech_progress), left(st.civic, &st.acc.civic_progress), housing,
+              st.player.governors.as_ref().map(|g| g.len()).unwrap_or(0) as f64, st.player.policies.len() as f64,
+              st.player.boosted.len() as f64]);
+    x
+}
+
 /// Weights per turn (the turn the state starts), fitted on standardized features.
 pub struct ValueModel {
     pub turns: HashMap<i64, ([f64; N_FEATURES], [f64; N_FEATURES], [f64; N_FEATURES])>,

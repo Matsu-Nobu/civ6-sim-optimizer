@@ -361,8 +361,11 @@ impl Record {
                     && b.city(ca.name).map(|cb| cb.current != Some(*u) || cb.progress <= ca.progress).unwrap_or(false)).count() as i64;
                 let given = gifts.get(&t).map(|g| g.iter().filter(|x| *x == u).count() as i64).unwrap_or(0);
                 // a city making it can have finished another with each harvest of this turn (10/14 Paris T41: two
-                // builders, the treasury 31 lower, less than a builder's price; T44: three horsemen)
-                let harvested = a.cities.iter().filter(|ca| ca.current == Some(*u))
+                // builders, the treasury 31 lower, less than a builder's price; T44: three horsemen), also one that
+                // switched to it during the turn, leaving its item unfinished (10/17 Gordian T45: from its monument,
+                // kept at 19, to a horseman, then woods; Susa T43's woods finished its builder before it switched)
+                let harvested = a.cities.iter().filter(|ca| ca.current == Some(*u) || b.city(ca.name).map(|cb| cb.current == Some(*u)
+                    && ca.current.map(|old| cb.progress_of.get(&old).copied().unwrap_or(0.0) > 0.0).unwrap_or(false)).unwrap_or(false))
                     .map(|ca| self.acts.iter().filter(|x| x.0 == t && x.1 == s!("harvest") && ca.owned.contains(&x.2)).count()).sum::<usize>() as i64;
                 for _ in 0..(n - before - finished - given - harvested).max(0) {
                     let city = a.cities.first().map(|c| c.name).unwrap_or(Sym(0));

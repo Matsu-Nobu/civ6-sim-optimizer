@@ -259,7 +259,7 @@ end
 -- each step and at the end.
 harvest_test = function()
   local H = ECONRUN.HARVEST
-  local frames, step = 0, 1
+  local frames, step, ended = 0, 1, 0
   local function item_of(c)
     local h = c:GetBuildQueue():GetCurrentProductionTypeHash()
     if h == nil or h == 0 then return nil end
@@ -319,7 +319,7 @@ harvest_test = function()
     -- a multiplayer autosave is written before the turn's processing, which runs soon after the load: the player
     -- acts on the next turn, after it, as the recorded player did between the two saves
     if not began or not Players[H.player]:IsTurnActive() then
-      if Game.GetCurrentGameTurn() > start_turn + 1 then
+      if Game.GetCurrentGameTurn() > start_turn + 1 + ended then
         emit({ kind = "harvest_done", error = "no turn of player " .. H.player })
         ContextPtr:ClearUpdate()
       end
@@ -342,10 +342,31 @@ harvest_test = function()
       return
     end
     local ok, err = pcall(function()
-      if a.choose then
+      if a.endturn then
+        ended = ended + 1
+        UI.RequestAction(ActionTypes.ACTION_ENDTURN, { REASON = "UserForced" })
+      elseif a.wait then
+        -- (frames counts up to the next step's start)
+        frames = -a.wait
+      elseif a.choose then
         local p = { [CityOperationTypes.PARAM_INSERT_MODE] = CityOperationTypes.VALUE_EXCLUSIVE,
           [CityOperationTypes.PARAM_UNIT_TYPE] = GameInfo.Units[a.choose].Hash }
-        CityManager.RequestOperation(city_named(a.city), CityOperationTypes.BUILD, p)
+        local c = city_named(a.city)
+        local can, why = CityManager.CanStartOperation(c, CityOperationTypes.BUILD, p, true)
+        local reasons = {}
+        if type(why) == "table" then
+          for k, v in pairs(why) do
+            local text = v
+            if type(v) == "table" then
+              local parts = {}
+              for _, x in pairs(v) do parts[#parts + 1] = tostring(x) end
+              text = table.concat(parts, " | ")
+            end
+            reasons[#reasons + 1] = tostring(k) .. "=" .. tostring(text)
+          end
+        end
+        emit({ kind = "harvest_can", city = a.city, item = a.choose, can = can, why = table.concat(reasons, "; ") })
+        CityManager.RequestOperation(c, CityOperationTypes.BUILD, p)
       else
         local plot = Map.GetPlot(a.x, a.y)
         local unit = nil

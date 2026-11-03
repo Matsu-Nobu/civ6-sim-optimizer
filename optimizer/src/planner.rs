@@ -2894,6 +2894,19 @@ impl<'a> Planner<'a> {
             } else if kind == s!("plant") {
                 st.cities[ci].owned[pi].feature = Some(what);
             } else {
+                // replay: a plot the next save shows in another of the player's cities was moved to it first, and the
+                // harvest goes to that city (10/17 T45: Ray's stone moved to Pasargadae, whose chariot got the 29 x 1.5)
+                let to = self.rec.as_ref().and_then(|r| r.turn(t_now + 1)).and_then(|rt| rt.cities.iter().find(|c| c.owned.contains(&(x, y))).map(|c| c.name))
+                    .filter(|n| *n != st.cities[ci].name).and_then(|n| st.cities.iter().position(|c| c.name == n));
+                let (ci, pi) = match to {
+                    Some(cj) => {
+                        let p = st.cities[ci].owned.remove(pi);
+                        st.cities[ci].worked.retain(|w| w.xy() != (x, y));
+                        st.cities[cj].owned.push(p);
+                        (cj, st.cities[cj].owned.len() - 1)
+                    }
+                    None => (ci, pi),
+                };
                 if !self.harvest_at(st, ci, pi, what, &env, ch) {
                     bi += 1;
                     continue;

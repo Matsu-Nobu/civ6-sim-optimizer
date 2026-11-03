@@ -737,7 +737,7 @@ impl<'a> EngineCache<'a> {
     pub fn get(&mut self, r: &'a Rules, env: &Env, cities: &[City]) -> std::rc::Rc<Engine<'a>> {
         LOOKUPS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let _g = crate::prof::start(12);
-        let key = engine_key(env, cities, pop_thresholds(r));
+        let key = engine_key(env, cities, pop_thresholds(r), token_thresholds(r));
         drop(_g);
         if let Some(e) = self.map.get(&key) {
             return e.clone();
@@ -777,11 +777,25 @@ pub fn pop_thresholds(r: &Rules) -> &'static [i32] {
     })
 }
 
+/// The envoy counts the modifiers' requirements test (MinimumTokens): an engine only depends on which of them a
+/// city-state's count has reached.
+fn token_thresholds(r: &Rules) -> &'static [i64] {
+    static T: std::sync::OnceLock<Vec<i64>> = std::sync::OnceLock::new();
+    T.get_or_init(|| {
+        let ra = r.tab("RequirementArguments");
+        let mut v: Vec<i64> = (0..ra.len() as u32)
+            .filter(|&j| ra.v(j, "Name").sym() == Some(s!("MinimumTokens"))).map(|j| ra.v(j, "Value").f().ceil() as i64).collect();
+        v.sort();
+        v.dedup();
+        v
+    })
+}
+
 /// Everything an engine is built from: the whole Env but the units trained (no modifier reads them), and every
 /// city but what only the citizens' assignment and the production queue use (worked, near, pop_mark, current);
 /// of the population only which of the tested sizes it has reached. (Counting techs instead of naming them let two
 /// states with as many techs share an engine.)
-fn engine_key(env: &Env, cities: &[City], pops: &[i32]) -> u64 {
+fn engine_key(env: &Env, cities: &[City], pops: &[i32], tokens: &[i64]) -> u64 {
     use std::hash::{Hash, Hasher};
     let mut h = Fx(0);
     let p = &env.p;
@@ -794,13 +808,14 @@ fn engine_key(env: &Env, cities: &[City], pops: &[i32]) -> u64 {
             }
         }
     }
+    // (of an envoy count only the thresholds reached: the requirements compare it with MinimumTokens)
     for e in &p.envoys {
-        (e.player_id, e.civilization, e.leader, e.count, e.suzerain, e.at_war, &e.resources).hash(&mut h);
+        let reached = tokens.iter().filter(|&&t| e.count >= t).count();
+        (e.player_id, e.civilization, e.leader, reached, e.suzerain, e.at_war, &e.resources).hash(&mut h);
     }
     for g in &p.great_people_used {
         (g.individual, g.cls, g.turn, g.city).hash(&mut h);
     }
-    p.boosted.hash(&mut h);
     env.techs.hash(&mut h);
     env.civics.hash(&mut h);
     (env.game_era, env.prophet_on_offer, env.districts_completed).hash(&mut h);

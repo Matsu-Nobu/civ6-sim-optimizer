@@ -1046,9 +1046,11 @@ fn main() {
         }
         "valuerows" => {
             // rows for comparing models of a state's value (tools/value_compare.py): --plays plays (default 2000) on
-            // --threads (default 8); each play but the first changes 1 to --changes (default 5) decisions of the
-            // --init plan to other options at random and plays to the end. Each turn's state is one row: play, turn,
-            // the value features (crate::value::features), the play's score. Written as TSV to --out.
+            // --threads (default 8); each play but the first draws a turn C (2 to --turn) and changes 1 to --changes
+            // (default 5) of the --init plan's decisions before C to other options at random, and plays to the end.
+            // Each state from turn C on is one row: play, turn, the value features (crate::value::features), the
+            // play's score. From C on the play follows the plan, so the score is a function of the row's state (a
+            // change after the state would make it depend on what the state does not show). Written as TSV to --out.
             let plays: usize = arg(&args, "--plays").map(|x| x.parse().unwrap()).unwrap_or(2000);
             let threads: usize = arg(&args, "--threads").map(|x| x.parse().unwrap()).unwrap_or(8);
             let changes: u64 = arg(&args, "--changes").map(|x| x.parse().unwrap()).unwrap_or(5);
@@ -1070,16 +1072,28 @@ fn main() {
                         let mut i = w;
                         while i < plays {
                             let mut g = g0.clone();
+                            let mut cut = 0;
                             if i > 0 {
+                                let before: Vec<&(i64, Key, Vec<Choice>)> = loop {
+                                    cut = 3 + (rng.next_u64() % (turn as u64 - 1)) as i64;
+                                    let b: Vec<_> = cands.iter().filter(|d| d.0 < cut).collect();
+                                    if !b.is_empty() {
+                                        break b;
+                                    }
+                                };
                                 for _ in 0..1 + rng.next_u64() % changes {
-                                    let (_, k, o) = &cands[(rng.next_u64() % cands.len() as u64) as usize];
+                                    let (_, k, o) = before[(rng.next_u64() % before.len() as u64) as usize];
                                     g.insert(k.clone(), o[(rng.next_u64() % o.len() as u64) as usize].clone());
                                 }
                             }
                             let mut st = wst0.clone();
                             let mut feats = vec![];
                             while st.turn <= turn {
-                                feats.push((st.turn, civ6opt::value::features(&wpl, &st)));
+                                if st.turn >= cut {
+                                    let mut x = civ6opt::value::features(&wpl, &st).to_vec();
+                                    x.extend(value_extra(&wpl, &st));
+                                    feats.push((st.turn, x));
+                                }
                                 wpl.advance(&mut st, &mut GenomeChooser { genome: &g });
                             }
                             let score = opt::play(&wpl, &wst0, &mut GenomeChooser { genome: &g }, horizon).0;
@@ -3190,4 +3204,14 @@ fn main() {
         }
         _ => eprintln!("usage: civ6opt run|search <problem.json> ..."),
     }
+}
+
+/// valuerows' columns after crate::value::features: the objective so far (the score's part already made), the gold
+/// debt so far, the research and civics (costs of those done plus progress), the plots owned, the builders and
+/// their charges' total, faith.
+fn value_extra(p: &civ6opt::planner::Planner, st: &civ6opt::model::State) -> [f64; 7] {
+    let (_, research) = civ6opt::learn::score_parts(p, 0.0, st);
+    let owned: usize = st.cities.iter().map(|c| c.owned.len()).sum();
+    [opt::objective(&st.yields_sum), st.debt, research, owned as f64, st.builders.len() as f64,
+     st.builders.iter().map(|b| b.charges as f64).sum(), st.acc.faith]
 }

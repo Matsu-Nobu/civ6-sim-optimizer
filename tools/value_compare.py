@@ -2,10 +2,10 @@
 writes: a linear model per turn (ridge regression on standardized features, as optimizer/src/value.rs) and one
 LightGBM model over all turns (the turn as a feature).
 
-  value_compare.py <rows.tsv> [--test-every 5] [--test-rows other.tsv]
+  value_compare.py <rows.tsv>... [--test-every 5] [--test-rows other.tsv...]
 
-Every fifth play is held out; with --test-rows the models learn on all of rows.tsv and are tested on the other rows
-(states around another plan: how far the models carry). For each turn bucket it prints R2 (the share of the scores' variance the model explains)
+Every fifth play is held out; with --test-rows the models learn on all of the rows files and are tested on the other
+rows (states around other plans: how far the models carry to strategies they did not learn from). For each turn bucket it prints R2 (the share of the scores' variance the model explains)
 and the pairwise accuracy: among held-out states of the same turn that differ and whose scores differ by more than 1%,
 the share of pairs the model orders right (what a tree search needs: which of two states is better).
 """
@@ -55,18 +55,23 @@ def r2(pred, y):
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("rows")
+    ap.add_argument("rows", nargs="+")
     ap.add_argument("--test-every", type=int, default=5)
-    ap.add_argument("--test-rows")
+    ap.add_argument("--test-rows", nargs="+")
+    ap.add_argument("--residual", type=int, help="the feature column (0 = the first after the turn) the score already "
+                    "holds: the models learn the score minus it, and add it back")
     a = ap.parse_args()
-    plays, turns, X, y = load(a.rows)
+    # each file's plays numbered apart (file k: k * 10**6 + play); test files after the training ones
+    parts = [load(p) for p in a.rows + (a.test_rows or [])]
+    plays = np.concatenate([p[0] + k * 10**6 for k, p in enumerate(parts)])
+    turns, X, y = np.concatenate([p[1] for p in parts]), np.vstack([p[2] for p in parts]), np.concatenate([p[3] for p in parts])
     if a.test_rows:
-        p2, t2, X2, y2 = load(a.test_rows)
-        plays, turns, X, y = np.concatenate([plays, p2 + 10**6]), np.concatenate([turns, t2]), np.vstack([X, X2]), np.concatenate([y, y2])
-        te = plays >= 10**6
+        te = plays >= len(a.rows) * 10**6
     else:
         te = plays % a.test_every == a.test_every - 1
     tr = ~te
+    base = X[:, a.residual] if a.residual is not None else np.zeros(len(y))
+    y_full, y = y, y - base
     print(f"{len(np.unique(plays))} plays, {len(y)} rows, {X.shape[1]} features; held out {len(np.unique(plays[te]))} plays")
     _, lin = ridge_per_turn(turns, X, y, tr)
     try:
@@ -74,9 +79,12 @@ def main():
     except ImportError:
         sys.exit("lightgbm is needed (pip install -r requirements.txt)")
     F = np.hstack([turns[:, None], X])
-    params = {"objective": "regression", "learning_rate": 0.05, "num_leaves": 63, "min_data_in_leaf": 20, "verbose": -1}
+    params = {"objective": "regression", "learning_rate": 0.05, "num_leaves": 63, "min_data_in_leaf": 20, "verbose": -1, "num_threads": 1}
     gbm = lgb.train(params, lgb.Dataset(F[tr], y[tr]), num_boost_round=600)
-    pg = gbm.predict(F)
+    pg = gbm.predict(F) + base
+    lin0 = lin
+    lin = lambda t, x: lin0(t, x) + (x[:, a.residual] if a.residual is not None else 0)
+    y = y_full
     rng = np.random.default_rng(0)
     print("turns    rows  R2 linear  R2 LightGBM  pairs linear  pairs LightGBM")
     for lo in range(int(turns.min()), int(turns.max()) + 1, 10):

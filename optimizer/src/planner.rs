@@ -566,11 +566,11 @@ impl<'a> Planner<'a> {
 
 
     pub fn buildable(&self, st: &State, ci: usize) -> Vec<Choice> {
-        self.buildable_for(st, ci, false)
+        self.buildable_for(st, ci, false, &self.eng(st))
     }
 
     /// purchase: only what can be bought here (units and buildings but wonders; no districts, wonders or projects)
-    fn buildable_for(&self, st: &State, ci: usize, purchase: bool) -> Vec<Choice> {
+    fn buildable_for(&self, st: &State, ci: usize, purchase: bool, e: &Engine) -> Vec<Choice> {
         let _g = crate::prof::start(3);
         let r = self.r;
         let city = &st.cities[ci];
@@ -583,9 +583,6 @@ impl<'a> Planner<'a> {
         let mut allowed = 1 + (ca.population as i64 - 1).div_euclid(r.param("DISTRICT_POPULATION_REQUIRED_PER") as i64);
         let (civ, leader) = (st.player.civilization, st.player.leader);
         let mut out = vec![];
-        let mut lap = std::time::Instant::now();
-        let e = self.eng(st);
-        crate::prof::lap(&mut lap, 40);
         let site_ctx = std::cell::OnceCell::new();
         let site_possible = |item: Sym, wonder: bool| {
             let (nm, taken) = site_ctx.get_or_init(|| (self.near_maps(st), self.taken(st, ci)));
@@ -625,7 +622,6 @@ impl<'a> Planner<'a> {
             }
             out.push(Choice::S(u));
         }
-        crate::prof::lap(&mut lap, 41);
         for &(b, pt, pc, pd, wonder) in &items.buildings {
             if city.buildings.contains(&b) || pt.map(|x| !techs.contains(&x)).unwrap_or(false) || pc.map(|x| !civics.contains(&x)).unwrap_or(false) {
                 continue;
@@ -653,7 +649,6 @@ impl<'a> Planner<'a> {
             }
             out.push(Choice::S(b));
         }
-        crate::prof::lap(&mut lap, 42);
         if purchase {
             return out;
         }
@@ -1184,9 +1179,10 @@ impl<'a> Planner<'a> {
         let mut env_cost = env.clone();
         env_cost.units_trained = st.acc.units_trained.clone();
         let _g = crate::prof::start(38);
+        let eb = self.eng(st);
         for ci in 0..st.cities.len() {
             let c = st.cities[ci].clone();
-            for item in self.buildable_for(st, ci, true).into_iter().filter_map(|x| x.sym()) {
+            for item in self.buildable_for(st, ci, true, &eb).into_iter().filter_map(|x| x.sym()) {
                 if item_kind(item) == Kind::District {
                     continue;
                 }

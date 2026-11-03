@@ -1234,6 +1234,31 @@ fn main() {
                 ("score", Value::from(total + ext_w * ext_total - opt::IDLE_UNIT_PENALTY * idle - opt::debt_penalty(debt) - floor)), ("seconds", Value::from(t.elapsed().as_secs_f64())),
                 ("engines", Value::from(civ6opt::engine::ENGINES.load(std::sync::atomic::Ordering::Relaxed)))]));
         }
+        // civ6opt bench <game> --turn T [--genome G] [--n N]: the time of one evaluation of a plan as the search
+        // makes it (opt::play, no extension, the planner and its caches kept between evaluations); prints each
+        // evaluation's seconds and their median
+        "bench" => {
+            let (mut pl, st0) = planner(&p);
+            pl.s.horizon = turn;
+            let g = genome_arg(&p, arg(&args, "--genome").as_deref());
+            user_play_setup(&p, &mut pl, arg(&args, "--genome").as_deref());
+            let n: usize = arg(&args, "--n").map(|x| x.parse().unwrap()).unwrap_or(20);
+            let mut secs = vec![];
+            let mut score = 0.0;
+            for _ in 0..n {
+                let mut ch = GenomeChooser { genome: &g };
+                let t = Instant::now();
+                score = opt::play(&pl, &st0, &mut ch, opt::Horizon::plain(turn)).0;
+                secs.push(t.elapsed().as_secs_f64());
+            }
+            if std::env::var("CIV6OPT_PROFILE").is_ok() {
+                eprintln!("{}", civ6opt::prof::report());
+            }
+            let mut sorted = secs.clone();
+            sorted.sort_by(|a, b| a.partial_cmp(b).unwrap());
+            println!("{}", Value::obj(vec![("score", Value::from(score)), ("median", Value::from(sorted[n / 2])), ("first", Value::from(secs[0])),
+                ("min", Value::from(sorted[0]))]));
+        }
         "search" => {
             let budget: usize = arg(&args, "--budget").map(|x| x.parse().unwrap()).unwrap_or(20000);
             let runs: usize = arg(&args, "--runs").map(|x| x.parse().unwrap()).unwrap_or(12);

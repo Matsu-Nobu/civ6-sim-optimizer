@@ -56,13 +56,28 @@ pub struct Planner<'a> {
     pub rec_notes: RefCell<Vec<(i64, String)>>,
     /// science / culture floors checked at the end of the evaluation (crate::milestones)
     pub milestones: Option<std::sync::Arc<crate::milestones::Milestones>>,
+    /// buildable_for's candidates after the tests that do not change during a game (made once)
+    static_items: std::cell::OnceCell<StaticItems>,
+}
+
+/// The units, buildings, districts and projects a city of this player could ever make, with their prerequisites:
+/// the rows of the rules' tables that pass buildable_for's tests on the table and on the civilization and leader.
+struct StaticItems {
+    /// (unit, prerequisite tech, prerequisite civic)
+    units: Vec<(Sym, Option<Sym>, Option<Sym>)>,
+    /// (building, tech, civic, district, is a wonder)
+    buildings: Vec<(Sym, Option<Sym>, Option<Sym>, Option<Sym>, bool)>,
+    /// (district, tech, civic, requires population, one per city, most per player)
+    districts: Vec<(Sym, Option<Sym>, Option<Sym>, bool, bool, i64)>,
+    /// (project, tech, civic, district, unlocked by an effect)
+    projects: Vec<(Sym, Option<Sym>, Option<Sym>, Option<Sym>, bool)>,
 }
 
 const GP_CLASSES: [&str; 5] = ["GREAT_PERSON_CLASS_ENGINEER", "GREAT_PERSON_CLASS_MERCHANT", "GREAT_PERSON_CLASS_SCIENTIST", "GREAT_PERSON_CLASS_WRITER", "GREAT_PERSON_CLASS_GENERAL"];
 
 impl<'a> Planner<'a> {
     pub fn new(r: &'a Rules, w: World<'a>, sc: Scenario, s: Settings, speed: Sym, establish: HashMap<Sym, i64>) -> Planner<'a> {
-        Planner { r, w, sc, s, speed, establish, cache: RefCell::new(EngineCache::new()), rec: None, tiles_rec: None, rec_notes: RefCell::new(vec![]), milestones: None }
+        Planner { r, w, sc, s, speed, establish, cache: RefCell::new(EngineCache::new()), rec: None, tiles_rec: None, rec_notes: RefCell::new(vec![]), milestones: None, static_items: std::cell::OnceCell::new() }
     }
 
     pub fn engine(&self, env: &Env, cities: &[City]) -> Rc<Engine<'a>> {
@@ -567,29 +582,18 @@ impl<'a> Planner<'a> {
         let mut allowed = 1 + (ca.population as i64 - 1).div_euclid(r.param("DISTRICT_POPULATION_REQUIRED_PER") as i64);
         let (civ, leader) = (st.player.civilization, st.player.leader);
         let mut out = vec![];
+        let mut lap = std::time::Instant::now();
         let e = self.eng(st);
+        crate::prof::lap(&mut lap, 40);
         let site_ctx = std::cell::OnceCell::new();
         let site_possible = |item: Sym, wonder: bool| {
             let (nm, taken) = site_ctx.get_or_init(|| (self.near_maps(st), self.taken(st, ci)));
             self.site_possible_with(st, ci, item, wonder, &e, nm, taken)
         };
-        let t = r.tab("Units");
-        let s = |t: &crate::rules::Table, i: u32, c: &str| t.v(i, c).sym().filter(|x| !x.is_empty());
-        for i in r.scan("Units", "Units") {
-            let u = t.v(i, "UnitType").sym().unwrap();
-            let (pt, pc) = (s(t, i, "PrereqTech"), s(t, i, "PrereqCivic"));
-            if !t.v(i, "CanTrain").truthy() || t.v(i, "Domain").sym() != Some(s!("DOMAIN_LAND"))
-                || pt.map(|x| !techs.contains(&x)).unwrap_or(false) || pc.map(|x| !civics.contains(&x)).unwrap_or(false) {
+        let items = self.static_items.get_or_init(|| self.static_items_of(civ, leader));
+        for &(u, pt, pc) in &items.units {
+            if pt.map(|x| !techs.contains(&x)).unwrap_or(false) || pc.map(|x| !civics.contains(&x)).unwrap_or(false) {
                 continue;
-            }
-            let rel = t.v(i, "ReligiousStrength").f() > 0.0 || t.v(i, "SpreadCharges").f() > 0.0 || t.v(i, "FoundReligion").truthy() || t.v(i, "EnabledByReligion").truthy();
-            if rel {
-                continue;
-            }
-            if let Some(tr) = s(t, i, "TraitType") {
-                if !r.civ_has_trait(civ, leader, tr) {
-                    continue;
-                }
             }
             if u == s!("UNIT_SETTLER") && ((ca.population < 2 && !settler_free_pop(&e, city.name)) || st.cities.len() + st.settlers.len() >= self.s.max_cities) {
                 continue;
@@ -602,9 +606,6 @@ impl<'a> Planner<'a> {
             // spies: as many as EFFECT_GRANT_SPY of the civics (Diplomatic Service, ...) allow; none before
             if u == s!("UNIT_SPY") && *st.acc.units_trained.get(&u).unwrap_or(&0)
                 >= e.player_effects(s!("EFFECT_GRANT_SPY")).iter().map(|x| x.args.get("Amount").map(|_| x.args.f("Amount") as i64).unwrap_or(1)).sum::<i64>() {
-                continue;
-            }
-            if r.unit_replaced(u, civ, leader) {
                 continue;
             }
             // a plan cannot start (or buy) a unit the stockpile cannot pay for; the replay takes what the record
@@ -621,20 +622,10 @@ impl<'a> Planner<'a> {
             if self.rec.is_none() && self.tiles_rec.is_none() && !self.s.allow_idle_units && crate::opt::idle_unit(u) {
                 continue;
             }
-            let cls = s(t, i, "PromotionClass");
-            if u.contains("GREAT") || u.starts_with("UNIT_ARCHAEOLOGIST")
-                || (cls.is_none() && u != s!("UNIT_SETTLER") && u != s!("UNIT_BUILDER") && u != s!("UNIT_TRADER")) {
-                continue;
-            }
             out.push(Choice::S(u));
         }
-        let t = r.tab("Buildings");
-        for i in r.scan("Buildings", "Buildings") {
-            if t.v(i, "InternalOnly").truthy() {
-                continue;
-            }
-            let b = t.v(i, "BuildingType").sym().unwrap();
-            let (pt, pc, pd) = (s(t, i, "PrereqTech"), s(t, i, "PrereqCivic"), s(t, i, "PrereqDistrict"));
+        crate::prof::lap(&mut lap, 41);
+        for &(b, pt, pc, pd, wonder) in &items.buildings {
             if city.buildings.contains(&b) || pt.map(|x| !techs.contains(&x)).unwrap_or(false) || pc.map(|x| !civics.contains(&x)).unwrap_or(false) {
                 continue;
             }
@@ -643,15 +634,10 @@ impl<'a> Planner<'a> {
                     continue;
                 }
             }
-            if let Some(tr) = s(t, i, "TraitType") {
-                if !r.civ_has_trait(civ, leader, tr) {
-                    continue;
-                }
-            }
-            if r.building_replaced(b, civ, leader) || !r.building_prereqs_met(b, &city.buildings) {
+            if !r.building_prereqs_met(b, &city.buildings) {
                 continue;
             }
-            if t.v(i, "IsWonder").truthy() {
+            if wonder {
                 if purchase {
                     continue;
                 }
@@ -661,47 +647,26 @@ impl<'a> Planner<'a> {
                     continue;
                 }
             }
-            if b == s!("BUILDING_PALACE") {
-                continue;
-            }
             if b.starts_with("BUILDING_GOV_") && !self.gov_building_ok(st, b) {
                 continue;
             }
             out.push(Choice::S(b));
         }
+        crate::prof::lap(&mut lap, 42);
         if purchase {
             return out;
         }
         allowed += e.city_effects(s!("EFFECT_ADJUST_CITY_EXTRA_DISTRICTS"), city.name).iter().map(|x| x.args.f("Amount") as i64).sum::<i64>();
         let prereq: Vec<(Sym, Sym)> = e.player_effects(s!("EFFECT_ADJUST_DISTRICT_PREREQ")).iter().filter_map(|x| Some((x.args.get("DistrictType")?, x.args.get("TechType")?))).collect();
-        let t = r.tab("Districts");
-        for i in r.scan("Districts", "Districts") {
-            if t.v(i, "InternalOnly").truthy() || t.v(i, "CityCenter").truthy() {
-                continue;
-            }
-            let dist = t.v(i, "DistrictType").sym().unwrap();
-            if dist == s!("DISTRICT_SPACEPORT") || dist == s!("DISTRICT_CANAL") {
-                continue;
-            }
-            let pt = prereq.iter().rev().find(|(d, _)| *d == dist).map(|(_, t)| Some(*t)).unwrap_or(s(t, i, "PrereqTech"));
-            let pc = s(t, i, "PrereqCivic");
-            let pop = t.v(i, "RequiresPopulation").truthy();
+        for &(dist, tech, pc, pop, one, maxp) in &items.districts {
+            let pt = prereq.iter().rev().find(|(d, _)| *d == dist).map(|(_, t)| Some(*t)).unwrap_or(tech);
             if pt.map(|x| !techs.contains(&x)).unwrap_or(false) || pc.map(|x| !civics.contains(&x)).unwrap_or(false) || (pop && specialty >= allowed) {
                 continue;
             }
-            if (t.v(i, "OnePerCity").truthy() || pop) && planned_d.contains(&dist) {
+            if (one || pop) && planned_d.contains(&dist) {
                 continue;
             }
-            let maxp = t.v(i, "MaxPerPlayer").i();
             if maxp > 0 && st.cities.iter().map(|cc| cc.districts.iter().filter(|x| x.dtype == dist).count() as i64).sum::<i64>() >= maxp {
-                continue;
-            }
-            if let Some(tr) = s(t, i, "TraitType") {
-                if !r.civ_has_trait(civ, leader, tr) {
-                    continue;
-                }
-            }
-            if r.district_replaced(dist, civ, leader) {
                 continue;
             }
             if dist == s!("DISTRICT_GOVERNMENT") && st.cities.iter().any(|cc| cc.districts.iter().any(|x| x.dtype == s!("DISTRICT_GOVERNMENT"))) {
@@ -713,18 +678,11 @@ impl<'a> Planner<'a> {
             out.push(Choice::S(dist));
         }
         let unlocked: Vec<Sym> = e.player_effects(s!("EFFECT_ADD_PLAYER_PROJECT_AVAILABILITY")).iter().filter_map(|x| x.args.get("ProjectType")).collect();
-        let t = r.tab("Projects");
-        for i in r.scan("Projects", "Projects") {
-            let proj = t.v(i, "ProjectType").sym().unwrap();
-            let (pt, pc, pd) = (s(t, i, "PrereqTech"), s(t, i, "PrereqCivic"), s(t, i, "PrereqDistrict"));
-            if t.v(i, "SpaceRace").truthy() || t.v(i, "WMD").truthy() || t.v(i, "MaxPlayerInstances").truthy()
-                || pt.map(|x| !techs.contains(&x)).unwrap_or(false) || pc.map(|x| !civics.contains(&x)).unwrap_or(false) {
+        for &(proj, pt, pc, pd, from_effect) in &items.projects {
+            if pt.map(|x| !techs.contains(&x)).unwrap_or(false) || pc.map(|x| !civics.contains(&x)).unwrap_or(false) {
                 continue;
             }
-            if t.v(i, "UnlocksFromEffect").truthy() && !unlocked.contains(&proj) {
-                continue;
-            }
-            if ["PROJECT_REPAIR_OUTER_DEFENSES", "PROJECT_SEND_AID", "PROJECT_TRAIN_ATHLETES"].iter().any(|p| ss(p) == proj) {
+            if from_effect && !unlocked.contains(&proj) {
                 continue;
             }
             if let Some(pd) = pd {
@@ -733,6 +691,64 @@ impl<'a> Planner<'a> {
                 }
             }
             out.push(Choice::S(proj));
+        }
+        out
+    }
+
+    /// StaticItems for the player's civilization and leader.
+    fn static_items_of(&self, civ: Option<Sym>, leader: Option<Sym>) -> StaticItems {
+        let r = self.r;
+        let s = |t: &crate::rules::Table, i: u32, c: &str| t.v(i, c).sym().filter(|x| !x.is_empty());
+        let trait_ok = |t: &crate::rules::Table, i: u32| s(t, i, "TraitType").map(|tr| r.civ_has_trait(civ, leader, tr)).unwrap_or(true);
+        let mut out = StaticItems { units: vec![], buildings: vec![], districts: vec![], projects: vec![] };
+        let t = r.tab("Units");
+        for i in r.scan("Units", "Units") {
+            let u = t.v(i, "UnitType").sym().unwrap();
+            if !t.v(i, "CanTrain").truthy() || t.v(i, "Domain").sym() != Some(s!("DOMAIN_LAND")) {
+                continue;
+            }
+            let rel = t.v(i, "ReligiousStrength").f() > 0.0 || t.v(i, "SpreadCharges").f() > 0.0 || t.v(i, "FoundReligion").truthy() || t.v(i, "EnabledByReligion").truthy();
+            if rel || !trait_ok(t, i) || r.unit_replaced(u, civ, leader) {
+                continue;
+            }
+            let cls = s(t, i, "PromotionClass");
+            if u.contains("GREAT") || u.starts_with("UNIT_ARCHAEOLOGIST")
+                || (cls.is_none() && u != s!("UNIT_SETTLER") && u != s!("UNIT_BUILDER") && u != s!("UNIT_TRADER")) {
+                continue;
+            }
+            out.units.push((u, s(t, i, "PrereqTech"), s(t, i, "PrereqCivic")));
+        }
+        let t = r.tab("Buildings");
+        for i in r.scan("Buildings", "Buildings") {
+            if t.v(i, "InternalOnly").truthy() {
+                continue;
+            }
+            let b = t.v(i, "BuildingType").sym().unwrap();
+            if !trait_ok(t, i) || r.building_replaced(b, civ, leader) || b == s!("BUILDING_PALACE") {
+                continue;
+            }
+            out.buildings.push((b, s(t, i, "PrereqTech"), s(t, i, "PrereqCivic"), s(t, i, "PrereqDistrict"), t.v(i, "IsWonder").truthy()));
+        }
+        let t = r.tab("Districts");
+        for i in r.scan("Districts", "Districts") {
+            if t.v(i, "InternalOnly").truthy() || t.v(i, "CityCenter").truthy() {
+                continue;
+            }
+            let dist = t.v(i, "DistrictType").sym().unwrap();
+            if dist == s!("DISTRICT_SPACEPORT") || dist == s!("DISTRICT_CANAL") || !trait_ok(t, i) || r.district_replaced(dist, civ, leader) {
+                continue;
+            }
+            out.districts.push((dist, s(t, i, "PrereqTech"), s(t, i, "PrereqCivic"), t.v(i, "RequiresPopulation").truthy(), t.v(i, "OnePerCity").truthy(),
+                t.v(i, "MaxPerPlayer").i()));
+        }
+        let t = r.tab("Projects");
+        for i in r.scan("Projects", "Projects") {
+            let proj = t.v(i, "ProjectType").sym().unwrap();
+            if t.v(i, "SpaceRace").truthy() || t.v(i, "WMD").truthy() || t.v(i, "MaxPlayerInstances").truthy()
+                || ["PROJECT_REPAIR_OUTER_DEFENSES", "PROJECT_SEND_AID", "PROJECT_TRAIN_ATHLETES"].iter().any(|p| ss(p) == proj) {
+                continue;
+            }
+            out.projects.push((proj, s(t, i, "PrereqTech"), s(t, i, "PrereqCivic"), s(t, i, "PrereqDistrict"), t.v(i, "UnlocksFromEffect").truthy()));
         }
         out
     }
@@ -1166,6 +1182,7 @@ impl<'a> Planner<'a> {
         let e = self.engine(env, &st.cities);
         let mut env_cost = env.clone();
         env_cost.units_trained = st.acc.units_trained.clone();
+        let _g = crate::prof::start(38);
         for ci in 0..st.cities.len() {
             let c = st.cities[ci].clone();
             for item in self.buildable_for(st, ci, true).into_iter().filter_map(|x| x.sym()) {
@@ -1209,6 +1226,8 @@ impl<'a> Planner<'a> {
                 }
             }
         }
+        drop(_g);
+        let _g = crate::prof::start(39);
         for ci in 0..st.cities.len() {
             if self.s.recorded_tiles.as_ref().map(|m| m.contains_key(&st.cities[ci].center)).unwrap_or(false) {
                 continue; // its tiles come from the recorded game
@@ -2772,6 +2791,7 @@ impl<'a> Planner<'a> {
                 }
             }
         }
+        crate::prof::lap(&mut lap, 33);
         // the player's actions after the turn's processing: a multiplayer save is made before it, so between two
         // saves the cities produce first and the builders act after (10/14 Paris T43: a horseman from the turn's
         // production, a second from a harvest, the third at 39 of 40 from another); a builder made this turn acts,
@@ -2798,6 +2818,7 @@ impl<'a> Planner<'a> {
                 self.choose_next_item(st, ci, done, ch);
             }
         }
+        crate::prof::lap(&mut lap, 34);
         // builders
         let mut bi = 0;
         while bi < st.builders.len() {
@@ -2935,6 +2956,7 @@ impl<'a> Planner<'a> {
                 self.assign(st, ci, &env);
             }
         }
+        crate::prof::lap(&mut lap, 35);
         // settlers arriving: a city is founded during the player's actions, so the next save shows it, after the
         // builders' (10/21 T44: Arretium's builder for 45 before Aquileia's free builder raised the cost)
         let arriving: Vec<Settler> = st.settlers.iter().filter(|s| s.arrive <= t_now + 1).cloned().collect();
@@ -3002,6 +3024,7 @@ impl<'a> Planner<'a> {
         for k in 0..3 {
             st.harvest_sum[k] += founding_harvest[k];
         }
+        crate::prof::lap(&mut lap, 36);
         // purchase: as many as the player chooses in a turn (each item once per city), the options offered again
         // after each (gold, faith and tile prices change)
         let mut bought_now: Vec<(Sym, Sym)> = vec![];
@@ -3060,6 +3083,7 @@ impl<'a> Planner<'a> {
                 _ => break,
             }
         }
+        crate::prof::lap(&mut lap, 37);
         // what was bought is there at once
         let mut bought_events = vec![];
         for (name, item) in std::mem::take(&mut st.bought) {

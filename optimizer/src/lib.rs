@@ -47,11 +47,12 @@ pub mod envcfg {
 /// Coarse timers for profiling (CIV6OPT_PROFILE=1 prints them after a run).
 pub mod prof {
     use std::sync::atomic::{AtomicU64, Ordering};
-    pub static T: [AtomicU64; 33] = [const { AtomicU64::new(0) }; 33];
-    pub const NAMES: [&str; 33] = ["engine_new", "city_yields", "assign", "buildable", "builder_opts", "step", "amenity", "settle_sites", "route_opts", "site_possible", "grants", "other", "engine_key", "player_env",
+    pub static T: [AtomicU64; 44] = [const { AtomicU64::new(0) }; 44];
+    pub const NAMES: [&str; 44] = ["engine_new", "city_yields", "assign", "buildable", "builder_opts", "step", "amenity", "settle_sites", "route_opts", "site_possible", "grants", "other", "engine_key", "player_env",
         "learn_decision", "learn_option", "learn_predict", "advance",
         "turn_start", "turn_citizens", "turn_chops", "turn_prod_choice", "turn_builders", "turn_purchase", "turn_routes", "turn_step", "turn_end", "turn_borders",
-        "b_idle_mark", "b_decide", "b_travel", "b_apply", "b_reassign"];
+        "b_idle_mark", "b_decide", "b_travel", "b_apply", "b_reassign",
+        "a_borders", "a_choose", "a_builders", "a_settlers", "a_purchase", "p_items", "p_tiles", "x1", "x2", "x3", "x4"];
     pub struct Guard(usize, std::time::Instant);
     pub fn start(i: usize) -> Guard {
         Guard(i, std::time::Instant::now())

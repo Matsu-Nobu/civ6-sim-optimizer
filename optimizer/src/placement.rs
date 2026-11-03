@@ -3,7 +3,8 @@ use crate::engine::{ss, Engine};
 use crate::model::*;
 use crate::rules::Rules;
 use crate::sym::Sym;
-use std::collections::{BTreeSet, HashSet};
+use std::collections::BTreeSet;
+use crate::fx::FxSet as HashSet;
 
 fn water(t: Sym) -> bool {
     t == s!("TERRAIN_COAST") || t == s!("TERRAIN_OCEAN")

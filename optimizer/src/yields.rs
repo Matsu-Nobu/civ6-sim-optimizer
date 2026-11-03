@@ -4,7 +4,8 @@ use crate::geo::{hex_distance, neighbour_xy};
 use crate::model::*;
 use crate::rules::{yidx, ysyms, Args, Has, Req, Rules, Y};
 use crate::sym::Sym;
-use std::collections::{BTreeSet, HashMap};
+use std::collections::BTreeSet;
+use crate::fx::FxMap as HashMap;
 
 pub type Plots = HashMap<XY, Plot>;
 
@@ -32,15 +33,15 @@ pub fn add(y: &mut Y, k: Sym, v: f64) {
 // ---------------------------------------------------------------- plots
 /// (x, y) -> plot for every owned plot and the plots bordering them, with districtType filled in.
 pub fn plots_by_xy_of(cities: &[City]) -> Plots {
-    let mut kinds: HashMap<XY, Sym> = HashMap::new();
-    let mut done: HashMap<XY, bool> = HashMap::new();
+    let mut kinds: HashMap<XY, Sym> = HashMap::default();
+    let mut done: HashMap<XY, bool> = HashMap::default();
     for c in cities {
         for d in &c.districts {
             kinds.insert((d.x, d.y), d.dtype);
             done.insert((d.x, d.y), d.complete);
         }
     }
-    let mut out = Plots::new();
+    let mut out = Plots::default();
     for c in cities {
         for p in &c.near {
             out.insert(p.xy(), p.clone());
@@ -98,7 +99,7 @@ const PLOT_REQS: [&str; 30] = [
 ];
 
 pub fn is_plot_requirement(rt: Sym) -> bool {
-    thread_local!(static SET: std::collections::HashSet<Sym> = PLOT_REQS.iter().map(|n| ss(n)).collect());
+    thread_local!(static SET: crate::fx::FxSet<Sym> = PLOT_REQS.iter().map(|n| ss(n)).collect());
     SET.with(|s| s.contains(&rt))
 }
 
@@ -191,7 +192,7 @@ pub fn plot_requirement(r: &Rules, rt: Sym, p: &Plot, a: &Args, c: &Ctx) -> bool
 }
 
 pub fn is_city_requirement(rt: Sym) -> bool {
-    thread_local!(static SET: std::collections::HashSet<Sym> = ["REQUIREMENT_CITY_HAS_DISTRICT", "REQUIREMENT_CITY_HAS_BUILDING",
+    thread_local!(static SET: crate::fx::FxSet<Sym> = ["REQUIREMENT_CITY_HAS_DISTRICT", "REQUIREMENT_CITY_HAS_BUILDING",
         "REQUIREMENT_CITY_HAS_X_SPECIALTY_DISTRICTS", "REQUIREMENT_CITY_HAS_HIGH_LOYALTY"].iter().map(|n| ss(n)).collect());
     SET.with(|s| s.contains(&rt))
 }

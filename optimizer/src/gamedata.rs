@@ -16,7 +16,8 @@
 use crate::json::Value;
 use rusqlite::types::ValueRef;
 use rusqlite::Connection;
-use std::collections::{BTreeSet, HashMap};
+use std::collections::BTreeSet;
+use crate::fx::FxMap as HashMap;
 
 /// Boost triggers by events the planner does not play; the record says when they fired.
 const EXOGENOUS_TRIGGERS: [&str; 7] = ["BOOST_TRIGGER_MEET_CIV", "BOOST_TRIGGER_MEET_X_CITY_STATES", "BOOST_TRIGGER_FIND_NATURAL_WONDER",
@@ -79,7 +80,7 @@ pub fn export_rules(db: &Connection) -> Value {
     let names: Vec<String> = db.prepare("select name from sqlite_master where type='table' and name not like 'sqlite_%'").unwrap()
         .query_map([], |r| r.get(0)).unwrap().map(|x| x.unwrap()).collect();
     let mut out: Vec<(String, Value)> = vec![];
-    let mut keyed: HashMap<String, (Vec<String>, Vec<Vec<Value>>)> = HashMap::new();
+    let mut keyed: HashMap<String, (Vec<String>, Vec<Vec<Value>>)> = HashMap::default();
     for t in &names {
         let cols: Vec<String> = db.prepare(&format!("pragma table_info(\"{t}\")")).unwrap()
             .query_map([], |r| r.get(1)).unwrap().map(|x| x.unwrap()).collect();
@@ -129,11 +130,11 @@ pub fn export_rules(db: &Connection) -> Value {
     for (name, sql, table, key) in SCANS {
         let Some((cols, rows)) = keyed.get(table) else { continue };
         let kc = cols.iter().position(|c| c == key).unwrap();
-        let mut pos: HashMap<String, Vec<usize>> = HashMap::new();
+        let mut pos: HashMap<String, Vec<usize>> = HashMap::default();
         for (i, r) in rows.iter().enumerate() {
             pos.entry(r[kc].to_string()).or_default().push(i);
         }
-        let mut seen: HashMap<String, usize> = HashMap::new();
+        let mut seen: HashMap<String, usize> = HashMap::default();
         let mut idx = vec![];
         let mut q = db.prepare(sql).unwrap();
         let mut rs = q.query([]).unwrap();
@@ -575,9 +576,9 @@ fn parse_xml(bytes: &[u8]) -> Option<Element> {
     use quick_xml::events::Event;
     let mut reader = quick_xml::Reader::from_reader(bytes);
     let mut buf = vec![];
-    let mut stack: Vec<Element> = vec![Element { name: vec![], attrs: HashMap::new(), text: None, children: vec![] }];
+    let mut stack: Vec<Element> = vec![Element { name: vec![], attrs: HashMap::default(), text: None, children: vec![] }];
     let start = |e: &quick_xml::events::BytesStart| -> Option<Element> {
-        let mut attrs = HashMap::new();
+        let mut attrs = HashMap::default();
         for a in e.attributes() {
             let a = a.ok()?;
             // XML reads a line end or tab in an attribute value as a space

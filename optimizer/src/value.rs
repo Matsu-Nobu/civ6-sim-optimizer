@@ -9,7 +9,7 @@ use crate::json::Value;
 use crate::model::*;
 use crate::planner::Planner;
 use std::cell::RefCell;
-use std::collections::HashMap;
+use crate::fx::FxMap as HashMap;
 use std::sync::OnceLock;
 
 pub const N_FEATURES: usize = 22;

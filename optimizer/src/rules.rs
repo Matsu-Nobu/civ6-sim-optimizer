@@ -3,7 +3,7 @@
 //! `Rules` mirrors civ6sim/rules.py.
 use crate::sym::{sym, Sym};
 use crate::json::Value;
-use std::collections::{HashMap, HashSet};
+use crate::fx::{FxMap as HashMap, FxSet as HashSet};
 use std::sync::OnceLock;
 
 #[derive(Clone, Debug, PartialEq)]
@@ -94,10 +94,10 @@ impl From<i64> for K {
 }
 
 pub struct Table {
-    pub cols: HashMap<String, usize>,
-    exact: HashMap<String, usize>,
+    pub cols: crate::fx::FxMap<String, usize>,
+    exact: crate::fx::FxMap<String, usize>,
     pub rows: Vec<Vec<V>>,
-    order: Vec<HashMap<K, Vec<u32>>>,
+    order: Vec<crate::fx::FxMap<K, Vec<u32>>>,
 }
 
 static EMPTY: Vec<u32> = Vec::new();
@@ -109,7 +109,7 @@ impl Table {
             .map(|r| r.as_array().unwrap().iter().map(V::from_json).collect()).collect();
         let mut order = Vec::with_capacity(cols.len());
         for (ci, c) in cols.iter().enumerate() {
-            let mut m: HashMap<K, Vec<u32>> = HashMap::new();
+            let mut m: crate::fx::FxMap<K, Vec<u32>> = Default::default();
             if let Some(by) = v["order"].get(c).and_then(|x| x.as_object()) {
                 for (_, idx) in by {
                     let idx: Vec<u32> = idx.as_array().unwrap().iter().map(|x| x.as_u64().unwrap() as u32).collect();
@@ -218,12 +218,12 @@ pub struct ModRow {
 
 pub struct Rules {
     pub imp_cache: OnceLock<Vec<crate::placement::ImpInfo>>,
-    pub t: HashMap<String, Table>,
-    scans: HashMap<String, Vec<u32>>,
-    params: HashMap<String, Sym>,
+    pub t: crate::fx::FxMap<String, Table>,
+    scans: crate::fx::FxMap<String, Vec<u32>>,
+    params: crate::fx::FxMap<String, Sym>,
     // memoized derived lookups
-    reqsets: HashMap<Sym, std::sync::Arc<(Vec<Req>, bool)>>,
-    mods: HashMap<Sym, std::sync::Arc<ModRow>>,
+    reqsets: crate::fx::FxMap<Sym, std::sync::Arc<(Vec<Req>, bool)>>,
+    mods: crate::fx::FxMap<Sym, std::sync::Arc<ModRow>>,
     pub eras: Vec<Sym>,
     pub n_tech: usize,
     pub n_civic: usize,
@@ -231,8 +231,8 @@ pub struct Rules {
 
 impl Rules {
     pub fn load(v: &Value) -> Rules {
-        let mut t = HashMap::new();
-        let mut scans = HashMap::new();
+        let mut t = crate::fx::FxMap::default();
+        let mut scans = crate::fx::FxMap::default();
         for (name, tv) in v.as_object().unwrap() {
             if name == "__scans__" {
                 for (k, idx) in tv.as_object().unwrap() {
@@ -246,16 +246,16 @@ impl Rules {
             imp_cache: OnceLock::new(),
             t,
             scans,
-            params: HashMap::new(),
-            reqsets: HashMap::new(),
-            mods: HashMap::new(),
+            params: Default::default(),
+            reqsets: Default::default(),
+            mods: Default::default(),
             eras: vec![],
             n_tech: 0,
             n_civic: 0,
         };
         let gp = &r.t["GlobalParameters"];
         let (cn, cv) = (gp.col("Name"), gp.col("Value"));
-        let params: HashMap<String, Sym> = gp.rows.iter().map(|row| {
+        let params: crate::fx::FxMap<String, Sym> = gp.rows.iter().map(|row| {
             let name = row[cn].sym().unwrap().as_string();
             let val = match &row[cv] {
                 V::S(s) => *s,
@@ -275,10 +275,10 @@ impl Rules {
         // every requirement set and modifier, read once (no locks while simulating)
         let rs = r.tab("RequirementSets");
         let ids: Vec<Sym> = (0..rs.len() as u32).filter_map(|i| rs.v(i, "RequirementSetId").sym()).collect();
-        let sets: HashMap<Sym, std::sync::Arc<(Vec<Req>, bool)>> = ids.into_iter().map(|id| (id, std::sync::Arc::new(r.read_requirement_set(id)))).collect();
+        let sets: crate::fx::FxMap<Sym, std::sync::Arc<(Vec<Req>, bool)>> = ids.into_iter().map(|id| (id, std::sync::Arc::new(r.read_requirement_set(id)))).collect();
         let m = r.tab("Modifiers");
         let mids: Vec<Sym> = (0..m.len() as u32).filter_map(|i| m.v(i, "ModifierId").sym()).collect();
-        let mods: HashMap<Sym, std::sync::Arc<ModRow>> = mids.into_iter().filter_map(|id| r.read_modifier(id).map(|x| (id, std::sync::Arc::new(x)))).collect();
+        let mods: crate::fx::FxMap<Sym, std::sync::Arc<ModRow>> = mids.into_iter().filter_map(|id| r.read_modifier(id).map(|x| (id, std::sync::Arc::new(x)))).collect();
         r.reqsets = sets;
         r.mods = mods;
         r
@@ -420,7 +420,7 @@ impl Rules {
     /// here: civilization traits, then each leader's in inheritance order, without duplicates.
     pub fn traits_of(&self, civ: Option<Sym>, leader: Option<Sym>) -> std::sync::Arc<Vec<Sym>> {
         thread_local! {
-            static TRAITS: std::cell::RefCell<HashMap<(Sym, Sym), std::sync::Arc<Vec<Sym>>>> = std::cell::RefCell::new(HashMap::new());
+            static TRAITS: std::cell::RefCell<HashMap<(Sym, Sym), std::sync::Arc<Vec<Sym>>>> = std::cell::RefCell::new(HashMap::default());
         }
         let key = (civ.unwrap_or(Sym(0)), leader.unwrap_or(Sym(0)));
         if let Some(x) = TRAITS.with(|t| t.borrow().get(&key).cloned()) {
@@ -433,7 +433,7 @@ impl Rules {
                 push(t, &mut out);
             }
         }
-        let mut seen = HashSet::new();
+        let mut seen = HashSet::default();
         let mut l = leader;
         while let Some(ld) = l {
             if ld.is_empty() || !seen.insert(ld) {

@@ -3,7 +3,8 @@ use crate::model::*;
 use crate::rules::{Args, Rules};
 use crate::sym::{sym, Sym};
 use crate::yields;
-use std::collections::{BTreeSet, HashMap, HashSet};
+use std::collections::BTreeSet;
+use crate::fx::{FxMap as HashMap, FxSet as HashSet};
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum Subj {
@@ -62,7 +63,7 @@ impl<'a> Engine<'a> {
         ENGINES.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let _g = crate::prof::start(0);
         let plots = yields::plots_by_xy_of(cities);
-        let mut plot_city = HashMap::new();
+        let mut plot_city = HashMap::default();
         for c in cities {
             for p in &c.owned {
                 plot_city.insert(p.xy(), c.name);
@@ -75,12 +76,12 @@ impl<'a> Engine<'a> {
             plots,
             plot_city,
             effects: Effects::default(),
-            plot_effects: HashMap::new(),
+            plot_effects: HashMap::default(),
             religion: None,
             permanent: false,
             owner: None,
             only_consumed: !crate::envcfg::all_effects(),
-            attached: HashSet::new(),
+            attached: HashSet::default(),
         };
         for (source, owner, mid) in e.sources() {
             e.religion = None;
@@ -94,14 +95,14 @@ impl<'a> Engine<'a> {
     /// source's grants, so nothing else is visible then either).
     pub fn bare(r: &'a Rules, env: &Env, cities: &[City]) -> Engine<'a> {
         let plots = yields::plots_by_xy_of(cities);
-        let mut plot_city = HashMap::new();
+        let mut plot_city = HashMap::default();
         for c in cities {
             for p in &c.owned {
                 plot_city.insert(p.xy(), c.name);
             }
         }
         Engine { r, env: env.clone(), cities: cities.to_vec(), plots, plot_city, effects: Effects::default(),
-                 plot_effects: HashMap::new(), religion: None, permanent: false, owner: None, only_consumed: false, attached: HashSet::new() }
+                 plot_effects: HashMap::default(), religion: None, permanent: false, owner: None, only_consumed: false, attached: HashSet::default() }
     }
 
     pub fn city_by_name(&self, n: Sym) -> Option<&City> {
@@ -728,7 +729,7 @@ pub struct EngineCache<'a> {
 
 impl<'a> EngineCache<'a> {
     pub fn new() -> Self {
-        EngineCache { map: HashMap::new() }
+        EngineCache { map: HashMap::default() }
     }
     pub fn get(&mut self, r: &'a Rules, env: &Env, cities: &[City]) -> std::rc::Rc<Engine<'a>> {
         LOOKUPS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);

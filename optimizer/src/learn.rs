@@ -158,8 +158,8 @@ pub fn score_parts(p: &Planner, score: f64, st: &State) -> (f64, f64) {
 
 /// Gradient boosted regression trees, as tools/learn_train.py writes them.
 pub struct Trees {
-    kinds: std::collections::HashMap<String, usize>,
-    names: std::collections::HashMap<String, usize>,
+    kinds: crate::fx::FxMap<String, usize>,
+    names: crate::fx::FxMap<String, usize>,
     trees: Vec<Tree>,
 }
 
@@ -209,7 +209,7 @@ impl Trees {
     pub fn predict(&self, decision: &[f64], kind: Sym, option: &Choice, opt: &[f64; N_OPTION]) -> f64 {
         let _g = crate::prof::start(16);
         // a name the training did not see gets a code of no category, which every categorical split sends right
-        let code = |vocab: &std::collections::HashMap<String, usize>, s: &str| vocab.get(s).copied().unwrap_or(vocab.len()) as f64;
+        let code = |vocab: &crate::fx::FxMap<String, usize>, s: &str| vocab.get(s).copied().unwrap_or(vocab.len()) as f64;
         let mut x = vec![code(&self.kinds, &kind.as_string()), code(&self.names, &option_name(option))];
         x.extend_from_slice(decision);
         x.extend_from_slice(opt);
@@ -244,13 +244,13 @@ impl Tree {
 /// predicts to lose at most `slack` research, else the one it predicts to lose least. Keeps every choice it makes in
 /// `taken`, which plays the same game as a plan.
 pub struct PolicyChooser<'g> {
-    pub genome: &'g std::collections::HashMap<Key, Choice>,
+    pub genome: &'g crate::fx::FxMap<Key, Choice>,
     pub model: &'g Trees,
     pub research: Option<&'g Trees>,
     pub slack: f64,
     pub from: i64,
     pub to: i64,
-    pub taken: std::collections::HashMap<Key, Choice>,
+    pub taken: crate::fx::FxMap<Key, Choice>,
 }
 
 impl Chooser for PolicyChooser<'_> {

@@ -2,7 +2,7 @@
 //! former save_export/export_game.js and export_map.js; the field notes are theirs.
 use super::{civ6_hash, Bytes, City, Dict, Plot, Save};
 use crate::json::Value;
-use std::collections::{HashMap, HashSet};
+use crate::fx::{FxMap as HashMap, FxSet as HashSet};
 
 /// Names from the rules database the export resolves raw hashes with.
 pub struct Names {
@@ -147,8 +147,8 @@ fn lakes(g: &Save) -> HashSet<i64> {
         let d: [(i64, i64); 6] = if y & 1 == 1 { [(1, 0), (-1, 0), (0, -1), (1, -1), (0, 1), (1, 1)] } else { [(1, 0), (-1, 0), (-1, -1), (0, -1), (-1, 1), (0, 1)] };
         d.iter().map(|(dx, dy)| (((x + dx) % w + w) % w, y + dy)).filter(|(_, ny)| *ny >= 0 && *ny < h).collect()
     };
-    let mut lake = HashSet::new();
-    let mut seen = HashSet::new();
+    let mut lake = HashSet::default();
+    let mut seen = HashSet::default();
     for p in &g.map.plots {
         if !water(p) || seen.contains(&p.index) {
             continue;
@@ -177,7 +177,7 @@ fn lakes(g: &Save) -> HashSet<i64> {
 /// District records `15, instanceId, x, y, cityId, DISTRICT_* hash, damage, wallsDamage, lastDamagedTurn, 0, cost,
 /// built`, accepted when the id and the coordinates match a tile's district id.
 fn district_records(p: &Bytes, d: &Dict, plot_id: &HashMap<(i64, i64), u32>) -> HashMap<(i64, i64), (&'static str, bool, i64)> {
-    let mut out = HashMap::new();
+    let mut out = HashMap::default();
     let mut o = 0;
     while o + 48 <= p.len() {
         if p.i32(o) == 15 {
@@ -362,7 +362,7 @@ fn food_store(p: &Bytes, name: &str) -> Value {
 /// destY, originX, originY, -1`.
 fn trade_routes(c: &Ctx, p: &Bytes, pid: i64) -> Vec<Value> {
     let h = civ6_hash("UNITOPERATION_MAKE_TRADE_ROUTE");
-    let mut centers: HashMap<(i64, i64), &City> = HashMap::new();
+    let mut centers: HashMap<(i64, i64), &City> = HashMap::default();
     for city in &c.g.cities {
         centers.insert(city.center, city);
     }
@@ -429,7 +429,7 @@ pub fn row_json(g: &Save, d: &Dict, n: &Names, file: &str, pid: i64) -> Value {
         let own_set: HashSet<(i64, i64)> = own.iter().map(|q| (q.x, q.y)).collect();
         // plots next to the city's tiles that it doesn't own (for appeal and adjacency), with district types
         let mut near: Vec<Value> = vec![];
-        let mut seen: HashSet<(i64, i64)> = HashSet::new();
+        let mut seen: HashSet<(i64, i64)> = HashSet::default();
         for q in &own {
             for (nx, ny) in ctx.neighbours(q.x, q.y) {
                 if own_set.contains(&(nx, ny)) || !seen.insert((nx, ny)) {

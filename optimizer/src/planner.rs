@@ -11,7 +11,8 @@ use crate::sym::{sym, Sym};
 use crate::world::{plot_value, travel_turns, weighted, World, Weights, DEFAULT_WEIGHTS};
 use crate::yields::{district_adjacency, excluded_adjacencies, get_y, modifier_adjacency_rows, route_yields, tile_yields};
 use std::cell::RefCell;
-use std::collections::{BTreeSet, HashMap, HashSet};
+use std::collections::BTreeSet;
+use crate::fx::{FxMap as HashMap, FxSet as HashSet};
 use std::rc::Rc;
 
 /// The game's city focus (citizen management: food, production, gold, science, culture, faith): the yield focused
@@ -464,7 +465,7 @@ impl<'a> Planner<'a> {
     /// much), the rest from the rules.
     pub fn record_exo_boosts(&mut self, rows: &crate::json::Value) {
         let rows: Vec<&crate::json::Value> = rows.as_array().unwrap().iter().collect();
-        let mut exo: HashMap<i64, Vec<Sym>> = HashMap::new();
+        let mut exo: HashMap<i64, Vec<Sym>> = HashMap::default();
         let boosted = |d: &crate::json::Value| -> BTreeSet<Sym> {
             ["techsBoosted", "civicsInspired"].iter().flat_map(|k| d["player"][*k].as_array().cloned().unwrap_or_default()).filter_map(|x| osym(&x)).collect()
         };
@@ -489,7 +490,7 @@ impl<'a> Planner<'a> {
     /// another player's.
     pub fn record_captures(&mut self, rows: &crate::json::Value) {
         let rows: Vec<&crate::json::Value> = rows.as_array().unwrap().iter().collect();
-        let mut out: HashMap<i64, Vec<(City, CityAcc)>> = HashMap::new();
+        let mut out: HashMap<i64, Vec<(City, CityAcc)>> = HashMap::default();
         for w in rows.windows(2) {
             let (a, b) = (w[0], w[1]);
             let me = b["player"]["playerId"].as_i64();
@@ -1913,7 +1914,7 @@ impl<'a> Planner<'a> {
     /// wonder's adjacency yields, fresh water) see them.
     fn refresh_near(&self, c: &mut City) {
         let own: HashSet<XY> = c.owned.iter().map(|p| p.xy()).collect();
-        let mut seen: HashSet<XY> = HashSet::new();
+        let mut seen: HashSet<XY> = HashSet::default();
         let mut near = vec![];
         for p in &c.owned {
             for n in self.w.map.neighbours(p.x, p.y) {

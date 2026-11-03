@@ -36,7 +36,7 @@ use civ6opt::scenario::{choice_from, choice_json, key_from, key_json, Scenario, 
 use civ6opt::sym::{sym, Sym};
 use civ6opt::world::{Map, World};
 use civ6opt::json::{self, Value};
-use std::collections::HashMap;
+use civ6opt::fx::FxMap as HashMap;
 use std::time::Instant;
 
 /// Boost triggers by events the model does not play (the record supplies them): meeting, exploring, combat,
@@ -560,7 +560,7 @@ fn record_genome_with(p: &Problem, wide: bool, tiles: bool, until: Option<i64>) 
     let rec = std::rc::Rc::new(civ6opt::record::Record::load(&p.v["rows"], &pl.sc.unit_gifts, &p.v["map"]));
     pl.tiles_rec = Some(rec.clone());
     let last = p.v["rows"].as_array().unwrap().iter().filter_map(|r| r["turn"].as_i64()).max().unwrap_or(0);
-    let mut g = HashMap::new();
+    let mut g = HashMap::default();
     let mut ch = Keep { inner: civ6opt::record::RecordedChooser::new(&rec), g: &mut g };
     opt::play(&pl, &st0, &mut ch, opt::Horizon::plain(until.unwrap_or(last)));
     g
@@ -586,7 +586,7 @@ fn record_genome_search(p: &Problem) -> HashMap<Key, Choice> {
     let (pl, st0) = planner(p);
     let rec = civ6opt::record::Record::load(&p.v["rows"], &pl.sc.unit_gifts, &p.v["map"]);
     let last = p.v["rows"].as_array().unwrap().iter().filter_map(|r| r["turn"].as_i64()).max().unwrap_or(0);
-    let mut ch = Layered { first: &first, rec: civ6opt::record::RecordedChooser::new(&rec), g: HashMap::new() };
+    let mut ch = Layered { first: &first, rec: civ6opt::record::RecordedChooser::new(&rec), g: HashMap::default() };
     opt::play(&pl, &st0, &mut ch, opt::Horizon::plain(last));
     ch.g
 }
@@ -634,7 +634,7 @@ fn record_alliances(p: &Problem) -> Vec<(i64, Sym, i64, Option<i64>)> {
 /// ecstatic, -10% displeased ...); ties to the smaller number.
 fn infer_extra_luxuries(p: &Problem, pl: &Planner) -> HashMap<i64, i64> {
     use civ6opt::amenities::{amenity_scores, happiness};
-    let mut out = HashMap::new();
+    let mut out = HashMap::default();
     for row in p.v["rows"].as_array().unwrap() {
         let Some(t) = row["turn"].as_i64() else { continue };
         let Some(cs) = row["cities"].as_array().filter(|a| !a.is_empty()) else { continue };
@@ -675,7 +675,7 @@ fn genome_arg(p: &Problem, which: Option<&str>) -> HashMap<Key, Choice> {
         Some("record_search") => record_genome_search(p),
         None | Some("recorded") => genome_from(&p.v["recorded_genome"]),
         Some("recorded_tiles") => genome_from(&p.v["recorded_genome_tiles"]),
-        Some("base") => HashMap::new(),
+        Some("base") => HashMap::default(),
         Some(f) => {
             let v: Value = json::parse(&std::fs::read_to_string(f).unwrap()).unwrap();
             genome_from(if v.get("plan").is_some() { &v["plan"] } else { &v })
@@ -1149,7 +1149,7 @@ fn main() {
             for r in &rows {
                 by_turn.entry(r.1).or_default().push(r);
             }
-            let mut model = civ6opt::value::ValueModel { turns: HashMap::new() };
+            let mut model = civ6opt::value::ValueModel { turns: HashMap::default() };
             let mut report = vec![];
             for (t, rs) in &by_turn {
                 let (train, test): (Vec<&&Row>, Vec<&&Row>) = rs.iter().partition(|r| r.0 % 5 != 4);
@@ -1411,9 +1411,9 @@ fn main() {
             let mut round = 0u64;
             let kinds = ["settle", "prod", "research", "civic", "governor", "trade", "builder", "buy", "drop", "unit"];
             // the values learned: per change (tries, mean gain), per kind (tries, gains)
-            let mut value: HashMap<String, (u32, f64)> = HashMap::new();
-            let mut kind_stat: HashMap<&str, (u32, u32)> = HashMap::new();
-            let mut kind_gain: HashMap<&str, f64> = HashMap::new();
+            let mut value: HashMap<String, (u32, f64)> = HashMap::default();
+            let mut kind_stat: HashMap<&str, (u32, u32)> = HashMap::default();
+            let mut kind_gain: HashMap<&str, f64> = HashMap::default();
             let idle = |c: &Choice| match c {
                 Choice::S(u) => opt::idle_unit(*u),
                 Choice::BuyItem(_, u, _, _) => opt::idle_unit(*u),
@@ -1426,7 +1426,7 @@ fn main() {
                 opt::play(&pl, &st0, &mut rec, opt::Horizon::plain(turn));
                 let log = rec.log;
                 // every change on offer: (kind, id, turn, decision key and new choice, or a drop turn)
-                let mut offer: HashMap<&str, Vec<(String, i64, Option<(Key, Choice)>)>> = HashMap::new();
+                let mut offer: HashMap<&str, Vec<(String, i64, Option<(Key, Choice)>)>> = HashMap::default();
                 for d in &log {
                     let k = d.1.kind.as_string();
                     let kind = if idle(&d.2) { "unit" } else { kinds.iter().copied().find(|x| *x == k).unwrap_or("") };
@@ -1455,7 +1455,7 @@ fn main() {
                     m + 30.0 * ((total + 1.0).ln() / n as f64).sqrt() + jitter
                 };
                 let mut kicks: Vec<(String, &str, i64, HashMap<Key, Choice>)> = vec![];
-                let mut used: std::collections::HashSet<String> = std::collections::HashSet::new();
+                let mut used: civ6opt::fx::FxSet<String> = civ6opt::fx::FxSet::default();
                 let present: Vec<&str> = kinds.iter().copied().filter(|k| offer.get(k).map(|v| !v.is_empty()).unwrap_or(false)).collect();
                 let mut guard = 0;
                 while kicks.len() < threads && guard < 1000 && !present.is_empty() {
@@ -1482,7 +1482,7 @@ fn main() {
                             k
                         }
                         None => {
-                            let drop: std::collections::HashSet<Key> = log.iter().filter(|d| d.0 >= c.1).map(|d| d.1.clone()).collect();
+                            let drop: civ6opt::fx::FxSet<Key> = log.iter().filter(|d| d.0 >= c.1).map(|d| d.1.clone()).collect();
                             g.iter().filter(|(k, _)| !drop.contains(*k)).map(|(k, c)| (k.clone(), c.clone())).collect()
                         }
                     };
@@ -1596,7 +1596,7 @@ fn main() {
                 let mut k = g.clone();
                 if rng.next_u64() % 8 == 0 {
                     let t = st0.turn + (rng.next_u64() % (turn - st0.turn + 1) as u64) as i64;
-                    let drop: std::collections::HashSet<&Key> = log.iter().filter(|d| d.0 >= t).map(|d| &d.1).collect();
+                    let drop: civ6opt::fx::FxSet<&Key> = log.iter().filter(|d| d.0 >= t).map(|d| &d.1).collect();
                     k.retain(|key, _| !drop.contains(key));
                     return (k, t);
                 }
@@ -1611,7 +1611,7 @@ fn main() {
             };
             let t0 = Instant::now();
             let mut rng = opt::Rng::new(777 ^ seed.wrapping_mul(0x9E3779B97F4A7C15));
-            let inits = [genome_arg(&p, arg(&args, "--init").as_deref()), HashMap::new()];
+            let inits = [genome_arg(&p, arg(&args, "--init").as_deref()), HashMap::default()];
             let mut pop: Vec<(f64, HashMap<Key, Choice>, Log)> = vec![];
             for i in 0..popn {
                 let mut g = inits[i % 2].clone();
@@ -1640,7 +1640,7 @@ fn main() {
                     };
                     let (a, b) = (tour(&mut rng), tour(&mut rng));
                     let c = st0.turn + 1 + (rng.next_u64() % (turn - st0.turn) as u64) as i64;
-                    let mut child: HashMap<Key, Choice> = HashMap::new();
+                    let mut child: HashMap<Key, Choice> = HashMap::default();
                     for d in &pop[a].2 {
                         if d.0 < c {
                             child.insert(d.1.clone(), d.2.clone());
@@ -1812,7 +1812,7 @@ fn main() {
             pl.s.horizon = turn + ext;
             println!("plan {:.1}", opt::play(&pl, &st0, &mut GenomeChooser { genome: &g }, horizon).0);
             for from in arg(&args, "--from").expect("--from 0,20,40").split(',').map(|x| x.parse::<i64>().unwrap()) {
-                let mut ch = civ6opt::learn::PolicyChooser { genome: &g, model: &model, research: research.as_ref(), slack, from, to: from + span, taken: HashMap::new() };
+                let mut ch = civ6opt::learn::PolicyChooser { genome: &g, model: &model, research: research.as_ref(), slack, from, to: from + span, taken: HashMap::default() };
                 let s = opt::play(&pl, &st0, &mut ch, horizon).0;
                 println!("model from T{} {s:.1}", from + 1);
                 if std::env::var("CIV6OPT_PROFILE").is_ok() {
@@ -2030,7 +2030,7 @@ fn main() {
                         Some(c)
                     }
                 }
-                let mut m = Mcts { model, guide: &guide, taken: HashMap::new(), pending: HashMap::new(), snap: st0.clone(), prefix: 0.0, sims, depth, top, threads, cpuct, scale,
+                let mut m = Mcts { model, guide: &guide, taken: HashMap::default(), pending: HashMap::default(), snap: st0.clone(), prefix: 0.0, sims, depth, top, threads, cpuct, scale,
                                    job_tx, res_rx, played: 0, last: f64::MIN, falls: vec![], turn: -1, t0 };
                 let mut st = st0.clone();
                 let mut total = 0.0;
@@ -2072,9 +2072,9 @@ fn main() {
             pl.s.horizon = turn + ext;
             let (old_score, _, end) = opt::play(&pl, &st0, &mut GenomeChooser { genome: &g }, horizon);
             let builders: HashMap<i64, i64> = end.builder_ids.iter().copied().collect();
-            let mut per_city: HashMap<Sym, i64> = HashMap::new();
+            let mut per_city: HashMap<Sym, i64> = HashMap::default();
             let settles: Vec<(Sym, i64)> = end.settle_origins.iter().map(|c| { let n = per_city.entry(*c).or_insert(0); *n += 1; (*c, *n - 1) }).collect();
-            let mut g2: HashMap<Key, Choice> = HashMap::new();
+            let mut g2: HashMap<Key, Choice> = HashMap::default();
             for (k, c) in &g {
                 let k2 = match (k.kind.as_string().as_str(), &k.ent) {
                     ("builder", Ent::I(old)) => match builders.get(old) {
@@ -2244,7 +2244,7 @@ fn main() {
             }
             std::thread::scope(|sc| {
                 let (job_tx, res_rx) = rollout_workers(sc, &p, threads, turn, ext, horizon);
-                let mut on = Online { model, top, guide: &guide, kick, near, seen: 0, snap: st0.clone(), prefix: 0.0, taken: HashMap::new(), job_tx, res_rx, tried: 0, t0, turn: -1, last: f64::MIN, falls: vec![], rows, decisions: 0 };
+                let mut on = Online { model, top, guide: &guide, kick, near, seen: 0, snap: st0.clone(), prefix: 0.0, taken: HashMap::default(), job_tx, res_rx, tried: 0, t0, turn: -1, last: f64::MIN, falls: vec![], rows, decisions: 0 };
                 let mut st = st0.clone();
                 let mut total = 0.0;
                 while st.turn <= turn {
@@ -2289,7 +2289,7 @@ fn main() {
             }
             let city_fp = |gen: &HashMap<Key, Choice>, w: &mut Watch| -> (f64, f64, HashMap<Sym, f64>) {
                 let mut st = st0.clone();
-                let mut by_city: HashMap<Sym, f64> = HashMap::new();
+                let mut by_city: HashMap<Sym, f64> = HashMap::default();
                 while st.turn <= turn {
                     pl.advance(&mut st, w);
                     for (c, y) in &st.city_output {
@@ -2338,7 +2338,7 @@ fn main() {
             pl.s.horizon = turn + ext;
             let mut rec = Recorder { genome: &g, log: vec![] };
             let base_score = opt::play(&pl, &st0, &mut rec, horizon).0;
-            let mut by_turn: HashMap<(Sym, Ent, i64, usize), Choice> = HashMap::new();
+            let mut by_turn: HashMap<(Sym, Ent, i64, usize), Choice> = HashMap::default();
             for (t, k, c, _) in &rec.log {
                 let j = by_turn.keys().filter(|x| x.0 == k.kind && x.1 == k.ent && x.2 == *t).count();
                 by_turn.insert((k.kind, k.ent.clone(), *t, j), c.clone());
@@ -2360,7 +2360,7 @@ fn main() {
             }
             {
                 let none = Key { kind: sym("none"), ent: Ent::I(-1), n: -1 };
-                let s = opt::play(&pl, &st0, &mut ByTurn { plan: &by_turn, changed: &none, to: &Choice::Nothing, seen: HashMap::new() }, horizon).0;
+                let s = opt::play(&pl, &st0, &mut ByTurn { plan: &by_turn, changed: &none, to: &Choice::Nothing, seen: HashMap::default() }, horizon).0;
                 println!("plan {base_score:.1}, replayed by turn {s:.1}");
             }
             let cands: Vec<_> = rec.log.iter().filter(|d| d.0 <= turn && d.3.len() > 1).collect();
@@ -2373,7 +2373,7 @@ fn main() {
                 let mut k = g.clone();
                 k.insert(key.clone(), a.clone());
                 let by_count = opt::play(&pl, &st0, &mut GenomeChooser { genome: &k }, horizon).0;
-                let by_t = opt::play(&pl, &st0, &mut ByTurn { plan: &by_turn, changed: key, to: a, seen: HashMap::new() }, horizon).0;
+                let by_t = opt::play(&pl, &st0, &mut ByTurn { plan: &by_turn, changed: key, to: a, seen: HashMap::default() }, horizon).0;
                 let e = stats.entry(key.kind.as_string()).or_default();
                 e[0] += 1;
                 e[1] += (by_count < base_score - 1000.0) as usize;
@@ -2428,7 +2428,7 @@ fn main() {
                         loop {
                             let job = { job_rx.lock().unwrap().recv() };
                             let Ok((id, from, cand)) = job else { break };
-                            let mut ch = civ6opt::learn::PolicyChooser { genome: &cand, model, research: research.as_ref(), slack, from, to: from + span, taken: HashMap::new() };
+                            let mut ch = civ6opt::learn::PolicyChooser { genome: &cand, model, research: research.as_ref(), slack, from, to: from + span, taken: HashMap::default() };
                             let s = opt::play(&wpl, &wst0, &mut ch, horizon).0;
                             if res_tx.send((id, s, ch.taken)).is_err() {
                                 break;
@@ -2620,7 +2620,7 @@ fn main() {
                         Some(c)
                     }
                 }
-                let mut g = HashMap::new();
+                let mut g = HashMap::default();
                 let mut k = Keep { inner: SkeletonChooser::new(sk), g: &mut g };
                 opt::play(&pl, &st0, &mut k, horizon);
                 g
@@ -2894,7 +2894,7 @@ fn main() {
             let from: i64 = arg(&args, "--from").map(|x| x.parse().unwrap()).unwrap_or(2);
             let rows: HashMap<i64, &Value> = p.v["rows"].as_array().unwrap().iter().map(|d| (d["turn"].as_i64().unwrap(), d)).collect();
             let (mut exact, mut n) = (0, 0);
-            let mut kinds: HashMap<&'static str, i64> = HashMap::new();
+            let mut kinds: HashMap<&'static str, i64> = HashMap::default();
             for t in from..turn {
                 let (Some(d), Some(_)) = (rows.get(&t), rec.turn(t + 1)) else { continue };
                 if d["cities"].as_array().map(|a| a.is_empty()).unwrap_or(true) {

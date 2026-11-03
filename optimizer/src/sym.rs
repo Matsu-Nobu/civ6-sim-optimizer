@@ -1,5 +1,5 @@
 //! Interned strings: every type name (TECH_..., UNIT_..., city names) becomes a small copyable id.
-use std::collections::HashMap;
+use crate::fx::FxMap as HashMap;
 use std::sync::{OnceLock, RwLock};
 
 #[derive(Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Debug, Default)]
@@ -12,12 +12,12 @@ struct Interner {
 
 fn interner() -> &'static RwLock<Interner> {
     static I: OnceLock<RwLock<Interner>> = OnceLock::new();
-    I.get_or_init(|| RwLock::new(Interner { ids: HashMap::from([(String::new(), 0)]), names: vec![String::new()] }))
+    I.get_or_init(|| RwLock::new(Interner { ids: HashMap::from_iter([(String::new(), 0)]), names: vec![String::new()] }))
 }
 
 thread_local! {
     // per-thread copies, so threads don't contend on the global lock once names are known
-    static LOCAL_IDS: std::cell::RefCell<HashMap<String, u32>> = std::cell::RefCell::new(HashMap::new());
+    static LOCAL_IDS: std::cell::RefCell<HashMap<String, u32>> = std::cell::RefCell::new(HashMap::default());
     static LOCAL_NAMES: std::cell::RefCell<Vec<std::sync::Arc<str>>> = std::cell::RefCell::new(Vec::new());
 }
 
@@ -99,7 +99,7 @@ macro_rules! s {
 }
 
 thread_local! {
-    static STATIC_CACHE: std::cell::RefCell<HashMap<usize, Sym>> = std::cell::RefCell::new(HashMap::new());
+    static STATIC_CACHE: std::cell::RefCell<HashMap<usize, Sym>> = std::cell::RefCell::new(HashMap::default());
 }
 
 /// The Sym of a &'static str, cached by its address (no hashing of the text after the first time).

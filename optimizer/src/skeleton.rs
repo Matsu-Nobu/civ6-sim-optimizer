@@ -8,7 +8,8 @@ use crate::production::{item_kind, Kind};
 use crate::rules::Rules;
 use crate::sim::research_cost;
 use crate::sym::Sym;
-use std::collections::{BTreeSet, HashMap};
+use std::collections::BTreeSet;
+use crate::fx::FxMap as HashMap;
 
 /// A governor title's use: appoint one to the n-th city (founding order), or promote one.
 #[derive(Clone, Debug, PartialEq)]
@@ -63,7 +64,7 @@ pub struct SkeletonChooser<'a> {
 
 impl<'a> SkeletonChooser<'a> {
     pub fn new(sk: &'a Skeleton) -> Self {
-        SkeletonChooser { sk, gov_at: 0, closures: HashMap::new() }
+        SkeletonChooser { sk, gov_at: 0, closures: HashMap::default() }
     }
 
     fn aim(&mut self, p: &Planner, st: &State, civic: bool, options: &[Choice]) -> Option<Choice> {
@@ -195,9 +196,9 @@ impl Chooser for SkeletonChooser<'_> {
 /// were completed, the governor titles as used, the cities' sites (up to `last`).
 pub fn from_record(rec: &crate::record::Record, last: i64) -> Skeleton {
     let mut districts: Vec<Sym> = vec![];
-    let mut seen: std::collections::HashSet<(Sym, XY)> = std::collections::HashSet::new();
+    let mut seen: crate::fx::FxSet<(Sym, XY)> = crate::fx::FxSet::default();
     let mut govs: Vec<GovPick> = vec![];
-    let mut known: HashMap<Sym, Vec<Sym>> = HashMap::new();
+    let mut known: HashMap<Sym, Vec<Sym>> = HashMap::default();
     let order: Vec<Sym> = rec.sites.iter().map(|s| s.1).collect();
     let mut capital: Option<Sym> = None;
     for (t, r) in rec.turns.iter() {

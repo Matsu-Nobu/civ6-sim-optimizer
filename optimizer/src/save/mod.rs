@@ -9,7 +9,7 @@
 pub mod export;
 pub mod header;
 
-use std::collections::HashMap;
+use crate::fx::FxMap as HashMap;
 use std::sync::OnceLock;
 
 // ---- bytes ---------------------------------------------------------------------------------------------------
@@ -186,7 +186,7 @@ impl Dict {
             }
         }
         // later entries win on a shared hash, as the original's Map.set does
-        let mut by_hash = HashMap::new();
+        let mut by_hash = HashMap::default();
         for (kind, names) in kinds {
             let kind = leak(kind);
             for n in names {
@@ -374,7 +374,7 @@ const YIELDS: [&str; 6] = ["YIELD_FOOD", "YIELD_PRODUCTION", "YIELD_GOLD", "YIEL
 /// What a flood or an eruption left on each plot: `u32 plotCount, i32 entry[plotCount] (-1 or an index),
 /// u32 entryCount, entryCount × { u32 n; n × { yield hash, i32 amount } }`, found by its shape.
 fn plot_yield_changes(p: &Bytes, plot_count: i64) -> HashMap<i64, Vec<(String, f64)>> {
-    let mut out = HashMap::new();
+    let mut out = HashMap::default();
     let by_hash: HashMap<u32, &str> = YIELDS.iter().map(|y| (civ6_hash(y), *y)).collect();
     let food = civ6_hash("YIELD_FOOD");
     let table = 4 + plot_count * 4;
@@ -1073,8 +1073,8 @@ fn great_work_slots(p: &Bytes, d: &Dict, from: i64, span: i64) -> Vec<(&'static 
 /// REPLAYDATASET_SCOREPERTURN).
 fn era_scores(p: &Bytes) -> (HashMap<i64, f64>, HashMap<i64, f64>) {
     let prefix = b"REPLAYDATASET_";
-    let mut out = HashMap::new();
-    let mut score = HashMap::new();
+    let mut out = HashMap::default();
+    let mut score = HashMap::default();
     let mut at = p.index_of(prefix, 0);
     while at >= 0 {
         let len = p.u32(at - 4) as i64;
@@ -1095,7 +1095,7 @@ fn era_scores(p: &Bytes) -> (HashMap<i64, f64>, HashMap<i64, f64>) {
 }
 
 fn replay_dataset(p: &Bytes, name: &str, from: i64) -> HashMap<i64, f64> {
-    let mut out = HashMap::new();
+    let mut out = HashMap::default();
     let mut needle = (name.len() as u32).to_le_bytes().to_vec();
     needle.extend_from_slice(name.as_bytes());
     let i = p.index_of(&needle, from);
@@ -1252,7 +1252,7 @@ fn ring_plots(cx: i64, cy: i64) -> Vec<(i64, i64)> {
 /// The city groups of the map tiles, by (owner, slot): the centre is the tile with the lowest district instance.
 fn city_groups(map: &Map) -> Vec<(i64, i64, (i64, i64))> {
     let mut groups: Vec<((i64, i64), Vec<usize>)> = vec![];
-    let mut index: HashMap<(i64, i64), usize> = HashMap::new();
+    let mut index: HashMap<(i64, i64), usize> = HashMap::default();
     for (k, t) in map.plots.iter().enumerate() {
         let Some(o) = &t.owner else { continue };
         let key = (o.player_id, o.city_slot);
@@ -1321,7 +1321,7 @@ fn parse_cities(p: &Bytes, d: &Dict, map: &Map, players: &[PlayerState], ids: &[
         worked: vec![], current: None, progress: vec![], held_overflow: None, buildings: vec![], great_work_slots: vec![], owner_index: slot, has_id: false,
     }).collect();
     let prefix = b"LOC_CITY_NAME_";
-    let mut per_owner: HashMap<i64, i64> = HashMap::new();
+    let mut per_owner: HashMap<i64, i64> = HashMap::default();
     let mut from = 0;
     loop {
         let at = p.index_of(prefix, from);
@@ -1502,7 +1502,7 @@ pub fn parse(file: &[u8], d: &Dict) -> Save {
     }
     let great_people = great_people_ledger(&p, d, &states);
     let cities = parse_cities(&p, d, &map, &states, &ids);
-    let mut govs_by: HashMap<i64, Vec<Governor>> = HashMap::new();
+    let mut govs_by: HashMap<i64, Vec<Governor>> = HashMap::default();
     for g in govs {
         govs_by.entry(g.player_index).or_default().push(g);
     }

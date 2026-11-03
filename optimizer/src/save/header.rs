@@ -6,7 +6,7 @@
 //! `u32 key, u32 type, 8 bytes, value`. A key is civ6_hash of the property's name.
 use super::{civ6_hash, index_of, Dict};
 use crate::json::Value;
-use std::collections::HashMap;
+use crate::fx::FxMap as HashMap;
 
 const GAME_TURN: [u8; 4] = [0x9D, 0x2C, 0xE6, 0xBD];
 const GAME_SPEED: [u8; 4] = [0x99, 0xB0, 0xD9, 0x05];
@@ -276,21 +276,21 @@ pub fn parse(file: &[u8], d: &Dict) -> Header {
     let (chunks, turn, speed) = walk(file);
     let dict: HashMap<u32, &str> = NAMES.iter().map(|n| (civ6_hash(n), *n)).collect();
     let mut players: Vec<HashMap<String, Value>> = vec![];
-    let mut game: HashMap<String, Value> = HashMap::new();
+    let mut game: HashMap<String, Value> = HashMap::default();
     let mut in_player = false;
     for c in chunks {
         let Some((key, value)) = read_entry(c, d) else { continue };
         let name = dict.get(&key).copied();
         let label = name.map(String::from).unwrap_or(format!("{key:08x}"));
         if name == Some("PLAYER_ID") {
-            players.push(HashMap::new());
+            players.push(HashMap::default());
             in_player = true;
         }
         let to_game = name.map(|n| !PLAYER_KEYS.contains(&n)).unwrap_or(false) || !in_player;
         let target = if to_game { &mut game } else { players.last_mut().unwrap() };
         target.entry(label).or_insert(value);
     }
-    let mut slots: HashMap<i64, HashMap<String, Value>> = HashMap::new();
+    let mut slots: HashMap<i64, HashMap<String, Value>> = HashMap::default();
     for s in players {
         let Some(id) = s.get("PLAYER_ID").and_then(|v| v.as_i64()) else { continue };
         if slots.get(&id).map(|o| s.len() > o.len()).unwrap_or(true) {

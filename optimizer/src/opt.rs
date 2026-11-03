@@ -3,7 +3,7 @@
 use crate::model::*;
 use crate::sym::Sym;
 use crate::planner::{Chooser, Planner};
-use std::collections::HashMap;
+use crate::fx::FxMap as HashMap;
 
 pub fn objective(out: &[f64; 6]) -> f64 {
     out[0] + out[1]
@@ -443,11 +443,11 @@ pub fn adapt(policy: &Policy, seq: &Seq, alpha: f64) -> Policy {
     let mut pol = policy.clone();
     // the gradient of each code, averaged over the decisions it appears in: a general code shared by many decisions
     // moves about as far per step as a move's own (with one code per move, plain NRPA)
-    let mut grad: HashMap<u64, (f64, u32)> = HashMap::new();
+    let mut grad: HashMap<u64, (f64, u32)> = HashMap::default();
     for (_key, c, options, probs, codes) in seq {
         let Some(probs) = probs else { continue };
         let Some(ci) = options.iter().position(|o| o == c) else { continue };
-        let mut seen: std::collections::HashSet<u64> = std::collections::HashSet::new();
+        let mut seen: crate::fx::FxSet<u64> = crate::fx::FxSet::default();
         for code in &codes[ci] {
             grad.entry(*code).or_insert((0.0, 0)).0 += 1.0;
             seen.insert(*code);
@@ -526,7 +526,7 @@ pub fn nrpa(p: &Planner, st0: &State, turn: Horizon, budget: usize, level: u32, 
         best
     }
     while !s.done() {
-        run(p, st0, turn, level, Policy::new(), iters, alpha, bias, &mut rng, init, fixed, &mut s);
+        run(p, st0, turn, level, Policy::default(), iters, alpha, bias, &mut rng, init, fixed, &mut s);
     }
     s
 }

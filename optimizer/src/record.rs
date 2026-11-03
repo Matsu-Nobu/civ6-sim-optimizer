@@ -19,7 +19,8 @@ use crate::model::*;
 use crate::planner::{Chooser, Planner};
 use crate::sym::{sym, Sym};
 use std::cell::RefCell;
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::BTreeMap;
+use crate::fx::{FxMap as HashMap, FxSet as HashSet};
 
 #[derive(Clone, Debug, Default)]
 pub struct RecCity {
@@ -201,8 +202,8 @@ impl Record {
                 cities,
             });
         }
-        let mut rec = Record { turns, research: HashMap::new(), civic: HashMap::new(), acts: vec![], purchases: vec![], routes: vec![], route_seen: HashMap::new(), sites: vec![],
-                               tiles: HashMap::new(), first_owned: HashMap::new() };
+        let mut rec = Record { turns, research: HashMap::default(), civic: HashMap::default(), acts: vec![], purchases: vec![], routes: vec![], route_seen: HashMap::default(), sites: vec![],
+                               tiles: HashMap::default(), first_owned: HashMap::default() };
         rec.read_choices(rows, gifts, map);
         rec
     }
@@ -211,9 +212,9 @@ impl Record {
         // the plots as the map began (a plot no city of the player owned keeps its feature and resource until one does)
         let start: HashMap<XY, Value> = map["plots"].as_array().map(|a| a.iter().map(|p| (xy_of(p), p.clone())).collect()).unwrap_or_default();
         let keys: Vec<i64> = self.turns.keys().copied().collect();
-        let mut seen_imp: HashSet<(XY, Sym)> = HashSet::new();
-        let mut seen_city: HashSet<Sym> = HashSet::new();
-        let mut seen_route: HashSet<(i64, Sym, Sym)> = HashSet::new();
+        let mut seen_imp: HashSet<(XY, Sym)> = HashSet::default();
+        let mut seen_city: HashSet<Sym> = HashSet::default();
+        let mut seen_route: HashSet<(i64, Sym, Sym)> = HashSet::default();
         for (i, &t) in keys.iter().enumerate() {
             let a = &self.turns[&t];
             for c in &a.cities {
@@ -417,7 +418,7 @@ impl Record {
     /// purchase (no unit or building bought, no tile bought) to explain it. `gifts_in`: gold that came in on a turn
     /// (goody huts, gifts from others).
     pub fn gold_given(&self, gifts_in: &HashMap<i64, f64>) -> HashMap<i64, f64> {
-        let mut out = HashMap::new();
+        let mut out = HashMap::default();
         let mut turns: Vec<i64> = self.turns.keys().copied().collect();
         turns.sort();
         for t in turns {

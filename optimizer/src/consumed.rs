@@ -2,7 +2,7 @@
 //! cannot change a result. Effects::get panics on a type missing here, so a new query cannot be silently wrong.
 //! Regenerate: grep -ohE "\"EFFECT_[A-Z_0-9]+\"" src/*.rs | sort -u   (and keep the patterns of is_consumed)
 use crate::sym::Sym;
-use std::collections::HashSet;
+use crate::fx::FxSet as HashSet;
 
 pub const CONSUMED: &[&str] = &[
     "EFFECT_ADD_PLAYER_PROJECT_AVAILABILITY",

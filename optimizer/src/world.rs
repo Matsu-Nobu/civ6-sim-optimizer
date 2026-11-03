@@ -5,7 +5,8 @@ use crate::rules::Rules;
 use crate::sym::Sym;
 use crate::yields::{tile_yields, Plots};
 use crate::json::Value;
-use std::collections::{BTreeSet, HashMap, HashSet};
+use std::collections::BTreeSet;
+use crate::fx::{FxMap as HashMap, FxSet as HashSet};
 
 pub const WORKABLE_RADIUS: i32 = 3;
 const BORDER_COST_SCALE: f64 = 0.5;
@@ -26,7 +27,7 @@ impl Map {
             width: v["width"].as_i64().unwrap() as i32,
             height: v["height"].as_i64().unwrap() as i32,
             plots: v["plots"].as_array().unwrap().iter().map(|p| { let q = plot_from(p); (q.xy(), q) }).collect(),
-            lake: HashMap::new(),
+            lake: HashMap::default(),
         };
         let keys: Vec<XY> = m.plots.keys().copied().collect();
         for xy in keys {
@@ -86,7 +87,7 @@ impl Map {
 
     /// Plots within `radius` steps, sorted.
     pub fn within(&self, center: XY, radius: i32) -> Vec<XY> {
-        let mut seen: HashSet<XY> = HashSet::from([center]);
+        let mut seen: HashSet<XY> = HashSet::from_iter([center]);
         let mut frontier = vec![center];
         for _ in 0..radius {
             let mut nxt = vec![];
@@ -113,7 +114,7 @@ impl Map {
             self.lake.insert(xy, false);
             return;
         }
-        let mut seen: HashSet<XY> = HashSet::from([xy]);
+        let mut seen: HashSet<XY> = HashSet::from_iter([xy]);
         let mut frontier = vec![xy];
         while !frontier.is_empty() && seen.len() <= 9 {
             let mut nxt = vec![];
@@ -210,8 +211,8 @@ fn travel_search(r: &Rules, m: &Map, start: XY, goal: XY, moves: f64, road_type:
     }
     // states ordered by (turn, -points left); points kept as integer quarters for the heap
     let q = |x: f64| (x * 4.0).round() as i64;
-    let mut best: HashMap<XY, (i64, i64)> = HashMap::from([(start, (0, -q(moves)))]);
-    let mut came_from: HashMap<XY, XY> = HashMap::new();
+    let mut best: HashMap<XY, (i64, i64)> = HashMap::from_iter([(start, (0, -q(moves)))]);
+    let mut came_from: HashMap<XY, XY> = HashMap::default();
     let mut heap = BinaryHeap::from([Reverse((0i64, -q(moves), start))]);
     while let Some(Reverse((t, neg_left, at))) = heap.pop() {
         let left = -(neg_left as f64) / 4.0;

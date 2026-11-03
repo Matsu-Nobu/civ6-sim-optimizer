@@ -2,7 +2,8 @@
 use crate::model::*;
 use crate::sym::{sym, Sym};
 use crate::json::Value;
-use std::collections::{BTreeSet, HashMap};
+use std::collections::BTreeSet;
+use crate::fx::FxMap as HashMap;
 
 pub struct TurnRow {
     pub game_era: Option<Sym>,
@@ -61,7 +62,7 @@ impl Scenario {
         self.unit_gifts.iter().filter(|(tt, _)| **tt <= t).flat_map(|(_, us)| us.iter()).filter(|u| **u == crate::sym::sym("UNIT_SCOUT")).count() as i64
     }
     pub fn load(rows: &Value, sc: &Value) -> Scenario {
-        let mut out = HashMap::new();
+        let mut out = HashMap::default();
         let mut last = 0;
         for d in rows.as_array().unwrap() {
             let t = d["turn"].as_i64().unwrap();
@@ -95,11 +96,11 @@ impl Scenario {
             rows: out,
             last_turn: last,
             exo_boosts: turn_map(&sc["exo_boosts"], |x| x.as_array().unwrap().iter().filter_map(osym).collect()),
-            captured: HashMap::new(),
+            captured: HashMap::default(),
             faith_gift: turn_map(&sc["faith_gift"], |x| x.as_f64().unwrap_or(0.0)),
             gold_gift: turn_map(&sc["gold_gift"], |x| x.as_f64().unwrap_or(0.0)),
-            gold_out: HashMap::new(),
-            extra_luxuries: HashMap::new(),
+            gold_out: HashMap::default(),
+            extra_luxuries: HashMap::default(),
             alliances: vec![],
             scouts_by_turn: turn_map(&sc["scouts_by_turn"], |x| x.as_i64().unwrap_or(0)),
             unit_gifts: turn_map(&sc["unit_gifts"], |x| x.as_array().unwrap().iter().filter_map(osym).collect()),

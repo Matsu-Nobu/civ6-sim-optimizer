@@ -30,7 +30,7 @@ pub fn research_cost(r: &Rules, item: Sym, speed: Sym, game_era: Sym) -> f64 {
 /// (10/17 T42: Mercantilism, cost 432, gives 170 with 40%, 213 with 50%, 235 with 55%), and is the cost less 2.5
 /// for the others, which fits most of the records.
 pub fn boost_amount(item: Sym, cost: f64, extra_pct: f64) -> f64 {
-    static TABLE: std::sync::OnceLock<std::collections::HashMap<(String, i64), f64>> = std::sync::OnceLock::new();
+    static TABLE: std::sync::OnceLock<crate::fx::FxMap<(String, i64), f64>> = std::sync::OnceLock::new();
     let table = TABLE.get_or_init(|| {
         include_str!("boost_effective_costs.tsv").lines().filter(|l| !l.starts_with('#') && !l.is_empty()).map(|l| {
             let f: Vec<&str> = l.split('\t').collect();

@@ -385,7 +385,7 @@ pub struct State {
     /// what harvests gave so far (food, production, gold, ...): they go to the item and the food store, not the yields
     pub harvest_sum: [f64; 6],
     /// the roads made during the game (trade routes, the capital's roads to new cities), besides the map's
-    pub roads: std::collections::HashSet<XY>,
+    pub roads: crate::fx::FxSet<XY>,
 }
 
 impl State {

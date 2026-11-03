@@ -11,8 +11,8 @@ pub fn growth_threshold(r: &Rules, pop: i32, speed: Sym) -> f64 {
     (base * r.game_speed_cost_multiplier(speed)).floor()
 }
 
-fn plots_of(c: &City) -> std::collections::HashMap<XY, &Plot> {
-    let mut m = std::collections::HashMap::new();
+fn plots_of(c: &City) -> crate::fx::FxMap<XY, &Plot> {
+    let mut m = crate::fx::FxMap::default();
     for p in c.near.iter().chain(c.owned.iter()) {
         m.insert(p.xy(), p);
     }

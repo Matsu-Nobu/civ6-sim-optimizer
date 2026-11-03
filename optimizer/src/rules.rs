@@ -240,6 +240,7 @@ pub struct MoveInfo {
 pub struct Rules {
     pub imp_cache: OnceLock<Vec<crate::placement::ImpInfo>>,
     pub move_info: OnceLock<MoveInfo>,
+    pub tile_info: OnceLock<crate::yields::TileInfo>,
     pub t: crate::fx::FxMap<String, Table>,
     scans: crate::fx::FxMap<String, Vec<u32>>,
     params: crate::fx::FxMap<String, Sym>,
@@ -267,6 +268,7 @@ impl Rules {
         let mut r = Rules {
             imp_cache: OnceLock::new(),
             move_info: OnceLock::new(),
+            tile_info: OnceLock::new(),
             t,
             scans,
             params: Default::default(),

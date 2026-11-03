@@ -5,7 +5,7 @@ use crate::model::*;
 use crate::rules::{yidx, ysyms, Args, Has, Req, Rules, Y};
 use crate::sym::Sym;
 use std::collections::BTreeSet;
-use crate::fx::FxMap as HashMap;
+use crate::fx::{FxMap, FxMap as HashMap};
 
 pub type Plots = HashMap<XY, Plot>;
 
@@ -80,9 +80,74 @@ fn improved_class(r: &Rules, p: &Plot, cls: Option<Sym>) -> bool {
 }
 
 pub fn is_impassable(r: &Rules, terrain: Option<Sym>, feature: Option<Sym>) -> bool {
-    let t = terrain.map(|t| r.lookup_truthy("Terrains", "TerrainType", t, "Impassable")).unwrap_or(false);
-    let f = feature.map(|f| r.lookup_truthy("Features", "FeatureType", f, "Impassable")).unwrap_or(false);
+    let ti = tile_info(r);
+    let t = terrain.map(|t| ti.terrains.get(&t).map(|x| x.1).unwrap_or(false)).unwrap_or(false);
+    let f = feature.map(|f| ti.features.get(&f).map(|x| x.impassable).unwrap_or(false)).unwrap_or(false);
     t || f
+}
+
+/// A feature's rows that tile_yields reads.
+pub struct FeatureInfo {
+    pub yields: Vec<(Sym, f64)>,
+    pub adjacent: Vec<(Sym, f64)>,
+    pub natural_wonder: bool,
+    pub double_adjacent_terrain: bool,
+    pub impassable: bool,
+}
+
+/// What tile_yields reads of the rules, made once (Rules::tile_info): the yields of each terrain, feature,
+/// resource and improvement, in the order Rules::yield_rows gives them.
+pub struct TileInfo {
+    /// terrain -> (yields, impassable)
+    pub terrains: FxMap<Sym, (Vec<(Sym, f64)>, bool)>,
+    pub features: FxMap<Sym, FeatureInfo>,
+    pub resources: FxMap<Sym, Vec<(Sym, f64)>>,
+    pub improvements: FxMap<Sym, Vec<(Sym, f64)>>,
+    /// improvement -> its Improvement_BonusYieldChanges rows: (tech, civic, yield, change)
+    pub improvement_bonus: FxMap<Sym, Vec<(Option<Sym>, Option<Sym>, Sym, f64)>>,
+    pub food_replace: f64,
+    pub production_replace: f64,
+}
+
+pub fn tile_info(r: &Rules) -> &TileInfo {
+    r.tile_info.get_or_init(|| {
+        let keys = |table: &str, col: &str| -> Vec<Sym> {
+            let t = r.tab(table);
+            let mut v: Vec<Sym> = (0..t.len() as u32).filter_map(|i| t.v(i, col).sym()).collect();
+            v.sort();
+            v.dedup();
+            v
+        };
+        let t = r.tab("Terrains");
+        let terrains = (0..t.len() as u32).map(|i| {
+            let k = t.v(i, "TerrainType").sym().unwrap();
+            (k, (r.yield_rows("Terrain_YieldChanges", "TerrainType", k, "YieldType", "YieldChange"), t.v(i, "Impassable").truthy()))
+        }).collect();
+        let t = r.tab("Features");
+        let features = (0..t.len() as u32).map(|i| {
+            let k = t.v(i, "FeatureType").sym().unwrap();
+            (k, FeatureInfo {
+                yields: r.yield_rows("Feature_YieldChanges", "FeatureType", k, "YieldType", "YieldChange"),
+                adjacent: r.yield_rows("Feature_AdjacentYields", "FeatureType", k, "YieldType", "YieldChange"),
+                natural_wonder: t.v(i, "NaturalWonder").truthy(),
+                double_adjacent_terrain: t.v(i, "DoubleAdjacentTerrainYield").truthy(),
+                impassable: t.v(i, "Impassable").truthy(),
+            })
+        }).collect();
+        let resources = keys("Resource_YieldChanges", "ResourceType").into_iter()
+            .map(|k| (k, r.yield_rows("Resource_YieldChanges", "ResourceType", k, "YieldType", "YieldChange"))).collect();
+        let improvements = keys("Improvement_YieldChanges", "ImprovementType").into_iter()
+            .map(|k| (k, r.yield_rows("Improvement_YieldChanges", "ImprovementType", k, "YieldType", "YieldChange"))).collect();
+        let mut improvement_bonus: FxMap<Sym, Vec<(Option<Sym>, Option<Sym>, Sym, f64)>> = FxMap::default();
+        let t = r.tab("Improvement_BonusYieldChanges");
+        for row in 0..t.len() as u32 {
+            let Some(i) = t.v(row, "ImprovementType").sym() else { continue };
+            improvement_bonus.entry(i).or_default().push((t.v(row, "PrereqTech").sym().filter(|x| !x.is_empty()),
+                t.v(row, "PrereqCivic").sym().filter(|x| !x.is_empty()), t.v(row, "YieldType").sym().unwrap(), t.v(row, "BonusYieldChange").f()));
+        }
+        TileInfo { terrains, features, resources, improvements, improvement_bonus,
+            food_replace: r.param("YIELD_FOOD_CITY_TERRAIN_REPLACE"), production_replace: r.param("YIELD_PRODUCTION_CITY_TERRAIN_REPLACE") }
+    })
 }
 
 const PLOT_REQS: [&str; 30] = [
@@ -530,29 +595,31 @@ pub fn tile_yields_bbcc(r: &Rules, plot: &Plot, techs: &BTreeSet<Sym>, civics: &
     // a natural wonder's plot yields only the wonder's own yields, not its terrain's (11/01 run: Pantanal on grassland
     // gives 2 food in the game, the feature's 2 without the grassland's 2); an impassable feature yields nothing of
     // its terrain either
-    let natural_wonder = p.feature.is_some_and(|f| r.lookup_truthy("Features", "FeatureType", f, "NaturalWonder"));
-    let terrain = if natural_wonder || (p.feature.is_some() && is_impassable(r, None, p.feature)) { None } else { Some(p.terrain) };
+    let ti = tile_info(r);
+    let fi = p.feature.and_then(|f| ti.features.get(&f));
+    let natural_wonder = fi.map(|x| x.natural_wonder).unwrap_or(false);
+    let terrain = if natural_wonder || fi.map(|x| x.impassable).unwrap_or(false) { None } else { Some(p.terrain) };
     if let Some(t) = terrain {
         // Features.DoubleAdjacentTerrainYield (Torres del Paine): the terrain's own yields count twice next to it
         let mut times = 1.0;
         for xy in neighbour_xy(p.x, p.y) {
             if let Some(f) = plots.and_then(|m| m.get(&xy)).and_then(|q| q.feature) {
-                if r.lookup_truthy("Features", "FeatureType", f, "DoubleAdjacentTerrainYield") {
+                if ti.features.get(&f).map(|x| x.double_adjacent_terrain).unwrap_or(false) {
                     times = 2.0;
                 }
             }
         }
-        for (k, v) in r.yield_rows("Terrain_YieldChanges", "TerrainType", t, "YieldType", "YieldChange") {
+        for &(k, v) in ti.terrains.get(&t).map(|x| x.0.as_slice()).unwrap_or(&[]) {
             push_y(&mut y, k, times * v);
         }
     }
-    if let Some(f) = p.feature {
-        for (k, v) in r.yield_rows("Feature_YieldChanges", "FeatureType", f, "YieldType", "YieldChange") {
+    if let Some(fi) = fi {
+        for &(k, v) in &fi.yields {
             push_y(&mut y, k, v);
         }
     }
     if let Some(res) = resource {
-        for (k, v) in r.yield_rows("Resource_YieldChanges", "ResourceType", res, "YieldType", "YieldChange") {
+        for &(k, v) in ti.resources.get(&res).map(|x| x.as_slice()).unwrap_or(&[]) {
             push_y(&mut y, k, v);
         }
     }
@@ -562,26 +629,20 @@ pub fn tile_yields_bbcc(r: &Rules, plot: &Plot, techs: &BTreeSet<Sym>, civics: &
     let imp = p.improvement;
     if let Some(i) = imp {
         if !p.pillaged {
-            for (k, v) in r.yield_rows("Improvement_YieldChanges", "ImprovementType", i, "YieldType", "YieldChange") {
+            for &(k, v) in ti.improvements.get(&i).map(|x| x.as_slice()).unwrap_or(&[]) {
                 push_y(&mut y, k, v);
             }
-            let t = r.tab("Improvement_BonusYieldChanges");
-            for row in 0..t.len() as u32 {
-                if t.v(row, "ImprovementType").sym() != Some(i) {
-                    continue;
-                }
-                let tech = t.v(row, "PrereqTech").sym().filter(|x| !x.is_empty());
-                let civic = t.v(row, "PrereqCivic").sym().filter(|x| !x.is_empty());
+            for &(tech, civic, k, v) in ti.improvement_bonus.get(&i).map(|x| x.as_slice()).unwrap_or(&[]) {
                 if tech.map(|x| techs.contains(&x)).unwrap_or(true) && civic.map(|x| civics.contains(&x)).unwrap_or(true) {
-                    push_y(&mut y, t.v(row, "YieldType").sym().unwrap(), t.v(row, "BonusYieldChange").f());
+                    push_y(&mut y, k, v);
                 }
             }
         }
     }
     if city_center {
-        let food = get_y(&y, s!("YIELD_FOOD")).max(r.param("YIELD_FOOD_CITY_TERRAIN_REPLACE"));
+        let food = get_y(&y, s!("YIELD_FOOD")).max(ti.food_replace);
         set_y(&mut y, s!("YIELD_FOOD"), food);
-        let prod = get_y(&y, s!("YIELD_PRODUCTION")).max(r.param("YIELD_PRODUCTION_CITY_TERRAIN_REPLACE"));
+        let prod = get_y(&y, s!("YIELD_PRODUCTION")).max(ti.production_replace);
         set_y(&mut y, s!("YIELD_PRODUCTION"), prod);
         if bbcc {
             for (k, v) in bbcc_minimum(r, p.terrain.ends_with("_HILLS")) {
@@ -597,7 +658,7 @@ pub fn tile_yields_bbcc(r: &Rules, plot: &Plot, techs: &BTreeSet<Sym>, civics: &
         for xy in neighbour_xy(p.x, p.y) {
             if let Some(q) = plots.and_then(|m| m.get(&xy)) {
                 if let Some(f) = q.feature {
-                    for (k, v) in r.yield_rows("Feature_AdjacentYields", "FeatureType", f, "YieldType", "YieldChange") {
+                    for &(k, v) in ti.features.get(&f).map(|x| x.adjacent.as_slice()).unwrap_or(&[]) {
                         push_y(&mut y, k, v);
                     }
                 }

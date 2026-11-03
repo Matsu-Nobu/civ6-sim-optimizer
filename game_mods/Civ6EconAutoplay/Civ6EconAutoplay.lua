@@ -278,7 +278,13 @@ harvest_test = function()
     local cities = {}
     for _, c in Players[H.player]:GetCities():Members() do
       local q, b = c:GetBuildQueue(), GameInfo.Units["UNIT_BUILDER"].Index
-      cities[#cities + 1] = { name = c:GetName(), item = item_of(c), builder = { q:GetUnitCost(b), q:GetUnitProgress(b) } }
+      local item, progress = item_of(c), nil
+      if item and GameInfo.Units[item] then progress = q:GetUnitProgress(GameInfo.Units[item].Index)
+      elseif item and GameInfo.Buildings[item] then progress = q:GetBuildingProgress(GameInfo.Buildings[item].Index)
+      elseif item and GameInfo.Districts[item] then progress = q:GetDistrictProgress(GameInfo.Districts[item].Index) end
+      local m = GameInfo.Buildings["BUILDING_MONUMENT"].Index
+      cities[#cities + 1] = { name = c:GetName(), item = item, progress = progress, builder = { q:GetUnitCost(b), q:GetUnitProgress(b) },
+        monument = q:GetBuildingProgress(m) }
     end
     emit({ kind = "harvest", tag = tag, turn = Game.GetCurrentGameTurn(), units = units, cities = cities })
   end
@@ -287,15 +293,32 @@ harvest_test = function()
       if c:GetName() == "LOC_CITY_NAME_" .. name then return c end
     end
   end
+  -- another leader's statement opens the diplomacy screen, which waits for the player: its session is closed, which
+  -- closes the screen (DiplomacyActionView.lua: OnDiplomacySessionClosed)
+  local sessions = {}
+  Events.DiplomacyStatement.Add(function(from, to, kVariants)
+    if to == H.player or from == H.player then sessions[#sessions + 1] = { id = kVariants.SessionID, wait = 30 } end
+  end)
   local start_turn = Game.GetCurrentGameTurn()
+  -- the turn number goes up before the processing ends; the player's turn begins after it
+  local began = false
+  Events.LocalPlayerTurnBegin.Add(function() if Game.GetCurrentGameTurn() > start_turn then began = true end end)
   print("ECONRUN harvest test: player " .. H.player .. " human " .. tostring(Players[H.player]:IsHuman()))
   ContextPtr:SetHide(false)
   ContextPtr:SetUpdate(function()
     frames = frames + 1
+    for i = #sessions, 1, -1 do
+      sessions[i].wait = sessions[i].wait - 1
+      if sessions[i].wait <= 0 then
+        print("ECONRUN closing diplomacy session " .. tostring(sessions[i].id))
+        pcall(function() DiplomacyManager.CloseSession(sessions[i].id) end)
+        table.remove(sessions, i)
+      end
+    end
     local me = Game.GetLocalPlayer()
-    -- a multiplayer autosave is written before the turn's processing, which runs right after the load: the player's
-    -- turn begins after it, a turn later than the save's
-    if not Players[H.player]:IsTurnActive() then
+    -- a multiplayer autosave is written before the turn's processing, which runs soon after the load: the player
+    -- acts on the next turn, after it, as the recorded player did between the two saves
+    if not began or not Players[H.player]:IsTurnActive() then
       if Game.GetCurrentGameTurn() > start_turn + 1 then
         emit({ kind = "harvest_done", error = "no turn of player " .. H.player })
         ContextPtr:ClearUpdate()

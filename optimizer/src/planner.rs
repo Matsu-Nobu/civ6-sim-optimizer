@@ -73,6 +73,16 @@ impl<'a> Planner<'a> {
         let _g = crate::prof::start(13);
         let mut p = st.player.clone();
         p.envoys = self.sc.envoys(st.turn).clone();
+        // a city-state met during the turn's processing gives its first envoy before the cities' yields, after the
+        // research (10/21 Rome T32: Hong Kong's +1 toward buildings counted in that turn; 10/17 T16: Fez, Lisbon and
+        // Lahore's did not count in the research); the envoys the player sends come with the next save
+        if self.sc.rows.contains_key(&(st.turn + 1)) {
+            for e in self.sc.envoys(st.turn + 1) {
+                if e.count == 1 && !p.envoys.iter().any(|x| x.player_id == e.player_id) {
+                    p.envoys.push(e.clone());
+                }
+            }
+        }
         Env {
             p,
             techs: st.acc.techs.clone(),
@@ -2609,6 +2619,7 @@ impl<'a> Planner<'a> {
                 out
             };
             let mut env_research = env.clone();
+            env_research.p.envoys = self.sc.envoys(st.turn).clone(); // (see player_env)
             if let Some(gs) = env_research.p.governors.as_mut() {
                 for g in gs.iter_mut().filter(|g| st.governors_new.contains(&g.gtype)) {
                     g.established = false;

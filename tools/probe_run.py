@@ -117,7 +117,7 @@ def main():
             if i < 0:
                 continue
             try:
-                d = json.loads(x[i + 10:])
+                d = json.loads(x[i + 10:], strict=False)
             except json.JSONDecodeError:
                 continue
             if d.get("kind") in ("city", "player") and d.get("game") == p["game"] and d.get("turn") == p["game_turn"]:

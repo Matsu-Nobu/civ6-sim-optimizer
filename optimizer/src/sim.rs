@@ -151,6 +151,15 @@ pub fn step<'a>(r: &'a Rules, ec: &mut EngineCache<'a>, acc: &mut PlayerAcc, cit
     let (placed, completed) = placed_districts(r, cities);
     let e_sim = ec.get(r, env, &sim_cities);
     let scores = amenity_scores(r, &sim_cities, &e_sim, env.extra_luxuries);
+    // growth counts the amenities without the governors established this turn, which the other yields count
+    // (10/19 Maracaibo T45: Liang's amenity, happy and not ecstatic; 10/14 La Rochelle T41's production had it)
+    let scores_g = if env_research.p.governors == env.p.governors {
+        scores.clone()
+    } else {
+        let mut x = env.clone();
+        x.p.governors = env_research.p.governors.clone();
+        amenity_scores(r, &sim_cities, &ec.get(r, &x, &sim_cities), env.extra_luxuries)
+    };
     // Civ6's end of turn (CivFanatics, "When does production finish?"): techs and civics complete nation-wide first
     // (from the science and culture of the turn), then each city's growth and production, which see them
     let early_empire_before = acc.civics.contains(&s!("CIVIC_EARLY_EMPIRE"));
@@ -220,7 +229,8 @@ pub fn step<'a>(r: &'a Rules, ec: &mut EngineCache<'a>, acc: &mut PlayerAcc, cit
         let routes = &routes_now.clone()[..];
         let log_from = log.len();
         let score = scores.iter().find(|(n, _)| *n == c.name).map(|x| x.1).unwrap_or(0.0);
-        let (nonfood_pct, growth_pct) = happiness(r, score);
+        let nonfood_pct = happiness(r, score).0;
+        let growth_pct = happiness(r, scores_g.iter().find(|(n, _)| *n == c.name).map(|x| x.1).unwrap_or(0.0)).1;
         let pop = acc.cities.get(&c.name).unwrap().population;
         let y = city_turn_yields(r, &e, c, pop, routes, nonfood_pct, Some(score));
         if crate::envcfg::trace_city(&c.name.as_string()) {

@@ -120,13 +120,26 @@ local function json(v)
   else return tostring(v) end
 end
 
+-- Writes a probe record. The game's log cuts a printed line at about 2000 bytes, so a long record goes out in pieces
+-- of at most 1500 bytes ("ECONPART"), the last one as "ECONPROBE"; a piece never ends inside a UTF-8 character.
+local function emit(t)
+  local s = json(t)
+  while #s > 1500 do
+    local k = 1500
+    while k > 1 and s:byte(k + 1) ~= nil and s:byte(k + 1) >= 0x80 and s:byte(k + 1) < 0xC0 do k = k - 1 end
+    print("ECONPART " .. s:sub(1, k))
+    s = s:sub(k + 1)
+  end
+  print("ECONPROBE " .. s)
+end
+
 local function probe()
   local turn = Game.GetCurrentGameTurn()
   local idx = nil
   for i, p in ipairs(ECONRUN.PROBE) do
     if p.game_turn == turn and Players[p.player] ~= nil and PlayerConfigurations[p.player]:GetCivilizationTypeName() == p.civ then idx = i end
   end
-  print("ECONPROBE " .. json({ kind = "loaded", turn = turn, index = idx }))
+  emit({ kind = "loaded", turn = turn, index = idx })
   if idx ~= nil then
     local pid = ECONRUN.PROBE[idx].player
     -- the player's research and civics: cost and progress of each
@@ -138,9 +151,9 @@ local function probe()
       for row in GameInfo.Civics() do
         civics[row.CivicType] = { pl:GetCulture():GetCultureCost(row.Index), pl:GetCulture():GetCulturalProgress(row.Index) }
       end
-      print("ECONPROBE " .. json({ kind = "player", turn = turn, game = ECONRUN.PROBE[idx].game, techs = techs, civics = civics }))
+      emit({ kind = "player", turn = turn, game = ECONRUN.PROBE[idx].game, techs = techs, civics = civics })
     end)
-    if not ok5 then print("ECONPROBE " .. json({ kind = "error", err = tostring(err5) })) end
+    if not ok5 then emit({ kind = "error", err = tostring(err5) }) end
     local yields = {}
     for row in GameInfo.Yields() do yields[#yields + 1] = row.YieldType end
     for _, city in Players[pid]:GetCities():Members() do
@@ -173,17 +186,17 @@ local function probe()
         end
         -- (a method this game version lacks gives null)
         local function try(o, m) local ok, v = pcall(function() return o[m](o) end); if ok then return v end; return nil end
-        print("ECONPROBE " .. json({ kind = "city", turn = turn, game = ECONRUN.PROBE[idx].game, name = city:GetName(),
+        emit({ kind = "city", turn = turn, game = ECONRUN.PROBE[idx].game, name = city:GetName(),
           pop = city:GetPopulation(), yields = cy, food_surplus = try(g, "GetFoodSurplus"), amenities = try(g, "GetAmenities"),
           amenities_needed = try(g, "GetAmenitiesNeeded"), happiness = try(g, "GetHappiness"), item = try(q, "CurrentlyBuilding"),
           production = try(q, "GetProductionYield"), growth_threshold = try(g, "GetGrowthThreshold"), food = try(g, "GetFood"),
-          plots = plots, tips = tips, costs = costs, held = try(q, "GetOverflow") }))
+          plots = plots, tips = tips, costs = costs, held = try(q, "GetOverflow") })
       end)
-      if not ok then print("ECONPROBE " .. json({ kind = "error", err = tostring(err) })) end
+      if not ok then emit({ kind = "error", err = tostring(err) }) end
     end
   end
   local nxt = ECONRUN.PROBE[(idx or 0) + 1]
-  if nxt == nil then print("ECONPROBE " .. json({ kind = "done" })); return end
+  if nxt == nil then emit({ kind = "done" }); return end
   local g = {}
   g.Location = SaveLocations.LOCAL_STORAGE
   g.Type = SaveTypes.SINGLE_PLAYER
@@ -191,7 +204,7 @@ local function probe()
   g.IsQuicksave = false
   g.Directory = SaveDirectories.DEFAULT
   g.Name = nxt.name
-  print("ECONPROBE " .. json({ kind = "next", name = nxt.name }))
+  emit({ kind = "next", name = nxt.name })
   Network.LoadGame(g, ServerType.SERVER_TYPE_NONE)
 end
 
@@ -200,7 +213,7 @@ local function start()
   started = true
   if ECONRUN.MODE == "probe" then
     local ok, err = pcall(probe)
-    if not ok then print("ECONPROBE " .. json({ kind = "error", err = tostring(err) })) end
+    if not ok then emit({ kind = "error", err = tostring(err) }) end
     return
   end
   if ECONRUN.MODE == "newstart" then

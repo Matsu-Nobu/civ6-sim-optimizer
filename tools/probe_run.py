@@ -50,6 +50,25 @@ def lua(v):
     return json.dumps(v)
 
 
+def probe_records(body):
+    """The probe's records in the log; a long one comes as "ECONPART" pieces before its last "ECONPROBE" piece."""
+    out, parts = [], ""
+    for x in body.splitlines():
+        i = x.find("ECONPART ")
+        if i >= 0:
+            parts += x[i + 9:]
+            continue
+        i = x.find("ECONPROBE ")
+        if i < 0:
+            continue
+        text, parts = parts + x[i + 10:], ""
+        try:
+            out.append(json.loads(text, strict=False))
+        except json.JSONDecodeError:
+            print("unreadable probe record:", text[:200])
+    return out
+
+
 def main():
     if len(sys.argv) < 2:
         sys.exit(__doc__)
@@ -110,21 +129,13 @@ def main():
     out.mkdir(parents=True, exist_ok=True)
     body = LOG.read_bytes().decode("utf-8", "replace")
     (out / "last_lua.log").write_text(body)
+    records = probe_records(body)
     for p in probes:
-        rows = []
-        for x in body.splitlines():
-            i = x.find("ECONPROBE ")
-            if i < 0:
-                continue
-            try:
-                d = json.loads(x[i + 10:], strict=False)
-            except json.JSONDecodeError:
-                continue
-            if d.get("kind") in ("city", "player") and d.get("game") == p["game"] and d.get("turn") == p["game_turn"]:
-                rows.append(d)
+        rows = [d for d in records
+                if d.get("kind") in ("city", "player") and d.get("game") == p["game"] and d.get("turn") == p["game_turn"]]
         (out / f"{p['game']}_T{p['turn']}.jsonl").write_text("".join(json.dumps(r) + "\n" for r in rows))
         print(p["game"], p["turn"], sum(1 for r in rows if r["kind"] == "city"), "cities")
-    print("\n".join(x[x.find("ECONPROBE "):] for x in body.splitlines() if "ECONPROBE " in x and '"city"' not in x)[-2000:])
+    print("\n".join(json.dumps(d) for d in records if d.get("kind") not in ("city", "player")))
 
 
 if __name__ == "__main__":

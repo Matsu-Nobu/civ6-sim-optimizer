@@ -330,7 +330,8 @@ harvest_test = function()
       ContextPtr:ClearUpdate()
       return
     end
-    if frames < 60 then return end
+    -- the cities' processing goes on for a while after the turn begins
+    if frames < (step == 1 and 600 or 120) then return end
     frames = 0
     if step == 1 then report("before") end
     local a = H.steps[step]

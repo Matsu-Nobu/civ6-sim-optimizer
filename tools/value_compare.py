@@ -66,6 +66,8 @@ def main():
     ap.add_argument("--test-rows", nargs="+")
     ap.add_argument("--residual", type=int, help="the feature column (0 = the first after the turn) the score already "
                     "holds: the models learn the score minus it, and add it back")
+    ap.add_argument("--per-turn", action="store_true", help="LightGBM learns the target standardized within each turn "
+                    "(the training rows' mean and spread of the turn), so the late turns' large spread does not drown the early ones")
     a = ap.parse_args()
     # each file's plays numbered apart (file k: k * 10**6 + play); test files after the training ones
     parts = [load(p) for p in a.rows + (a.test_rows or [])]
@@ -86,13 +88,20 @@ def main():
         sys.exit("lightgbm is needed (pip install -r requirements.txt)")
     F = np.hstack([turns[:, None], X])
     params = {"objective": "regression", "learning_rate": 0.05, "num_leaves": 63, "min_data_in_leaf": 20, "verbose": -1, "num_threads": 1}
-    gbm = lgb.train(params, lgb.Dataset(F[tr], y[tr]), num_boost_round=600)
-    pg = gbm.predict(F) + base
+    mu, sd = np.zeros(len(y)), np.ones(len(y))
+    if a.per_turn:
+        for t in np.unique(turns):
+            k = tr & (turns == t)
+            if k.sum() > 1:
+                mu[turns == t], sd[turns == t] = y[k].mean(), y[k].std() + 1e-9
+    gbm = lgb.train(params, lgb.Dataset(F[tr], ((y - mu) / sd)[tr]), num_boost_round=600)
+    pg = gbm.predict(F) * sd + mu + base
     lin0 = lin
     lin = lambda t, x: lin0(t, x) + (x[:, a.residual] if a.residual is not None else 0)
     y = y_full
     rng = np.random.default_rng(0)
     plan = plays // 10**6
+    every = {"pairs linear": [], "pairs LightGBM": [], "same plan linear": [], "same plan LightGBM": []}
     print("turns    rows  R2 linear  R2 LightGBM  pairs linear  pairs LightGBM  same plan linear  same plan LightGBM")
     for lo in range(int(turns.min()), int(turns.max()) + 1, 10):
         m = te & (turns >= lo) & (turns < lo + 10)
@@ -109,8 +118,13 @@ def main():
             acc_g.append(pair_accuracy(pg[k], y[k], X[k], rng))
             same_l.append(pair_accuracy(lin(t, X[k]), y[k], X[k], rng, group=plan[k]))
             same_g.append(pair_accuracy(pg[k], y[k], X[k], rng, group=plan[k]))
+            for name, v in zip(every, (acc_l[-1], acc_g[-1], same_l[-1], same_g[-1])):
+                every[name].append(v)
         print(f"T{lo:2d}-{lo + 9:2d} {m.sum():6d}  {r2(pl, ys):9.3f}  {r2(pgs, ys):11.3f}  {np.nanmean(acc_l):12.3f}  {np.nanmean(acc_g):14.3f}"
               f"  {np.nanmean(same_l):16.3f}  {np.nanmean(same_g):18.3f}")
+
+    # every held-out turn weighs the same
+    print("all turns: " + ", ".join(f"{k} {np.nanmean(v):.3f}" for k, v in every.items()))
 
 
 if __name__ == "__main__":

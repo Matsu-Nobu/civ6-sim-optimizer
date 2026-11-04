@@ -17,7 +17,7 @@ wait_job() { until grep -q done $JOBS/$1/status.txt 2>/dev/null; do sleep 5; don
 for n in $(seq $1 $2); do
   prev=$D/net_it$((n - 1)).json
   for k in 1 3 5; do
-    j=it${n}_look$k
+    j=n7_it${n}_look$k
     optimizer/scripts/win_run.sh start $j complete data/games/rome_20261021.json $F --init base \
       --value-net $prev --look $k --out $D/look${k}_it$n.json > /dev/null
     wait_job $j

@@ -170,6 +170,22 @@ impl Chooser for GenomeChooser<'_> {
     }
 }
 
+/// The genome's choices before turn `from`, the base policy's from then on (valuerows --base-after: the play from a
+/// state on depends on the state alone, not on which of the genome's entries the decisions before it used up).
+pub struct CutChooser<'g> {
+    pub genome: &'g HashMap<Key, Choice>,
+    pub from: i64,
+}
+
+impl Chooser for CutChooser<'_> {
+    fn choose(&mut self, p: &Planner, st: &State, key: &Key, options: &[Choice]) -> Option<Choice> {
+        if st.turn >= self.from {
+            return p.base(st, key, options);
+        }
+        GenomeChooser { genome: self.genome }.choose(p, st, key, options)
+    }
+}
+
 /// A small fast PRNG (xorshift64*).
 pub struct Rng(pub u64);
 impl Rng {

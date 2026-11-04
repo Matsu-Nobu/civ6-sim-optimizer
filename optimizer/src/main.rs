@@ -1054,6 +1054,8 @@ fn main() {
             // With --city-out, each row's cities (crate::value::city_features) go there as TSV: play, turn, the
             // city's place in the state's list, its features.
             let city_out = arg(&args, "--city-out");
+            // With --base-after, the plays follow the base policy from turn C on instead of the plan (opt::CutChooser).
+            let base_after = args.iter().any(|a| a == "--base-after");
             let plays: usize = arg(&args, "--plays").map(|x| x.parse().unwrap()).unwrap_or(2000);
             let threads: usize = arg(&args, "--threads").map(|x| x.parse().unwrap()).unwrap_or(8);
             let changes: u64 = arg(&args, "--changes").map(|x| x.parse().unwrap()).unwrap_or(5);
@@ -1068,7 +1070,7 @@ fn main() {
             let city_lines = std::sync::Mutex::new(Vec::<String>::new());
             std::thread::scope(|sc| {
                 for w in 0..threads {
-                    let (p, cands, g0, lines, city_lines, city_out) = (&p, &cands, &g0, &lines, &city_lines, &city_out);
+                    let (p, cands, g0, lines, city_lines, city_out, base_after) = (&p, &cands, &g0, &lines, &city_lines, &city_out, base_after);
                     sc.spawn(move || {
                         let (mut wpl, wst0) = planner(p);
                         wpl.s.horizon = turn + ext;
@@ -1099,9 +1101,17 @@ fn main() {
                                     let cs = if city_out.is_some() { civ6opt::value::city_features(&wpl, &st) } else { vec![] };
                                     feats.push((st.turn, x, cs));
                                 }
-                                wpl.advance(&mut st, &mut GenomeChooser { genome: &g });
+                                if base_after {
+                                    wpl.advance(&mut st, &mut opt::CutChooser { genome: &g, from: cut });
+                                } else {
+                                    wpl.advance(&mut st, &mut GenomeChooser { genome: &g });
+                                }
                             }
-                            let score = opt::play(&wpl, &wst0, &mut GenomeChooser { genome: &g }, horizon).0;
+                            let score = if base_after {
+                                opt::play(&wpl, &wst0, &mut opt::CutChooser { genome: &g, from: cut }, horizon).0
+                            } else {
+                                opt::play(&wpl, &wst0, &mut GenomeChooser { genome: &g }, horizon).0
+                            };
                             let mut l = lines.lock().unwrap();
                             let mut cl = city_lines.lock().unwrap();
                             for (t, f, cs) in feats {

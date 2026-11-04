@@ -1,7 +1,11 @@
 """Learns a state's value (the final score of the play from that state) with a neural net that reads each city, on the
 rows `civ6opt valuerows --city-out` writes, and compares it with LightGBM on the state's features alone.
 
-  value_net.py --train <job dir>... --test <job dir>... [--epochs 30] [--lgb]
+  value_net.py --train <job dir>... --test <job dir>... [--epochs 30] [--lgb] [--save model.json]
+  value_net.py --predict model.json --rows rows.tsv --cities cities.tsv
+
+--save writes the net and its standardization as JSON for optimizer/src/value_net.rs; --predict prints, for each
+state of the rows, its turn and the value the saved net gives (computed with numpy from the JSON alone).
 
 A job dir holds one valuerows run: the state rows (rows_<n>.tsv: play, turn, the state's features, the score) and the
 city rows (cities.tsv: play, turn, the city's place, its features). The net passes every city through one small net,
@@ -65,16 +69,52 @@ def gather(dirs):
     return np.concatenate(file_of), s, cities, off
 
 
+def predict_json(m, turns, X, cities, off):
+    """The saved net's values (numpy, from the JSON alone), as optimizer/src/value_net.rs computes them."""
+    relu = lambda v: np.maximum(v, 0.0)
+    lin = lambda v, layer: v @ np.array(layer["w"]).T + np.array(layer["b"])
+    g = np.hstack([(X - np.array(m["gx_mu"])) / np.array(m["gx_sd"]), turns[:, None] / 65.0])
+    c = (cities - np.array(m["cx_mu"])) / np.array(m["cx_sd"])
+    h = relu(lin(relu(lin(c, m["city"][0])), m["city"][1]))
+    out = np.zeros(len(X))
+    for i in range(len(X)):
+        hi = h[off[i]:off[i + 1]]
+        v = np.concatenate([hi.sum(0), hi.mean(0), hi.max(0), g[i]])
+        z = lin(relu(lin(relu(lin(v, m["head"][0])), m["head"][1])), m["head"][2])[0]
+        t = str(int(turns[i]))
+        out[i] = z * m["turn_sd"].get(t, 1.0) + m["turn_mu"].get(t, 0.0) + X[i, m["made"]]
+    return out
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--train", nargs="+", required=True)
-    ap.add_argument("--test", nargs="+", required=True)
+    ap.add_argument("--predict")
+    ap.add_argument("--rows")
+    ap.add_argument("--cities")
+    ap.add_argument("--save")
+    ap.add_argument("--train", nargs="+")
+    ap.add_argument("--test", nargs="+")
     ap.add_argument("--made", type=int, default=22)
     ap.add_argument("--epochs", type=int, default=30)
     ap.add_argument("--batch", type=int, default=4096)
     ap.add_argument("--width", type=int, default=128)
     ap.add_argument("--lgb", action="store_true", help="also LightGBM on the state's features (all CPU threads)")
     a = ap.parse_args()
+    if a.predict:
+        import json
+        m = json.load(open(a.predict))
+        s = np.loadtxt(a.rows, delimiter="\t", ndmin=2)
+        c = np.loadtxt(a.cities, delimiter="\t", ndmin=2)
+        key_s = s[:, 0].astype(np.int64) * 1000 + s[:, 1].astype(np.int64)
+        key_c = c[:, 0].astype(np.int64) * 1000 + c[:, 1].astype(np.int64)
+        lo, hi = np.searchsorted(key_c, key_s, "left"), np.searchsorted(key_c, key_s, "right")
+        cities = np.vstack([c[a_:b_, 3:] for a_, b_ in zip(lo, hi)])
+        off = np.concatenate([[0], np.cumsum(hi - lo)])
+        v = predict_json(m, s[:, 1], s[:, 2:-1], cities, off)
+        for t, x in zip(s[:, 1].astype(int), v):
+            print(f"{t}\t{x:.4f}")
+        return
+    assert a.train and a.test, "--train and --test (or --predict)"
     import torch
     dev = "cuda" if torch.cuda.is_available() else "cpu"
     t0 = time.time()
@@ -159,6 +199,18 @@ def main():
             idx = torch.arange(i, min(i + 65536, len(G_te)), device=dev)
             out.append(net(*batch(G_te, Cc_te, O_te, idx)).cpu().numpy())
     pred = {"net": np.concatenate(out) * d_te + m_te + X_te[:, a.made]}
+    if a.save:
+        import json
+        layer = lambda l: {"w": l.weight.detach().cpu().double().numpy().tolist(), "b": l.bias.detach().cpu().double().numpy().tolist()}
+        m = {"made": a.made, "width": w, "gx_mu": gx_mu.tolist(), "gx_sd": gx_sd.tolist(), "cx_mu": cx_mu.astype(float).tolist(),
+             "cx_sd": cx_sd.astype(float).tolist(), "turn_mu": {str(int(t)): float(v) for t, v in mu.items()},
+             "turn_sd": {str(int(t)): float(v) for t, v in sd.items()},
+             "city": [layer(net.city[0]), layer(net.city[2])], "head": [layer(net.head[0]), layer(net.head[2]), layer(net.head[4])]}
+        json.dump(m, open(a.save, "w"))
+        # the JSON alone gives the net's values (a few held-out states)
+        k = min(200, len(X_te))
+        check = predict_json(m, t_te[:k], X_te[:k], c_te[:off_te[k]], off_te[:k + 1])
+        print(f"saved {a.save}; largest difference from the net on {k} states: {np.abs(check - pred['net'][:k]).max():.4f}", flush=True)
     if a.lgb:
         import lightgbm as lgb
         F_tr, F_te = np.hstack([t_tr[:, None], X_tr]), np.hstack([t_te[:, None], X_te])

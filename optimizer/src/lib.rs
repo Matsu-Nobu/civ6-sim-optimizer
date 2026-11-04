@@ -65,6 +65,7 @@ pub mod strategic;
 pub mod skeleton;
 pub mod milestones;
 pub mod value;
+pub mod value_net;
 pub mod world;
 pub mod yields;
 

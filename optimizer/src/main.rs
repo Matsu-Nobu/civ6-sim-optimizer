@@ -1131,6 +1131,33 @@ fn main() {
             }
             eprintln!("wrote {out}");
         }
+        "netvalue" => {
+            // civ6opt netvalue <game> --turn T --init plan --net model.json --out rows.tsv --city-out cities.tsv: plays
+            // the plan once; each turn's state goes to --out and --city-out as valuerows writes them (play 0), and its
+            // value by the net (crate::value_net) to stdout as "turn<TAB>value" (to compare with tools/value_net.py
+            // --predict on the same rows).
+            let net = civ6opt::value_net::ValueNet::load(&arg(&args, "--net").expect("--net model.json"));
+            let out = arg(&args, "--out").expect("--out rows.tsv");
+            let city_out = arg(&args, "--city-out").expect("--city-out cities.tsv");
+            let g0 = genome_arg(&p, arg(&args, "--init").as_deref());
+            let (mut pl, st0) = planner(&p);
+            pl.s.horizon = turn + ext;
+            let mut st = st0.clone();
+            let (mut rows, mut cities) = (vec![], vec![]);
+            while st.turn <= turn {
+                let mut x = civ6opt::value::features(&pl, &st).to_vec();
+                x.extend(civ6opt::value::features_extra(&pl, &st));
+                let cs = civ6opt::value::city_features(&pl, &st);
+                println!("{}\t{:.4}", st.turn, net.value(&pl, &st));
+                rows.push(format!("0\t{}\t{}\t0", st.turn, x.iter().map(|v| format!("{v:.6}")).collect::<Vec<_>>().join("\t")));
+                for (k, c) in cs.iter().enumerate() {
+                    cities.push(format!("0\t{}\t{k}\t{}", st.turn, c.iter().map(|v| format!("{v:.6}")).collect::<Vec<_>>().join("\t")));
+                }
+                pl.advance(&mut st, &mut GenomeChooser { genome: &g0 });
+            }
+            std::fs::write(&out, rows.join("\n") + "\n").unwrap();
+            std::fs::write(&city_out, cities.join("\n") + "\n").unwrap();
+        }
         "learn" => {
             // fits the value model (crate::value) to plays around the --init plan: each play but the first changes one
             // of its decisions (turn T) to another option at random and plays to the end, the plan's choices elsewhere;

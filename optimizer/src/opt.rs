@@ -163,15 +163,20 @@ impl Chooser for GenomeChooser<'_> {
                 return Some(c.clone());
             }
         }
+        // the lookahead (--value, --value-net) first; inside it, and without it, the learned policy or the base one
+        if let Some(c) = crate::value::choose(p, st, key, options, self.genome) {
+            return Some(c);
+        }
         if let Some(m) = crate::learn::FALLBACK.get() {
             return crate::learn::model_pick(m, p, st, key, options);
         }
-        crate::value::choose(p, st, key, options, self.genome).or_else(|| p.base(st, key, options))
+        p.base(st, key, options)
     }
 }
 
-/// The genome's choices before turn `from`, the base policy's from then on (valuerows --base-after: the play from a
-/// state on depends on the state alone, not on which of the genome's entries the decisions before it used up).
+/// The genome's choices before turn `from`, then the learned policy's (--fallback-model) or else the base policy's
+/// (valuerows --base-after: the play from a state on depends on the state alone, not on which of the genome's
+/// entries the decisions before it used up).
 pub struct CutChooser<'g> {
     pub genome: &'g HashMap<Key, Choice>,
     pub from: i64,
@@ -180,7 +185,10 @@ pub struct CutChooser<'g> {
 impl Chooser for CutChooser<'_> {
     fn choose(&mut self, p: &Planner, st: &State, key: &Key, options: &[Choice]) -> Option<Choice> {
         if st.turn >= self.from {
-            return p.base(st, key, options);
+            return match crate::learn::FALLBACK.get() {
+                Some(m) => crate::learn::model_pick(m, p, st, key, options),
+                None => p.base(st, key, options),
+            };
         }
         GenomeChooser { genome: self.genome }.choose(p, st, key, options)
     }

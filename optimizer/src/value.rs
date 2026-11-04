@@ -255,8 +255,23 @@ impl ValueModel {
 
 /// The lookahead's settings: the model and how many turns after the decision's turn are played before valuing.
 pub struct Lookahead {
-    pub model: ValueModel,
+    pub model: Model,
     pub turns: i64,
+}
+
+/// The value a lookahead compares: the linear model (civ6opt learn) or the net (tools/value_net.py).
+pub enum Model {
+    Linear(ValueModel),
+    Net(crate::value_net::ValueNet),
+}
+
+impl Model {
+    pub fn value(&self, p: &Planner, st: &State) -> f64 {
+        match self {
+            Model::Linear(m) => m.value(p, st),
+            Model::Net(m) => m.value(p, st),
+        }
+    }
 }
 
 /// Set once (civ6opt --value); without it, decisions the genome does not fix take the base policy.

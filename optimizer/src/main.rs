@@ -955,11 +955,16 @@ fn main() {
     opt::EXT_MODEL.store(args.iter().any(|a| a == "--ext-model"), std::sync::atomic::Ordering::Relaxed);
     let horizon = opt::Horizon { turn, ext, w: ext_w, free: None, general: args.iter().any(|a| a == "--general") };
     // --value model.json: decisions the plan does not fix take the option with the best learned value --look turns
-    // (default 3) after their own (crate::value; the model from civ6opt learn)
+    // (default 3) after their own (crate::value; the model from civ6opt learn); --value-net net.json: the same with
+    // the net of tools/value_net.py (crate::value_net)
+    let look: i64 = arg(&args, "--look").map(|x| x.parse().unwrap()).unwrap_or(3);
     if let Some(f) = arg(&args, "--value") {
         let model = civ6opt::value::ValueModel::from_json(&json::parse(&std::fs::read_to_string(&f).unwrap()).unwrap());
-        let look: i64 = arg(&args, "--look").map(|x| x.parse().unwrap()).unwrap_or(3);
-        let _ = civ6opt::value::LOOKAHEAD.set(civ6opt::value::Lookahead { model, turns: look });
+        let _ = civ6opt::value::LOOKAHEAD.set(civ6opt::value::Lookahead { model: civ6opt::value::Model::Linear(model), turns: look });
+    }
+    if let Some(f) = arg(&args, "--value-net") {
+        let model = civ6opt::value::Model::Net(civ6opt::value_net::ValueNet::load(&f));
+        assert!(civ6opt::value::LOOKAHEAD.set(civ6opt::value::Lookahead { model, turns: look }).is_ok(), "--value and --value-net together");
     }
     match cmd {
         "collect" => {

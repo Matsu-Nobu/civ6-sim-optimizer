@@ -77,10 +77,16 @@ pub fn features_extra(p: &Planner, st: &State) -> Vec<f64> {
 /// under way (settler, builder, other unit, building, wonder, district, project, none) and its production put in,
 /// the production put into units, buildings, districts and the rest, the complete districts of six kinds
 /// (campus, theater, holy site, commercial hub, government plaza, encampment) and of others, buildings, plots
-/// owned, improved plots worked, a governor there, the distance to the capital.
+/// owned, improved plots worked, a governor there, the distance to the capital; of the plots a citizen can work
+/// (owned, not the centre or a district): their count, the six yields summed over them and over those worked, the
+/// yields of the best one not worked (largest sum), those with a feature, with a resource and no improvement, by a
+/// river, on hills; the plots near the city not owned yet.
 pub fn city_features(p: &Planner, st: &State) -> Vec<Vec<f64>> {
     use crate::production::{item_kind, Kind};
     let r = p.r;
+    let env = p.player_env(st);
+    let e = p.engine(&env, &st.cities);
+    let ys = [s!("YIELD_FOOD"), s!("YIELD_PRODUCTION"), s!("YIELD_GOLD"), s!("YIELD_SCIENCE"), s!("YIELD_CULTURE"), s!("YIELD_FAITH")];
     let kinds = [s!("DISTRICT_CAMPUS"), s!("DISTRICT_THEATER"), s!("DISTRICT_HOLY_SITE"), s!("DISTRICT_COMMERCIAL_HUB"), s!("DISTRICT_GOVERNMENT"),
                  s!("DISTRICT_ENCAMPMENT")];
     let capital = st.cities.iter().find(|c| c.capital).map(|c| c.center);
@@ -121,6 +127,38 @@ pub fn city_features(p: &Planner, st: &State) -> Vec<Vec<f64>> {
         x.extend([c.buildings.len() as f64, c.owned.len() as f64,
                   c.worked.iter().filter(|q| q.improvement.is_some()).count() as f64, governor as u8 as f64,
                   capital.map(|xy| p.w.map.distance(xy, c.center) as f64).unwrap_or(0.0)]);
+        // the plots, as World::assign_citizens values them
+        let mods: &[crate::engine::PlotMod] = e.plot_effects.get(&c.name).map(|v| v.as_slice()).unwrap_or(&[]);
+        let amods = crate::yields::appeal_modifiers(&e, c.name);
+        let dtiles: Vec<crate::model::XY> = c.districts.iter().map(|d| (d.x, d.y)).collect();
+        let worked: Vec<crate::model::XY> = c.worked.iter().map(|q| q.xy()).collect();
+        let (mut n, mut all, mut on, mut best, mut best_sum) = (0.0, [0.0; 6], [0.0; 6], [0.0; 6], f64::MIN);
+        let (mut feature, mut resource, mut river, mut hills) = (0.0, 0.0, 0.0, 0.0);
+        for q in c.owned.iter().filter(|q| q.xy() != c.center && !dtiles.contains(&q.xy()) && p.w.workable(q.xy(), c.center, &e)) {
+            let y = crate::yields::tile_yields(r, q, &env.techs, &env.civics, false, mods, Some(&e.plots), Some(c), Some(&amods));
+            let v: Vec<f64> = ys.iter().map(|k| crate::yields::get_y(&y, *k)).collect();
+            n += 1.0;
+            for i in 0..6 {
+                all[i] += v[i];
+            }
+            if worked.contains(&q.xy()) {
+                for i in 0..6 {
+                    on[i] += v[i];
+                }
+            } else if v.iter().sum::<f64>() > best_sum {
+                best_sum = v.iter().sum();
+                best.copy_from_slice(&v);
+            }
+            feature += q.feature.is_some() as u8 as f64;
+            resource += (q.resource.is_some() && q.improvement.is_none()) as u8 as f64;
+            river += q.river as u8 as f64;
+            hills += q.terrain.ends_with("HILLS") as u8 as f64;
+        }
+        x.push(n);
+        x.extend(all);
+        x.extend(on);
+        x.extend(best);
+        x.extend([feature, resource, river, hills, c.near.len() as f64]);
         x
     }).collect()
 }
